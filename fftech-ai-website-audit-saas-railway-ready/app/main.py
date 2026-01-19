@@ -24,7 +24,9 @@ app = FastAPI(title="FF Tech – AI Website Audit")
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 
-# ❌ Removed: Base.metadata.create_all(bind=engine)  (do not create tables at import)
+# IMPORTANT:
+# Do NOT call Base.metadata.create_all() at import time.
+# We ping DB in startup with retries to avoid crashes on Railway cold starts.
 
 app.include_router(auth_router)
 
@@ -37,7 +39,7 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> Optional[Us
     try:
         data = jwt.decode(token, settings.SECRET_KEY, algorithms=[JWT_ALG])
         uid = int(data['sub'])
-        # SQLAlchemy 2.x style:
+        # SQLAlchemy 2.x style
         return db.get(User, uid)
     except Exception:
         return None
@@ -47,7 +49,7 @@ def on_startup():
     # Ensure DB is reachable (quick retries) to avoid hard crashes on transient issues
     try_connect_with_retries(retries=5, delay_seconds=2.0)
 
-    # DEV ONLY: if you still want auto-create tables during dev, enable via env:
+    # DEV ONLY: enable this via env if you want auto table creation during development
     # if os.getenv("AUTO_CREATE_TABLES") == "1":
     #     Base.metadata.create_all(bind=engine)
 
@@ -182,4 +184,3 @@ async def report_pdf_open(payload: Dict[str, Any] = Body(...)):
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=fftech_audit.pdf"}
     )
-``
