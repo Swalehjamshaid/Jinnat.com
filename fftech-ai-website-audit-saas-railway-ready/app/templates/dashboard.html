@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard – FF Tech{% endblock %}
+{% block content %}
+<h2>Dashboard</h2>
+<p>Welcome, {{ user.email }}!</p>
+<section>
+  <h3>Your last 50 audits</h3>
+  <div id="audits"></div>
+</section>
+<script>
+async function loadAudits(){
+  const res = await fetch('/api/audit/list');
+  if(!res.ok){
+    document.getElementById('audits').textContent = 'Not signed in';
+    return;
+  }
+  const items = await res.json();
+  const el = document.getElementById('audits');
+  el.innerHTML = '';
+  items.forEach(a=>{
+    const div = document.createElement('div');
+    div.innerHTML = `<b>${a.url}</b> — score ${a.score} (${a.grade}), coverage ${a.coverage}% — ` +
+      `<a href='/api/report/pdf/${a.id}'>PDF</a> · <a href='/api/report/xlsx/${a.id}'>XLSX</a> · <a href='/api/report/pptx/${a.id}'>PPTX</a>`;
+    el.appendChild(div);
+  });
+}
+loadAudits();
+</script>
+{% endblock %}
