@@ -11,8 +11,13 @@ def _add_ssl_and_timeouts(db_url: str) -> str:
     if not db_url:
         raise ValueError("DATABASE_URL is missing. Ensure Postgres is linked in Railway.")
     
-    # Remove any accidental surrounding quotes
+    # Debug: show raw input
+    print(f"[DB DEBUG] Raw input URL: {db_url}")
+    
+    # Remove quotes/whitespace
     db_url = db_url.strip().strip('"').strip("'")
+    
+    print(f"[DB DEBUG] After cleaning: {db_url}")
     
     parsed = urlparse(db_url)
     if parsed.scheme.startswith('postgres'):
@@ -20,15 +25,26 @@ def _add_ssl_and_timeouts(db_url: str) -> str:
         q.setdefault('sslmode', 'require')
         q.setdefault('connect_timeout', '5')
         parsed = parsed._replace(query=urlencode(q))
-        return urlunparse(parsed)
+        final_url = urlunparse(parsed)
+        print(f"[DB DEBUG] Final URL with SSL: {final_url}")
+        return final_url
     return db_url
 
-# Use Railway's auto-injected env var (preferred) or fallback to settings
-DATABASE_URL = os.getenv("DATABASE_URL") or settings.DATABASE_URL
-DATABASE_URL = _add_ssl_and_timeouts(DATABASE_URL) if DATABASE_URL else ''
+# ───────────────────────────────────────────────
+# Get DATABASE_URL – Railway auto-injected first
+# ───────────────────────────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+print(f"[DB DEBUG] os.getenv('DATABASE_URL'): {DATABASE_URL}")
 
 if not DATABASE_URL:
-    raise ValueError("No valid DATABASE_URL found. Link Postgres in Railway or set it correctly.")
+    print("[DB DEBUG] No env var – falling back to settings.DATABASE_URL")
+    DATABASE_URL = settings.DATABASE_URL
+
+if not DATABASE_URL:
+    raise ValueError("No valid DATABASE_URL found. Link Postgres in Railway and remove any manual override.")
+
+DATABASE_URL = _add_ssl_and_timeouts(DATABASE_URL)
 
 engine = create_engine(
     DATABASE_URL,
@@ -57,7 +73,6 @@ def try_connect_with_retries_and_create_tables(retries: int = 5, delay_seconds: 
             with engine.connect() as conn:
                 conn.execute(text('SELECT 1'))
             print('[DB] Connection successful ✓')
-            # Import models now to register with Base
             from . import models  # noqa: F401
             print('[DB] Creating tables (if not exist)...')
             Base.metadata.create_all(bind=engine)
