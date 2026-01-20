@@ -4,94 +4,149 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}FF Tech – AI Website Audit{% endblock %}</title>
-  
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
   <script src="https://cdn.tailwindcss.com"></script>
-  
+
   <style>
-    body { font-family: 'Inter', sans-serif; }
-    /* Smooth transition for hover effects */
-    .nav-link { transition: all 0.3s ease; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: linear-gradient(to bottom, #0f172a, #020617);
+    }
+    .glass {
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .nav-link {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .nav-link:hover {
+      transform: translateY(-1px);
+    }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-200 min-h-screen flex flex-col">
 
-  <header class="sticky top-0 z-50 w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
-    <div class="container mx-auto px-6 h-20 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">FF</div>
-        <h1 class="text-xl font-bold tracking-tight text-white">
-          <a href="/" class="hover:text-blue-400 transition-colors">AI Website Audit</a>
-        </h1>
+<body class="text-slate-100 min-h-screen flex flex-col antialiased">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-50 w-full glass border-b border-slate-800/60">
+    <div class="container mx-auto px-5 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
+      <!-- Logo -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center font-bold text-lg text-white shadow-lg shadow-blue-500/30">
+          FF
+        </div>
+        <a href="/" class="text-xl sm:text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-100 to-slate-300 hover:from-blue-400 hover:to-indigo-400 transition-all">
+          AI Website Audit
+        </a>
       </div>
-      
-      <nav class="hidden md:flex items-center gap-8">
-        <a href="/" class="nav-link text-sm font-medium text-slate-400 hover:text-white">Home</a>
-        <a href="/dashboard" class="nav-link text-sm font-medium text-slate-400 hover:text-white">Dashboard</a>
-        <a href="/login" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20">
+
+      <!-- Desktop Nav -->
+      <nav class="hidden md:flex items-center gap-10">
+        <a href="/" class="nav-link text-sm font-medium text-slate-400 hover:text-slate-100 transition-colors">Home</a>
+        <a href="/dashboard" class="nav-link text-sm font-medium text-slate-400 hover:text-slate-100 transition-colors">Dashboard</a>
+        <a href="/login"
+           class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-semibold rounded-full transition-all shadow-lg shadow-blue-600/25 hover:shadow-blue-500/40 transform hover:scale-[1.02] active:scale-[0.98]">
           Login
         </a>
       </nav>
 
-      <div class="md:hidden text-white">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <!-- Mobile menu button -->
+      <button class="md:hidden text-slate-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
         </svg>
-      </div>
+      </button>
     </div>
   </header>
 
-  <main class="flex-grow">
-    {% block content %}{% endblock %}
+  <!-- Main content -->
+  <main class="flex-grow pt-6 pb-12">
+    <div class="container mx-auto px-5 sm:px-6 lg:px-8">
+      {% block content %}{% endblock %}
+    </div>
   </main>
 
-  <footer class="border-t border-slate-900 bg-slate-950 py-12">
-    <div class="container mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-      <div class="text-slate-500 text-sm">
-        © 2026 <span class="text-white font-semibold text-blue-400">FF Tech</span>. Built for professional web insights.
+  <!-- Footer -->
+  <footer class="border-t border-slate-800/60 bg-slate-950/70 glass py-10 sm:py-12 mt-auto">
+    <div class="container mx-auto px-5 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-8 text-sm">
+      <div class="text-slate-500">
+        © 2026 <span class="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">FF Tech</span>.
+        <span class="hidden sm:inline">· Powered insights for modern websites.</span>
       </div>
-      <div class="flex gap-6 text-slate-500 text-sm">
-        <a href="#" class="hover:text-white transition-colors">Privacy Policy</a>
-        <a href="#" class="hover:text-white transition-colors">Terms of Service</a>
-        <a href="#" class="hover:text-white transition-colors">Contact Support</a>
+
+      <div class="flex gap-8 text-slate-500">
+        <a href="#" class="hover:text-slate-200 transition-colors">Privacy</a>
+        <a href="#" class="hover:text-slate-200 transition-colors">Terms</a>
+        <a href="#" class="hover:text-slate-200 transition-colors">Support</a>
       </div>
     </div>
   </footer>
 
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <script>
-    // Global function to render charts across your SaaS app
-    window.renderLineChart = function(canvasId, labels, dataPoints) {
-      const ctx = document.getElementById(canvasId).getContext('2d');
+    // Improved chart with better dark-mode look
+    window.renderLineChart = function(canvasId, labels, dataPoints, title = 'Score Trend') {
+      const ctx = document.getElementById(canvasId)?.getContext('2d');
+      if (!ctx) return;
+
       new Chart(ctx, {
         type: 'line',
         data: {
           labels: labels,
           datasets: [{
-            label: 'Score Trend',
+            label: title,
             data: dataPoints,
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderColor: '#60a5fa',
+            backgroundColor: 'rgba(96, 165, 250, 0.12)',
             fill: true,
-            tension: 0.4,
+            tension: 0.38,
             borderWidth: 3,
-            pointRadius: 4,
-            pointBackgroundColor: '#3b82f6'
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            pointBackgroundColor: '#60a5fa',
+            pointBorderColor: '#0f172a',
+            pointBorderWidth: 2,
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              titleFont: { size: 14 },
+              bodyFont: { size: 13 },
+              padding: 12,
+              cornerRadius: 8,
+            }
+          },
           scales: {
-            y: { display: false },
-            x: { grid: { display: false }, border: { display: false } }
+            y: {
+              grid: { color: 'rgba(71, 85, 105, 0.2)' },
+              border: { display: false },
+              ticks: { color: '#94a3b8' }
+            },
+            x: {
+              grid: { display: false },
+              border: { display: false },
+              ticks: { color: '#94a3b8' }
+            }
+          },
+          interaction: {
+            intersect: false,
+            mode: 'index',
           }
         }
       });
     };
   </script>
+
 </body>
 </html>
