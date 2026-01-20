@@ -1,25 +1,97 @@
 <!doctype html>
-<html>
+<html lang="en" class="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}FF Tech – AI Website Audit{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    /* Smooth transition for hover effects */
+    .nav-link { transition: all 0.3s ease; }
+  </style>
 </head>
-<body>
-  <header>
-    <h1><a href="/">FF Tech – AI Website Audit</a></h1>
-    <nav>
-      <a href="/">Home</a>
-      <a href="/dashboard">Dashboard</a>
-      <a href="/login">Login</a>
-    </nav>
+<body class="bg-slate-950 text-slate-200 min-h-screen flex flex-col">
+
+  <header class="sticky top-0 z-50 w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
+    <div class="container mx-auto px-6 h-20 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">FF</div>
+        <h1 class="text-xl font-bold tracking-tight text-white">
+          <a href="/" class="hover:text-blue-400 transition-colors">AI Website Audit</a>
+        </h1>
+      </div>
+      
+      <nav class="hidden md:flex items-center gap-8">
+        <a href="/" class="nav-link text-sm font-medium text-slate-400 hover:text-white">Home</a>
+        <a href="/dashboard" class="nav-link text-sm font-medium text-slate-400 hover:text-white">Dashboard</a>
+        <a href="/login" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20">
+          Login
+        </a>
+      </nav>
+
+      <div class="md:hidden text-white">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+        </svg>
+      </div>
+    </div>
   </header>
-  <main>
+
+  <main class="flex-grow">
     {% block content %}{% endblock %}
   </main>
-  <footer>
-    <p>© {{ 2026 }} FF Tech</p>
+
+  <footer class="border-t border-slate-900 bg-slate-950 py-12">
+    <div class="container mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+      <div class="text-slate-500 text-sm">
+        © 2026 <span class="text-white font-semibold text-blue-400">FF Tech</span>. Built for professional web insights.
+      </div>
+      <div class="flex gap-6 text-slate-500 text-sm">
+        <a href="#" class="hover:text-white transition-colors">Privacy Policy</a>
+        <a href="#" class="hover:text-white transition-colors">Terms of Service</a>
+        <a href="#" class="hover:text-white transition-colors">Contact Support</a>
+      </div>
+    </div>
   </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // Global function to render charts across your SaaS app
+    window.renderLineChart = function(canvasId, labels, dataPoints) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Score Trend',
+            data: dataPoints,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            fill: true,
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointBackgroundColor: '#3b82f6'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { display: false },
+            x: { grid: { display: false }, border: { display: false } }
+          }
+        }
+      });
+    };
+  </script>
 </body>
 </html>
