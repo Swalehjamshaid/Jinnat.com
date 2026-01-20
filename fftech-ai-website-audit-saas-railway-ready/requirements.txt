@@ -1,13 +1,13 @@
 # Web Framework & Server
 fastapi==0.110.0
-uvicorn[standard]==0.24.0.post1
+uvicorn[standard]>=0.24.0
 
 # Database & Models
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 pydantic==1.10.13
-# FIXED: Using v1 compatible settings
-pydantic-settings<2.0.0
+# FIXED: Using a specific v1-compatible version to avoid solver conflicts
+pydantic-settings==1.0.1
 
 # Scraper & Audit Engine
 aiohttp==3.9.3
