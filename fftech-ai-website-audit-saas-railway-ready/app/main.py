@@ -1,18 +1,13 @@
-
 # app/main.py
 import os
 from typing import Optional, Dict, Any
-
 from fastapi import FastAPI, Depends, Request, HTTPException, Response, Body
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-
 from sqlalchemy.orm import Session
 from sqlalchemy import text, select, func
-
 import jwt
-
 from .db import engine, get_db, try_connect_with_retries_and_create_tables
 from .models import User, Audit
 from .schemas import AuditCreate, AuditResponse
@@ -24,24 +19,55 @@ from .config import settings
 
 app = FastAPI(title="FF Tech – AI Website Audit")
 
-# Static and templates
+# Static files and templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-# Auth routes
+# Include authentication router
 app.include_router(auth_router)
 
 JWT_ALG = settings.JWT_ALG
 
+# ───────────────────────────────────────────────
+# Startup Event – Database Connection & Table Creation
+# ───────────────────────────────────────────────
+@app.on_event("startup")
+def on_startup():
+    print("[SYSTEM] Starting up…")
+    try_connect_with_retries_and_create_tables()
 
-# -----------------------------
-# Dependencies & startup
-# -----------------------------
+# ───────────────────────────────────────────────
+# Health Check Endpoint – Required for Railway Deployment
+# ───────────────────────────────────────────────
+@app.get("/health", include_in_schema=False)
+async def health_check():
+    """
+    Simple health check for Railway and monitoring.
+    Returns 200 OK instantly – no DB calls, no heavy logic.
+    """
+    return {"status": "healthy"}
+
+# ───────────────────────────────────────────────
+# Public Pages (HTML)
+# ───────────────────────────────────────────────
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/login", response_class=HTMLResponse)
+async def login(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request, user: Optional[User] = Depends(get_current_user)):
+    if not user:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
+
+# ───────────────────────────────────────────────
+# Dependency: Get Current User from JWT Cookie
+# ───────────────────────────────────────────────
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> Optional[User]:
-    """
-    Read the session cookie and return the current User or None.
-    This function is synchronous and should not be awaited.
-    """
     token = request.cookies.get("session")
     if not token:
         return None
@@ -52,55 +78,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Optiona
     except Exception:
         return None
 
-
-@app.on_event("startup")
-def on_startup():
-    """
-    On startup:
-      - connect to DB with retries (handles Railway cold starts)
-      - auto-create tables once connection is up
-    """
-    print("[SYSTEM] Starting up…")
-    try_connect_with_retries_and_create_tables()
-
-
-# -----------------------------
-# Health
-# -----------------------------
-@app.get("/health/db")
-def db_health():
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        return {"status": "ok", "db": "connected"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
-
-
-# -----------------------------
-# Pages
-# -----------------------------
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, user: Optional[User] = Depends(get_current_user)):
-    if not user:
-        # use redirect instead of inline meta refresh
-        return RedirectResponse(url="/login")
-    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
-
-
-# -----------------------------
+# ───────────────────────────────────────────────
 # API – Audit
-# -----------------------------
+# ───────────────────────────────────────────────
 @app.post("/api/audit", response_model=AuditResponse)
 async def run_audit(
     payload: AuditCreate,
@@ -111,18 +91,15 @@ async def run_audit(
 
     # Enforce free quota for non-paid users
     if user:
-        # SQLAlchemy 2.0 style count
         total = db.scalar(
             select(func.count()).select_from(Audit).where(Audit.user_id == user.id)
         ) or 0
         if not user.is_paid and total >= 10:
             raise HTTPException(402, detail="Free quota exceeded. Upgrade to continue.")
 
-    # Run audit (deterministic, offline-friendly in current setup)
     result = audit_site_sync(str(payload.url))
     overall = result["overall"]
 
-    # Persist only for signed-in users
     audit = Audit(
         user_id=user_id,
         url=str(payload.url),
@@ -133,6 +110,7 @@ async def run_audit(
         metrics=result["metrics"],
         summary=result["summary"],
     )
+
     if user:
         db.add(audit)
         db.commit()
@@ -150,7 +128,6 @@ async def run_audit(
         summary=result["summary"],
         metrics=result["metrics"],
     )
-
 
 @app.get("/api/audit/list")
 async def list_audits(
@@ -180,10 +157,9 @@ async def list_audits(
         for a in items
     ]
 
-
-# -----------------------------
-# API – Reports (stored)
-# -----------------------------
+# ───────────────────────────────────────────────
+# API – Reports (stored audits)
+# ───────────────────────────────────────────────
 @app.get("/api/report/pdf/{audit_id}")
 async def report_pdf(audit_id: int, db: Session = Depends(get_db)):
     a = db.get(Audit, audit_id)
@@ -194,12 +170,12 @@ async def report_pdf(audit_id: int, db: Session = Depends(get_db)):
         "overall": {"score": a.score, "grade": a.grade, "coverage": a.coverage},
         "metrics": a.metrics,
     })
+
     return Response(
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=fftech_audit_{a.id}.pdf"},
     )
-
 
 @app.get("/api/report/xlsx/{audit_id}")
 async def report_xlsx(audit_id: int, db: Session = Depends(get_db)):
@@ -211,12 +187,12 @@ async def report_xlsx(audit_id: int, db: Session = Depends(get_db)):
         "metrics": a.metrics,
         "overall": {"score": a.score, "grade": a.grade, "coverage": a.coverage},
     })
+
     return Response(
         content=x,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=fftech_audit_{a.id}.xlsx"},
     )
-
 
 @app.get("/api/report/pptx/{audit_id}")
 async def report_pptx(audit_id: int, db: Session = Depends(get_db)):
@@ -228,16 +204,16 @@ async def report_pptx(audit_id: int, db: Session = Depends(get_db)):
         "metrics": a.metrics,
         "overall": {"score": a.score, "grade": a.grade, "coverage": a.coverage},
     })
+
     return Response(
         content=p,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f"attachment; filename=fftech_audit_{a.id}.pptx"},
     )
 
-
-# -----------------------------
-# API – Reports (open on-the-fly)
-# -----------------------------
+# ───────────────────────────────────────────────
+# API – Reports (open / on-the-fly)
+# ───────────────────────────────────────────────
 @app.post("/api/report/pdf-open")
 async def report_pdf_open(payload: Dict[str, Any] = Body(...)):
     overall = payload.get("overall") or {
@@ -246,7 +222,9 @@ async def report_pdf_open(payload: Dict[str, Any] = Body(...)):
         "coverage": payload.get("coverage", 0),
     }
     metrics = payload.get("metrics") or {}
+
     pdf = build_pdf({"overall": overall, "metrics": metrics})
+
     return Response(
         content=pdf,
         media_type="application/pdf",
