@@ -9,7 +9,11 @@ Base = declarative_base()
 
 def _add_ssl_and_timeouts(db_url: str) -> str:
     if not db_url:
-        raise ValueError('DATABASE_URL is missing. Set it in Railway → Variables.')
+        raise ValueError("DATABASE_URL is missing. Ensure Postgres is linked in Railway.")
+    
+    # Remove any accidental surrounding quotes
+    db_url = db_url.strip().strip('"').strip("'")
+    
     parsed = urlparse(db_url)
     if parsed.scheme.startswith('postgres'):
         q = dict(parse_qsl(parsed.query))
@@ -19,7 +23,12 @@ def _add_ssl_and_timeouts(db_url: str) -> str:
         return urlunparse(parsed)
     return db_url
 
-DATABASE_URL = _add_ssl_and_timeouts(settings.DATABASE_URL.strip()) if settings.DATABASE_URL else ''
+# Use Railway's auto-injected env var (preferred) or fallback to settings
+DATABASE_URL = os.getenv("DATABASE_URL") or settings.DATABASE_URL
+DATABASE_URL = _add_ssl_and_timeouts(DATABASE_URL) if DATABASE_URL else ''
+
+if not DATABASE_URL:
+    raise ValueError("No valid DATABASE_URL found. Link Postgres in Railway or set it correctly.")
 
 engine = create_engine(
     DATABASE_URL,
@@ -38,7 +47,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
 
 def try_connect_with_retries_and_create_tables(retries: int = 5, delay_seconds: float = 2.0):
     import time
@@ -60,4 +68,4 @@ def try_connect_with_retries_and_create_tables(retries: int = 5, delay_seconds: 
             if attempt < retries:
                 print(f"[DB] Connection failed: {e}. Retrying in {delay_seconds}s...")
                 time.sleep(delay_seconds)
-    raise last_error
+    raise last_error or Exception("Database connection failed after retries")
