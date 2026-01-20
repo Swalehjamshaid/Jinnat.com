@@ -8,6 +8,12 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import text, select, func
 import jwt
+
+# ───────────────────────────────────────────────
+# IMPORTANT: Import settings (fixes NameError: name 'settings' is not defined)
+# ───────────────────────────────────────────────
+from .config import settings
+
 from .db import engine, get_db, try_connect_with_retries_and_create_tables
 from .models import User, Audit
 from .schemas import AuditCreate, AuditResponse
@@ -15,14 +21,8 @@ from .audit.compute import audit_site_sync
 from .report.report import build_pdf
 from .report.record import export_xlsx, export_pptx
 
-# ───────────────────────────────────────────────
-# Correct import of the auth router (fixes the AttributeError)
-# ───────────────────────────────────────────────
-# Use ONE of the following lines based on your actual file structure:
-# Option 1: If router is defined in app/auth.py
-# from app.auth import router
-# Option 2: If router is defined in app/auth/router.py (most likely your case)
-from app.auth.router import router   # ← This is the fix!
+# Correct auth router import (from previous fix)
+from app.auth.router import router   # ← or from app.auth import router if that's your structure
 
 app = FastAPI(title="FF Tech – AI Website Audit")
 
@@ -30,10 +30,10 @@ app = FastAPI(title="FF Tech – AI Website Audit")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-# Auth routes – now using the correct router object
-app.include_router(router)   # ← Changed from auth_router to router
+# Auth routes
+app.include_router(router)   # ← using the direct router object
 
-JWT_ALG = settings.JWT_ALG
+JWT_ALG = settings.JWT_ALG   # ← now works because settings is imported
 
 # -----------------------------
 # Dependencies & startup
