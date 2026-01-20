@@ -6,8 +6,8 @@ uvicorn[standard]>=0.24.0
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 pydantic==1.10.13
-# FIXED: Using a specific v1-compatible version to avoid solver conflicts
-pydantic-settings==1.0.1
+# FIXED: 0.2.5 is the correct stable version for Pydantic v1
+pydantic-settings==0.2.5
 
 # Scraper & Audit Engine
 aiohttp==3.9.3
