@@ -1,18 +1,33 @@
+# Web Framework & Server
 fastapi==0.110.0
 uvicorn[standard]==0.24.0.post1
+
+# Database & Models
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+pydantic==1.10.13
+pydantic-settings==2.1.0
+
+# Scraper & Audit Engine
 aiohttp==3.9.3
 beautifulsoup4==4.12.2
 lxml==5.1.0
-pydantic==1.10.13
-sqlalchemy==2.0.25
-psycopg2-binary==2.9.9
-python-multipart==0.0.9
+
+# Security & Auth
 PyJWT==2.8.0
-APScheduler==3.10.4
+python-multipart==0.0.9
+email-validator==2.1.0.post1
+
+# Reporting (PDF, Excel, PPTX)
+fpdf2==2.7.7
 reportlab==4.0.8
+python-pptx==0.6.23
+openpyxl==3.1.2
+
+# Data Analysis & Visuals
 matplotlib==3.8.2
 pandas==2.1.4
-openpyxl==3.1.2
-python-pptx==0.6.23
+
+# Automation & Templating
+APScheduler==3.10.4
 jinja2==3.1.2
-email-validator
