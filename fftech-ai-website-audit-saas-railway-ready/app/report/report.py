@@ -1,39 +1,29 @@
-from io import BytesIO
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import cm
+from fpdf import FPDF
 
+class FFTechPDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 10)
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 10, 'FF TECH AI AUDIT - CERTIFIED REPORT', 0, 1, 'R')
 
-def build_pdf(data) -> bytes:
-    buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
-
-    overall = data.get('overall', {})
-    metrics = data.get('metrics', {})
-
-    c.setTitle('Website Audit Report')
-    c.setFont('Helvetica-Bold', 18)
-    c.drawString(2*cm, height-3*cm, 'Website Audit Report')
-
-    c.setFont('Helvetica', 12)
-    y = height-4*cm
-    for k in ['score', 'grade', 'coverage']:
-        c.drawString(2*cm, y, f"{k.capitalize()}: {overall.get(k, '-')}")
-        y -= 0.7*cm
-
-    c.setFont('Helvetica-Bold', 14)
-    c.drawString(2*cm, y-0.5*cm, 'Metrics')
-    y -= 1.5*cm
-    c.setFont('Helvetica', 12)
-    for k, v in metrics.items():
-        c.drawString(2*cm, y, f"{k}: {v}")
-        y -= 0.6*cm
-        if y < 2*cm:
-            c.showPage()
-            y = height-2*cm
-
-    c.showPage()
-    c.save()
-    buf.seek(0)
-    return buf.getvalue()
+def build_pdf(data: dict) -> bytes:
+    pdf = FFTechPDF()
+    pdf.set_auto_page_break(True, margin=15)
+    
+    # Page 1: High Level Summary
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 28)
+    pdf.cell(0, 40, f"Score: {data['overall']['score']}%", ln=True)
+    pdf.set_font('Arial', '', 12)
+    pdf.multi_cell(0, 10, data['summary'])
+    
+    # Pages 2-5: Category Detail
+    for name, content in data['metrics'].items():
+        pdf.add_page()
+        pdf.set_font('Arial', 'B', 18)
+        pdf.cell(0, 15, name.replace('_', ' ').upper(), ln=True)
+        pdf.set_font('Arial', '', 12)
+        for k, v in content.items():
+            pdf.cell(0, 10, f"{k}: {v}", ln=True)
+            
+    return pdf.output(dest='S')
