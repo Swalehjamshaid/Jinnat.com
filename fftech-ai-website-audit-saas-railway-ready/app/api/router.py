@@ -1,11 +1,11 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import User, Audit, Schedule
 from ..schemas import AuditCreate, OpenAuditRequest, AuditOut
-from ..audit.runner import run_audit
+# FIXED: Changed from ..audit.runner import run_audit to analyzer
+from ..audit.analyzer import analyze 
 from ..audit.report import build_pdf
 from ..auth.tokens import decode_token
 
@@ -22,7 +22,7 @@ def get_current_user(request: Request, db: Session) -> User | None:
     return db.query(User).filter(User.email == email).first()
 
 @router.post('/open-audit')
-def open_audit(body: OpenAuditRequest, request: Request):
+async def open_audit(body: OpenAuditRequest, request: Request):
     from ..settings import get_settings
     settings = get_settings()
     ip = (request.client.host if request and request.client else 'anon')
@@ -36,19 +36,32 @@ def open_audit(body: OpenAuditRequest, request: Request):
     if count >= settings.RATE_LIMIT_OPEN_PER_HOUR:
         raise HTTPException(429, 'Rate limit exceeded for open audits. Please try later or sign in.')
     open_audit.RATE_TRACK[key] = count + 1
-    return run_audit(body.url)
+    # Call the correct function name: analyze
+    return await analyze(body.url)
 
 @router.post('/audit', response_model=AuditOut)
-def create_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
+async def create_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user or not user.is_verified:
         raise HTTPException(401, 'Authentication required')
+    
     from ..settings import get_settings
     settings = get_settings()
+    
     if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
         raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
-    result = run_audit(body.url)
-    audit = Audit(user_id=user.id, url=str(body.url), result_json=result)
+    
+    # Call the correct function name: analyze
+    result = await analyze(body.url)
+    
+    # Map the result to your Audit model
+    audit = Audit(
+        user_id=user.id, 
+        url=str(body.url), 
+        result_json=result,
+        overall_score=result.get('overall_score', 0),
+        grade=result.get('grade', 'F')
+    )
     db.add(audit)
     user.audit_count += 1
     db.commit()
@@ -73,9 +86,12 @@ def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
     audit = db.query(Audit).filter(Audit.id == audit_id, Audit.user_id == user.id).first()
     if not audit:
         raise HTTPException(404, 'Not found')
-    out_path = f"/tmp/audit_{audit_id}.pdf"
-    build_pdf(audit.result_json, out_path)
-    return FileResponse(out_path, media_type='application/pdf', filename=f'audit_{audit_id}.pdf')
+    
+    # Ensure storage path is set correctly for your build_pdf function
+    out_path = f"storage/reports/audit_{audit_id}.pdf"
+    build_pdf(audit.id, audit.url, audit.overall_score, audit.grade, audit.result_json.get('category_scores'), audit.result_json.get('metrics'), "storage/reports")
+    
+    return FileResponse(out_path, media_type='application/pdf', filename=f'FF_Tech_Report_{audit_id}.pdf')
 
 @router.post('/schedule')
 def create_schedule(url: str, request: Request, db: Session = Depends(get_db)):
@@ -90,44 +106,30 @@ def create_schedule(url: str, request: Request, db: Session = Depends(get_db)):
     return {"message": "Scheduled daily audit created", "id": sc.id}
 
 @router.post('/competitor-audit')
-def competitor_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
+async def competitor_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user or not user.is_verified:
         raise HTTPException(401, 'Authentication required')
+    
     base_url = str(body.url)
     competitors = [str(u) for u in (body.competitors or [])][:5]
     results = []
-    base = run_audit(base_url)
+    
+    base = await analyze(base_url)
     for cu in competitors:
-        results.append({'url': cu, 'result': run_audit(cu)})
+        results.append({'url': cu, 'result': await analyze(cu)})
+    
     comparison = {
         'overall':{
             'base': base.get('overall_score'),
             'competitors':[{'url': it['url'], 'score': it['result'].get('overall_score')} for it in results]
         },
         'performance':{
-            'base': base.get('performance'),
-            'competitors':[{'url': it['url'], 'performance': it['result'].get('performance')} for it in results]
+            'base': base.get('category_scores', {}).get('Performance'),
+            'competitors':[{'url': it['url'], 'performance': it['result'].get('category_scores', {}).get('Performance')} for it in results]
         }
     }
     return {'base': {'url': base_url, 'result': base}, 'competitors': results, 'comparison': comparison}
-
-@router.post('/competitor-report.pdf')
-def competitor_report(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    if not user or not user.is_verified:
-        raise HTTPException(401, 'Authentication required')
-    base_url = str(body.url)
-    competitors = [str(u) for u in (body.competitors or [])][:5]
-    base = run_audit(base_url)
-    results = []
-    for cu in competitors:
-        results.append({'url': cu, 'result': run_audit(cu)})
-    comp_result = {'base': {'url': base_url, 'result': base}, 'competitors': results}
-    from ..audit.competitor_report import build_competitor_pdf
-    out_path = '/tmp/competitor_report.pdf'
-    build_competitor_pdf(comp_result, out_path)
-    return FileResponse(out_path, media_type='application/pdf', filename='competitor_report.pdf')
 
 @router.get('/admin/resend-status')
 def resend_status(request: Request):
@@ -137,7 +139,6 @@ def resend_status(request: Request):
     token = request.cookies.get('session')
     if not token:
         raise HTTPException(401, 'Authentication required')
-    from ..auth.tokens import decode_token
     payload = decode_token(token)
     if not payload:
         raise HTTPException(401, 'Invalid token')
