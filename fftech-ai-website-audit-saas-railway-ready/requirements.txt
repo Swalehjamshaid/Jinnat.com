@@ -5,36 +5,35 @@ jinja2==3.1.2
 python-multipart==0.0.9
 
 # --- DATABASE & MODELS ---
-# Using Pydantic 1.10 to ensure stability with legacy settings logic
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 pydantic==1.10.13
 
-# --- AUDIT ENGINE (Scraping & Analysis) ---
-# Supports Categories B, C, D, and E
+# --- AUDIT ENGINE (Categories B-E) ---
 aiohttp==3.9.3
 beautifulsoup4==4.12.2
 lxml==5.1.0
 
 # --- AUTHENTICATION & SECURITY ---
-# Supports Passwordless Email Login
+# FIXED: Added itsdangerous for secure login tokens
 PyJWT==2.8.0
 email-validator==2.1.0.post1
+itsdangerous==2.1.2
 
 # --- MULTI-FORMAT REPORTING ---
-# Supports the 5-Page Certified PDF (Requirement 3)
+# For Category A & PDF exports
 fpdf2==2.7.7
 reportlab==4.0.8
-# Supports XLSX and PPTX exports
+# For XLSX and PPTX exports
 python-pptx==0.6.23
 openpyxl==3.1.2
 
-# --- DATA INTELLIGENCE & METRICS ---
-# Supports Categories G, H, and I (ROI, Competitors, and Trends)
+# --- DATA INTELLIGENCE & ROI ---
+# For Categories G, H, and I
 matplotlib==3.8.2
 pandas==2.1.4
 numpy<2.0.0
 
-# --- AUTOMATION & SCHEDULING ---
-# Supports Requirement 2 (Scheduled Email Audits for Premium)
+# --- AUTOMATION ---
+# For scheduled audits
 APScheduler==3.10.4
