@@ -7,8 +7,8 @@ import time
 from app.db import get_db
 from app.models import User, Audit, Schedule
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
-from app.audit.runner import run_audit  # FIX: Import from runner, not report
-from app.audit.report import build_pdf   # Keep this here for PDF logic
+from app.audit.grader import run_audit  # FIXED: Changed from .runner to .grader
+from app.audit.report import build_pdf
 from app.auth.tokens import decode_token
 
 router = APIRouter(prefix='/api', tags=['api'])
