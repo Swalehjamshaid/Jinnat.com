@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-# Absolute imports are required for reliability on Railway
+# Absolute imports using files that actually exist in your GitHub
 from app.db import get_db
-from app.models import User, Audit, Schedule
+from app.models import User, Audit
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
-from app.audit.analyzer import analyze 
+from app.audit.crawler import analyze  # Changed from analyzer to crawler
 from app.audit.report import build_pdf
 from app.auth.tokens import decode_token
 
@@ -39,6 +39,7 @@ async def open_audit(body: OpenAuditRequest, request: Request):
         raise HTTPException(429, 'Rate limit exceeded for open audits. Please try later or sign in.')
     
     open_audit.RATE_TRACK[key] = count + 1
+    # This calls the analyze function inside crawler.py
     return await analyze(body.url)
 
 @router.post('/audit', response_model=AuditOut)
@@ -53,6 +54,7 @@ async def create_audit(body: AuditCreate, request: Request, db: Session = Depend
     if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
         raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
     
+    # Analyze using the existing crawler module
     result = await analyze(body.url)
     
     audit = Audit(
@@ -79,7 +81,7 @@ def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
     
     out_path = f"storage/reports/audit_{audit_id}.pdf"
     
-    # Correctly calls the build_pdf function from report.py
+    # Build the PDF using report.py
     build_pdf(
         audit.id, 
         audit.url, 
