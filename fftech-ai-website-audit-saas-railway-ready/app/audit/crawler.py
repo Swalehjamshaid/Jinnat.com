@@ -22,7 +22,7 @@ def crawl_site(start_url: str, max_pages: int = 10, timeout: int = 10):
     Main entry point for grader.py. 
     It runs the crawl and formats the result as a dictionary.
     """
-    # Run the existing logic
+    # Run the internal crawling logic
     result_obj = perform_crawl(start_url, max_pages, timeout)
     
     # Analyze on-page SEO for the home page (first page found)
@@ -34,10 +34,17 @@ def crawl_site(start_url: str, max_pages: int = 10, timeout: int = 10):
     
     if start_url in result_obj.pages:
         soup = BeautifulSoup(result_obj.pages[start_url], 'html.parser')
-        if not soup.title: onpage_stats["missing_title_tags"] += 1
-        if not soup.find('meta', attrs={'name': 'description'}): onpage_stats["missing_meta_descriptions"] += 1
-        if len(soup.find_all('h1')) > 1: onpage_stats["multiple_h1"] += 1
+        # Check for Title
+        if not soup.title or not soup.title.string: 
+            onpage_stats["missing_title_tags"] += 1
+        # Check for Meta Description
+        if not soup.find('meta', attrs={'name': 'description'}): 
+            onpage_stats["missing_meta_descriptions"] += 1
+        # Check for H1 Tags
+        if len(soup.find_all('h1')) > 1: 
+            onpage_stats["multiple_h1"] += 1
 
+    # Return the exact dictionary format grader.py expects
     return {
         "pages_crawled": len(result_obj.pages),
         "onpage_stats": onpage_stats,
@@ -46,10 +53,11 @@ def crawl_site(start_url: str, max_pages: int = 10, timeout: int = 10):
     }
 
 def perform_crawl(start_url: str, max_pages: int = 10, timeout: int = 10) -> 'CrawlResult':
-    """Existing logic renamed to perform_crawl"""
+    """Internal logic to traverse the site and find links"""
     q = deque([start_url])
     seen = set()
     result = CrawlResult()
+    
     while q and len(seen) < max_pages:
         url = q.popleft()
         if url in seen:
@@ -86,4 +94,5 @@ def perform_crawl(start_url: str, max_pages: int = 10, timeout: int = 10) -> 'Cr
                     result.broken_internal.append((src, l, rr.status_code))
             except Exception:
                 result.broken_internal.append((src, l, 0))
+                
     return result
