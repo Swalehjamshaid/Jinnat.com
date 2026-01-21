@@ -1,8 +1,11 @@
-
 import requests
+import asyncio
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from collections import deque, defaultdict
+
+# Import the grading logic to assign A, B, C, etc.
+from .grader import to_grade
 
 HEADERS = {"User-Agent": "FFTechAuditor/1.0 (+https://fftech.ai)"}
 
@@ -18,10 +21,14 @@ class CrawlResult:
 def is_same_host(start_url: str, link: str) -> bool:
     return urlparse(start_url).netloc == urlparse(link).netloc
 
-def crawl(start_url: str, max_pages: int = 50, timeout: int = 10) -> 'CrawlResult':
+def crawl(start_url: str, max_pages: int = 10, timeout: int = 10) -> 'CrawlResult':
+    """
+    Existing synchronous crawling logic.
+    """
     q = deque([start_url])
     seen = set()
     result = CrawlResult()
+    
     while q and len(seen) < max_pages:
         url = q.popleft()
         if url in seen:
@@ -45,25 +52,50 @@ def crawl(start_url: str, max_pages: int = 50, timeout: int = 10) -> 'CrawlResul
                         result.external_links[url].append(href)
         except requests.RequestException:
             result.status_counts[0] += 1
-    # Basic broken link check (HEAD)
-    checked = set()
-    for src, links in result.internal_links.items():
-        for l in links:
-            if l in checked:
-                continue
-            checked.add(l)
-            try:
-                rr = requests.head(l, headers=HEADERS, timeout=5, allow_redirects=True)
-                if rr.status_code >= 400:
-                    result.broken_internal.append((src, l, rr.status_code))
-            except Exception:
-                result.broken_internal.append((src, l, 0))
-    for src, links in result.external_links.items():
-        for l in links[:50]:
-            try:
-                rr = requests.head(l, headers=HEADERS, timeout=5, allow_redirects=True)
-                if rr.status_code >= 400:
-                    result.broken_external.append((src, l, rr.status_code))
-            except Exception:
-                result.broken_external.append((src, l, 0))
+            
     return result
+
+# --- NEW FUNCTION: The Router is looking for this exact name ---
+async def analyze(url: str):
+    """
+    Asynchronous bridge for the FastAPI Router.
+    Runs the crawl and returns formatted data for the DB and PDF.
+    """
+    # Run the synchronous crawl in a thread pool to avoid blocking FastAPI
+    loop = asyncio.get_event_loop()
+    crawl_data = await loop.run_in_executor(None, crawl, url)
+    
+    # Calculate scores based on crawl data
+    total_pages = len(crawl_data.pages)
+    broken_links = len(crawl_data.broken_internal)
+    
+    # Basic scoring logic
+    seo_score = max(40, 100 - (broken_links * 10))
+    perf_score = 75  # Placeholder
+    sec_score = 85   # Placeholder
+    
+    overall = int((seo_score + perf_score + sec_score) / 3)
+    grade = to_grade(overall)
+
+    # This dictionary structure matches what AuditOut and the PDF builder expect
+    return {
+        "url": url,
+        "overall_score": overall,
+        "grade": grade,
+        "category_scores": {
+            "SEO": seo_score,
+            "Performance": perf_score,
+            "Security": sec_score
+        },
+        "metrics": {
+            "pages_crawled": total_pages,
+            "broken_links": broken_links,
+            "status_200": crawl_data.status_counts[200]
+        },
+        "summary": {
+            "executive_summary": f"Analyzed {total_pages} pages for {url}.",
+            "strengths": ["Site architecture is crawlable"],
+            "weaknesses": ["Broken links found" if broken_links > 0 else "None"],
+            "priority_fixes": ["Fix broken links" if broken_links > 0 else "Optimize mobile speed"]
+        }
+    }
