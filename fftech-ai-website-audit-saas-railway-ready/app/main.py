@@ -1,96 +1,99 @@
-from datetime import datetime
-from typing import List, Dict, Any
+import os
+import uvicorn
+from fastapi import FastAPI, Depends, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-from sqlalchemy import (
-    Column, Integer, String, DateTime, Boolean, JSON, ForeignKey, Float,
-    Index
-)
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+# Absolute imports
+from app.db import Base, engine, get_db
+from app.models import User
+from app.auth.router import router as auth_router
+from app.api.router import router as api_router
 
-from .database import Base
+app = FastAPI(title='FF Tech AI Website Audit SaaS')
 
+# Include logic routers
+app.include_router(auth_router)
+app.include_router(api_router)
 
-class TimestampMixin:
-    """Automatic timestamps for created/updated"""
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-        index=True
-    )
+app.mount('/static', StaticFiles(directory='app/static'), name='static')
+templates = Jinja2Templates(directory='app/templates')
 
+def fix_database_schema():
+    """
+    Manually injects missing columns into the PostgreSQL database.
+    This resolves the 'psycopg2.errors.UndefinedColumn' error.
+    """
+    with engine.connect() as conn:
+        conn.execute(text("""
+            DO $$ 
+            BEGIN 
+                -- Add 'plan' column
+                BEGIN
+                    ALTER TABLE users ADD COLUMN plan VARCHAR(50) DEFAULT 'free';
+                EXCEPTION WHEN duplicate_column THEN NULL; END;
+                
+                -- Add 'audit_count' column
+                BEGIN
+                    ALTER TABLE users ADD COLUMN audit_count INTEGER DEFAULT 0;
+                EXCEPTION WHEN duplicate_column THEN NULL; END;
 
-class User(Base, TimestampMixin):
-    __tablename__ = "users"
+                -- Add 'is_verified' column
+                BEGIN
+                    ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT FALSE;
+                EXCEPTION WHEN duplicate_column THEN NULL; END;
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String(255), unique=True, index=True, nullable=False)
-    is_verified = Column(Boolean, default=False, nullable=False)
-    is_subscribed = Column(Boolean, default=False, nullable=False)          # premium flag
-    subscription_plan = Column(String(50), default="free", nullable=False)  # "free", "pro", etc.
-    subscription_expires_at = Column(DateTime(timezone=True), nullable=True)
-    last_login_at = Column(DateTime(timezone=True), nullable=True)
+                -- Add 'verification_token' column
+                BEGIN
+                    ALTER TABLE users ADD COLUMN verification_token VARCHAR(255);
+                EXCEPTION WHEN duplicate_column THEN NULL; END;
 
-    # Relationships
-    audits = relationship("Audit", back_populates="user", cascade="all, delete-orphan")
-    schedules = relationship("Schedule", back_populates="user", cascade="all, delete-orphan")
+                -- Add 'token_expiry' column
+                BEGIN
+                    ALTER TABLE users ADD COLUMN token_expiry INTEGER;
+                EXCEPTION WHEN duplicate_column THEN NULL; END;
+            END $$;
+        """))
+        conn.commit()
 
-    # Convenience properties
-    @property
-    def audit_count(self) -> int:
-        return len(self.audits) if hasattr(self, 'audits') else 0
+@app.on_event('startup')
+def on_startup():
+    # 1. Create tables if they don't exist
+    Base.metadata.create_all(bind=engine)
+    # 2. Add missing columns to existing tables
+    try:
+        fix_database_schema()
+        print("Database migration check successful.")
+    except Exception as e:
+        print(f"Migration error: {e}")
+    # 3. Setup directories
+    os.makedirs('storage/reports', exist_ok=True)
 
-    def __repr__(self):
-        return f"<User id={self.id} email={self.email} subscribed={self.is_subscribed}>"
+@app.get('/', response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse('index.html', {"request": request})
 
+@app.get('/dashboard', response_class=HTMLResponse)
+async def dashboard(request: Request, db: Session = Depends(get_db)):
+    token = request.cookies.get('session')
+    user = None
+    if token:
+        from app.auth.tokens import decode_token
+        payload = decode_token(token)
+        if payload:
+            user = db.query(User).filter(User.email == payload.get('sub')).first()
+    return templates.TemplateResponse('dashboard.html', {"request": request, "user": user})
 
-class Audit(Base, TimestampMixin):
-    __tablename__ = "audits"
+@app.post('/request-login', response_class=RedirectResponse)
+async def request_login(email: str = Form(...), db: Session = Depends(get_db)):
+    from app.auth.router import request_link
+    await request_link(email, db)
+    return RedirectResponse(url='/?sent=1', status_code=302)
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    url = Column(String(2048), nullable=False, index=True)
-    status = Column(String(50), default="completed", nullable=False)  # pending, running, failed, completed
-    overall_score = Column(Float, default=0.0, nullable=False)
-    grade = Column(String(5), default="D", nullable=False)
-    summary = Column(JSON, default=dict, nullable=False)
-    metrics = Column(JSON, default=dict, nullable=False)
-    category_scores = Column(JSON, default=dict, nullable=False)
-    report_pdf_path = Column(String(512), nullable=True)
-    
-    # Competitor support (stored as list of URLs and their scores)
-    competitors = Column(JSON, default=list, nullable=False)              # ["https://example.com", ...]
-    competitors_scores = Column(JSON, default=dict, nullable=False)       # {"https://example.com": 78.5, ...}
-
-    # Relationships
-    user = relationship("User", back_populates="audits")
-
-    __table_args__ = (
-        Index("ix_audit_user_url", "user_id", "url"),
-        Index("ix_audit_created_at", "created_at"),
-    )
-
-    def __repr__(self):
-        return f"<Audit id={self.id} url={self.url} grade={self.grade} score={self.overall_score}>"
-
-
-class Schedule(Base, TimestampMixin):
-    __tablename__ = "schedules"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    url = Column(String(2048), nullable=False, index=True)
-    cron = Column(String(100), nullable=False)  # e.g. "0 0 * * *"
-    active = Column(Boolean, default=True, nullable=False)
-    last_run_at = Column(DateTime(timezone=True), nullable=True)
-    next_run_at = Column(DateTime(timezone=True), nullable=True)
-    notification_email = Column(String(255), nullable=True)  # optional override
-
-    # Relationships
-    user = relationship("User", back_populates="schedules")
-
-    def __repr__(self):
-        return f"<Schedule id={self.id} url={self.url} active={self.active} cron={self.cron}>"
+if __name__ == '__main__':
+    # Standard Railway port is 8080
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run('app.main:app', host='0.0.0.0', port=port)
