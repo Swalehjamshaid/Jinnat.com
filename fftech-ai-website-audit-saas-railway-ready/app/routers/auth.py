@@ -1,4 +1,5 @@
 import os
+import httpx  # Added for Resend API calls
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -18,30 +19,53 @@ def get_db():
     finally:
         db.close()
 
-def send_email(to_email: str, subject: str, body: str):
-    host = os.getenv('SMTP_HOST')
-    user = os.getenv('SMTP_USER')
-    password = os.getenv('SMTP_PASS')
-    from_email = os.getenv('FROM_EMAIL', 'no-reply@fftech.ai')
-    if not host or not user or not password:
-        print('=== EMAIL (console) ===')
-        print('TO:', to_email); print('SUBJECT:', subject); print(body)
+async def send_resend_email(to_email: str, subject: str, html_content: str):
+    """
+    Uses the Resend API Key to send actual emails.
+    """
+    if not settings.RESEND_API_KEY:
+        print('=== EMAIL (Console Only - Key Missing) ===')
+        print(f'TO: {to_email}\nSUBJECT: {subject}\n{html_content}')
         return
-    import smtplib
-    from email.mime.text import MIMEText
-    msg = MIMEText(body, 'html'); msg['Subject']=subject; msg['From']=from_email; msg['To']=to_email
-    with smtplib.SMTP(host, int(os.getenv('SMTP_PORT','587'))) as s:
-        s.starttls(); s.login(user, password); s.sendmail(from_email, [to_email], msg.as_string())
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": f"{settings.BRAND_NAME} <onboarding@resend.dev>",
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content,
+            },
+        )
+        if response.status_code != 200:
+            print(f"Resend Error: {response.text}")
 
 @router.post('/api/auth/request-link')
 async def request_link(payload: dict, db: Session = Depends(get_db)):
     email = payload.get('email')
     if not email:
-        raise HTTPException(status_code=400, detail='email required')
+        raise HTTPException(status_code=400, detail='Email required')
+    
     token = serializer.dumps(email)
-    link = f"{settings.BASE_URL}/api/auth/verify?token={token}"
-    send_email(email, f"{settings.BRAND_NAME} Sign-in Link", f"Click to sign in: <a href='{link}'>Sign in</a>")
-    return {"message":"Email sent"}
+    
+    # FIX: Using PUBLIC_URL to match our config naming
+    base_url = getattr(settings, "PUBLIC_URL", "http://localhost:8000")
+    link = f"{base_url}/api/auth/verify?token={token}"
+    
+    email_body = f"""
+        <h3>Welcome to {settings.BRAND_NAME}</h3>
+        <p>Click the button below to sign in to your AI Website Audit dashboard:</p>
+        <a href='{link}' style='background-color:#2563eb; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>Sign In to Dashboard</a>
+        <p>If the button doesn't work, copy and paste this link: {link}</p>
+    """
+    
+    await send_resend_email(email, f"{settings.BRAND_NAME} Sign-in Link", email_body)
+    return {"message": "Verification email sent. Please check your inbox."}
 
 @router.get('/api/auth/verify')
 async def verify(token: str, db: Session = Depends(get_db)):
@@ -51,10 +75,16 @@ async def verify(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail='Link expired')
     except BadSignature:
         raise HTTPException(status_code=400, detail='Invalid token')
-    user = db.query(User).filter(User.email==email).first()
+    
+    user = db.query(User).filter(User.email == email).first()
     if not user:
         user = User(email=email, is_verified=True)
-        db.add(user); db.commit(); db.refresh(user)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
     else:
-        user.is_verified = True; db.commit()
+        user.is_verified = True
+        db.commit()
+    
+    # Redirect to the verify page with email to trigger frontend confirmation
     return RedirectResponse(url=f"/verify?email={email}")
