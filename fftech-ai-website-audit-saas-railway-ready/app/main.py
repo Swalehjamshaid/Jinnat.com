@@ -1,7 +1,7 @@
 import os
 import uvicorn
 from fastapi import FastAPI, Depends, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
@@ -22,51 +22,66 @@ app.include_router(api_router)
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 
-def run_migrations():
+def fix_database_schema():
     """
-    Manually adds missing columns to the database.
-    This fixes the 'UndefinedColumn' error on Railway.
+    Manually injects missing columns into the database.
+    This resolves 'psycopg2.errors.UndefinedColumn' errors on Railway.
     """
     with engine.connect() as conn:
-        # We use a PostgreSQL DO block to safely add columns without crashing if they exist
         conn.execute(text("""
             DO $$ 
             BEGIN 
+                -- Add 'plan' column
                 BEGIN
                     ALTER TABLE users ADD COLUMN plan VARCHAR(50) DEFAULT 'free';
                 EXCEPTION
-                    WHEN duplicate_column THEN RAISE NOTICE 'column plan already exists';
+                    WHEN duplicate_column THEN NULL;
                 END;
+                -- Add 'audit_count' column
+                BEGIN
+                    ALTER TABLE users ADD COLUMN audit_count INTEGER DEFAULT 0;
+                EXCEPTION
+                    WHEN duplicate_column THEN NULL;
+                END;
+                -- Add 'is_verified' column
+                BEGIN
+                    ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT FALSE;
+                EXCEPTION
+                    WHEN duplicate_column THEN NULL;
+                END;
+                -- Add 'verification_token' column
                 BEGIN
                     ALTER TABLE users ADD COLUMN verification_token VARCHAR(255);
                 EXCEPTION
-                    WHEN duplicate_column THEN RAISE NOTICE 'column verification_token already exists';
+                    WHEN duplicate_column THEN NULL;
                 END;
+                -- Add 'token_expiry' column
                 BEGIN
                     ALTER TABLE users ADD COLUMN token_expiry INTEGER;
                 EXCEPTION
-                    WHEN duplicate_column THEN RAISE NOTICE 'column token_expiry already exists';
+                    WHEN duplicate_column THEN NULL;
                 END;
+                -- Add 'created_at' column
                 BEGIN
                     ALTER TABLE users ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
                 EXCEPTION
-                    WHEN duplicate_column THEN RAISE NOTICE 'column created_at already exists';
+                    WHEN duplicate_column THEN NULL;
                 END;
             END $$;
         """))
         conn.commit()
-        print("Database migration check successful.")
+        print("Database schema migration check complete.")
 
 @app.on_event('startup')
 def on_startup():
     # 1. Create tables if they don't exist
     Base.metadata.create_all(bind=engine)
-    # 2. Add missing columns to existing tables
+    # 2. Fix existing tables if columns are missing
     try:
-        run_migrations()
+        fix_database_schema()
     except Exception as e:
-        print(f"Migration warning: {e}")
-    # 3. Setup folders
+        print(f"Migration error: {e}")
+    # 3. Setup directories
     os.makedirs('storage/reports', exist_ok=True)
     try:
         ensure_resend_ready()
@@ -76,6 +91,18 @@ def on_startup():
 @app.get('/', response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse('index.html', {"request": request})
+
+@app.get('/dashboard', response_class=HTMLResponse)
+async def dashboard(request: Request, db: Session = Depends(get_db)):
+    token = request.cookies.get('session')
+    user = None
+    if token:
+        from app.auth.tokens import decode_token
+        payload = decode_token(token)
+        if payload:
+            email = payload.get('sub')
+            user = db.query(User).filter(User.email == email).first()
+    return templates.TemplateResponse('dashboard.html', {"request": request, "user": user})
 
 @app.post('/request-login', response_class=RedirectResponse)
 async def request_login(email: str = Form(...), db: Session = Depends(get_db)):
