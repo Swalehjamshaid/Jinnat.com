@@ -1,7 +1,7 @@
 import os
 import uvicorn
 from fastapi import FastAPI, Depends, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
@@ -22,13 +22,13 @@ app.include_router(api_router)
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 
-def fix_database_schema():
+def run_migrations():
     """
-    Manually injects missing columns into the database.
-    This resolves the 'psycopg2.errors.UndefinedColumn' error on Railway.
+    Manually adds missing columns to the database.
+    This fixes the 'UndefinedColumn' error on Railway.
     """
     with engine.connect() as conn:
-        # We use a PostgreSQL DO block to safely add columns if they don't exist
+        # We use a PostgreSQL DO block to safely add columns without crashing if they exist
         conn.execute(text("""
             DO $$ 
             BEGIN 
@@ -52,31 +52,21 @@ def fix_database_schema():
                 EXCEPTION
                     WHEN duplicate_column THEN RAISE NOTICE 'column created_at already exists';
                 END;
-                BEGIN
-                    ALTER TABLE audits ADD COLUMN overall_score INTEGER DEFAULT 0;
-                EXCEPTION
-                    WHEN duplicate_column THEN RAISE NOTICE 'column overall_score already exists';
-                END;
-                BEGIN
-                    ALTER TABLE audits ADD COLUMN grade VARCHAR(5) DEFAULT 'F';
-                EXCEPTION
-                    WHEN duplicate_column THEN RAISE NOTICE 'column grade already exists';
-                END;
             END $$;
         """))
         conn.commit()
-        print("Database schema migration check complete.")
+        print("Database migration check successful.")
 
 @app.on_event('startup')
 def on_startup():
-    # 1. Create tables if they don't exist at all
+    # 1. Create tables if they don't exist
     Base.metadata.create_all(bind=engine)
-    # 2. Force add missing columns to existing tables
+    # 2. Add missing columns to existing tables
     try:
-        fix_database_schema()
+        run_migrations()
     except Exception as e:
-        print(f"Migration error: {e}")
-    # 3. Setup directories
+        print(f"Migration warning: {e}")
+    # 3. Setup folders
     os.makedirs('storage/reports', exist_ok=True)
     try:
         ensure_resend_ready()
@@ -86,18 +76,6 @@ def on_startup():
 @app.get('/', response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse('index.html', {"request": request})
-
-@app.get('/dashboard', response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db)):
-    token = request.cookies.get('session')
-    user = None
-    if token:
-        from app.auth.tokens import decode_token
-        payload = decode_token(token)
-        if payload:
-            email = payload.get('sub')
-            user = db.query(User).filter(User.email == email).first()
-    return templates.TemplateResponse('dashboard.html', {"request": request, "user": user})
 
 @app.post('/request-login', response_class=RedirectResponse)
 async def request_login(email: str = Form(...), db: Session = Depends(get_db)):
