@@ -3,12 +3,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import time
 
-# Absolute imports are used here to ensure the Docker container 
-# can resolve the paths regardless of the current working directory.
+# Absolute imports ensure the Docker container finds the modules correctly
 from app.db import get_db
 from app.models import User, Audit, Schedule
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
-from app.audit.report import run_audit, build_pdf
+from app.audit.runner import run_audit
+from app.audit.report import build_pdf
 from app.auth.tokens import decode_token
 
 router = APIRouter(prefix='/api', tags=['api'])
@@ -144,7 +144,6 @@ def competitor_report(body: AuditCreate, request: Request, db: Session = Depends
     
     comp_result = {'base': {'url': base_url, 'result': base}, 'competitors': results}
     
-    # Absolute import for the competitor report logic
     from app.audit.competitor_report import build_competitor_pdf
     out_path = '/tmp/competitor_report.pdf'
     build_competitor_pdf(comp_result, out_path)
@@ -160,6 +159,7 @@ def resend_status(request: Request):
     if not token:
         raise HTTPException(401, 'Authentication required')
     
+    from app.auth.tokens import decode_token
     payload = decode_token(token)
     if not payload:
         raise HTTPException(401, 'Invalid token')
