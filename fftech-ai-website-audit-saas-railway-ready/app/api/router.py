@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-# Absolute imports are more stable for Railway deployments
+# Absolute imports starting from the 'app' package
 from app.db import get_db
 from app.models import User, Audit, Schedule
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
@@ -53,10 +53,10 @@ async def create_audit(body: AuditCreate, request: Request, db: Session = Depend
     if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
         raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
     
-    # Trigger the analysis
+    # Analyze the site
     result = await analyze(body.url)
     
-    # Save to database
+    # Save to Postgres
     audit = Audit(
         user_id=user.id, 
         url=str(body.url), 
@@ -81,7 +81,7 @@ def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
     
     out_path = f"storage/reports/audit_{audit_id}.pdf"
     
-    # Generate the 5-page PDF
+    # Build the 5-page PDF report
     build_pdf(
         audit.id, 
         audit.url, 
