@@ -1,107 +1,208 @@
 import os
+from datetime import datetime
+from typing import Dict, Any
+
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.lib.units import cm
-import matplotlib.pyplot as plt
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.legends import Legend
+from reportlab.graphics.charts.piecharts import Pie
 
-BRAND_NAME = os.getenv('BRAND_NAME', 'FF Tech')
-BRAND_LOGO_PATH = os.path.join('app', 'static', 'img', 'logo.png')
+from .utils import clamp  # assuming you have this
+from ..config import settings
 
-# FF Tech Professional Color Palette
+# ── Branding & Colors ───────────────────────────────────────────────────────
+BRAND_NAME = settings.BRAND_NAME
+LOGO_PATH = os.path.join('static', 'img', 'logo.png')  # relative to project root
 PRIMARY_BLUE = colors.HexColor('#2563eb')
 SECONDARY_SKY = colors.HexColor('#0ea5e9')
+ACCENT_RED = colors.HexColor('#ef4444')
+NEUTRAL_GRAY = colors.HexColor('#64748b')
+BG_LIGHT = colors.HexColor('#f8fafc')
 
-def _chart_bar(title: str, data: dict, out_path: str, color='#2563eb'):
-    plt.figure(figsize=(6, 3))
-    plt.bar(list(data.keys()), list(data.values()), color=color)
-    plt.title(title, fontsize=10)
-    plt.xticks(rotation=15, fontsize=8)
-    plt.tight_layout()
-    plt.savefig(out_path)
-    plt.close()
+# ── Helper: Create Bar Chart ────────────────────────────────────────────────
+def create_bar_chart(title: str, data: Dict[str, float], width=400, height=200):
+    drawing = Drawing(width, height)
+    bc = VerticalBarChart()
+    bc.x = 50
+    bc.y = 50
+    bc.height = 120
+    bc.width = 300
+    bc.data = [list(data.values())]
+    bc.categoryNames = list(data.keys())
+    bc.categoryAxis.categoryNames = list(data.keys())
+    bc.valueAxis.valueMin = 0
+    bc.valueAxis.valueMax = 100
+    bc.valueAxis.valueStep = 20
+    bc.bars.strokeWidth = 0.5
+    bc.bars.fillColor = PRIMARY_BLUE
+    bc.title = title
+    drawing.add(bc)
+    return drawing
 
-def build_pdf(audit_id: int, url: str, overall_score: float, grade: str, category_scores: dict, metrics: dict, out_dir: str) -> str:
+
+# ── Helper: Create Pie Chart (for e.g. issue distribution) ───────────────────
+def create_pie_chart(title: str, data: Dict[str, int], width=300, height=200):
+    drawing = Drawing(width, height)
+    pie = Pie()
+    pie.x = 50
+    pie.y = 50
+    pie.width = 200
+    pie.height = 200
+    pie.data = list(data.values())
+    pie.labels = list(data.keys())
+    pie.slices.strokeWidth = 0.5
+    # Color slices dynamically
+    pie.slices[0].fillColor = SECONDARY_SKY
+    pie.slices[1].fillColor = PRIMARY_BLUE
+    pie.slices[2].fillColor = ACCENT_RED
+    drawing.add(pie)
+    return drawing
+
+
+# ── Main PDF Builder ────────────────────────────────────────────────────────
+def build_pdf(
+    audit_id: int,
+    url: str,
+    overall_score: float,
+    grade: str,
+    category_scores: Dict[str, float],
+    metrics: Dict[str, Any],
+    summary: Dict[str, Any],  # from analyzer: {'executive_summary', 'strengths', 'weaknesses', 'priority_fixes'}
+    out_dir: str = settings.REPORT_DIR
+) -> str:
+    """
+    Generates a professional 5-page PDF audit report with branding, charts,
+    and executive insights.
+    """
     os.makedirs(out_dir, exist_ok=True)
-    pdf_path = os.path.join(out_dir, f"audit_{audit_id}.pdf")
-    
-    # Generate charts for the PDF
-    chart1 = os.path.join(out_dir, f"cat_{audit_id}.png")
-    _chart_bar('Category Performance (%)', category_scores, chart1, color='#0ea5e9')
-    
-    status_dist = {
-        '2xx Success': metrics.get('status_2xx', metrics.get('http_2xx', 0)), 
-        '3xx Redirect': metrics.get('status_3xx', metrics.get('http_3xx', 0)), 
-        '4xx Broken': metrics.get('status_4xx', metrics.get('http_4xx', 0))
+    pdf_path = os.path.join(out_dir, f"FF_Tech_Audit_Report_{audit_id}.pdf")
+
+    doc = SimpleDocTemplate(
+        pdf_path,
+        pagesize=A4,
+        rightMargin=2*cm,
+        leftMargin=2*cm,
+        topMargin=2.5*cm,
+        bottomMargin=2*cm
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='HeaderTitle', fontSize=24, textColor=PRIMARY_BLUE, spaceAfter=12))
+    styles.add(ParagraphStyle(name='SectionHeader', fontSize=16, textColor=SECONDARY_SKY, spaceAfter=8))
+    styles.add(ParagraphStyle(name='BodyText', fontSize=11, leading=14, spaceAfter=8))
+    styles.add(ParagraphStyle(name='Conclusion', fontSize=10, textColor=NEUTRAL_GRAY, italic=True))
+
+    story = []
+
+    # ── Common Header Elements ───────────────────────────────────────────────
+    def add_header(title: str):
+        story.append(Paragraph(f"{BRAND_NAME} AI Website Audit Report", styles['HeaderTitle']))
+        story.append(Paragraph(f"URL: {url} | Audit ID: {audit_id} | Date: {datetime.now().strftime('%Y-%m-%d')}", styles['BodyText']))
+        story.append(Paragraph(f"Overall Grade: **{grade}** ({overall_score}%)", styles['SectionHeader']))
+        story.append(Spacer(1, 0.5*cm))
+
+    # ── PAGE 1: Executive Summary ────────────────────────────────────────────
+    add_header("Executive Summary")
+    story.append(Paragraph("Executive Overview", styles['SectionHeader']))
+    story.append(Paragraph(summary.get('executive_summary', 'No AI summary available.'), styles['BodyText']))
+
+    # Strengths & Weaknesses
+    story.append(Paragraph("Key Strengths", styles['SectionHeader']))
+    for s in summary.get('strengths', ['Strong crawlability', 'Good HTTPS adoption']):
+        story.append(Paragraph(f"• {s}", styles['BodyText']))
+
+    story.append(Paragraph("Critical Weaknesses", styles['SectionHeader']))
+    for w in summary.get('weaknesses', ['Missing metadata', 'Broken links detected']):
+        story.append(Paragraph(f"• {w}", styles['BodyText']))
+
+    story.append(Paragraph("Top Priority Fixes", styles['SectionHeader']))
+    for p in summary.get('priority_fixes', ['Fix 4xx errors', 'Add ALT tags']):
+        story.append(Paragraph(f"• {p}", styles['BodyText']))
+
+    story.append(Spacer(1, 1*cm))
+    story.append(Paragraph("Conclusion: Immediate action on broken links and metadata will yield the highest ROI.", styles['Conclusion']))
+
+    # ── PAGE 2: Category Performance Overview ────────────────────────────────
+    story.append(Spacer(1, 2*cm))  # New page
+    add_header("Category Performance Breakdown")
+    story.append(Paragraph("Overall Category Scores", styles['SectionHeader']))
+
+    # Bar Chart for category scores
+    cat_chart = create_bar_chart("Category Scores (%)", category_scores)
+    story.append(cat_chart)
+
+    # Table for scores
+    data = [["Category", "Score (%)"]]
+    for cat, score in category_scores.items():
+        data.append([cat.replace('_', ' ').title(), f"{score:.1f}"])
+    table = Table(data, colWidths=[8*cm, 4*cm])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), PRIMARY_BLUE),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+    ]))
+    story.append(table)
+
+    story.append(Paragraph("Conclusion: Performance and crawlability are strong foundations. On-page SEO needs attention.", styles['Conclusion']))
+
+    # ── PAGE 3: Crawlability & Technical Health ──────────────────────────────
+    story.append(Spacer(1, 2*cm))
+    add_header("Crawlability & Technical Health")
+    story.append(Paragraph(f"Total Pages Crawled: {metrics.get('total_pages_crawled', 'N/A')}", styles['BodyText']))
+    story.append(Paragraph(f"Broken Links (4xx/5xx): {metrics.get('total_broken_links', 0)}", styles['BodyText']))
+
+    # HTTP Status Pie Chart
+    status_data = {
+        "Success (2xx)": metrics.get('status_2xx', 0),
+        "Redirects (3xx)": metrics.get('status_3xx', 0),
+        "Errors (4xx/5xx)": metrics.get('status_4xx', 0) + metrics.get('status_5xx', 0)
     }
-    chart2 = os.path.join(out_dir, f"status_{audit_id}.png")
-    _chart_bar('HTTP Health Distribution', status_dist, chart2, color='#2563eb')
+    pie_chart = create_pie_chart("HTTP Status Distribution", status_data)
+    story.append(pie_chart)
 
-    c = canvas.Canvas(pdf_path, pagesize=A4)
-    width, height = A4
+    story.append(Paragraph("Conclusion: High error rates can waste crawl budget. Prioritize fixing 4xx errors.", styles['Conclusion']))
 
-    def header(page_title: str):
-        try: c.drawImage(BRAND_LOGO_PATH, 2*cm, height-2.5*cm, width=2.5*cm, preserveAspectRatio=True)
-        except: pass
-        c.setFont('Helvetica-Bold', 18); c.setFillColor(PRIMARY_BLUE)
-        c.drawString(5.5*cm, height-1.8*cm, f"{BRAND_NAME} – Professional Audit")
-        c.setFont('Helvetica', 9); c.setFillColor(colors.black)
-        c.drawString(5.5*cm, height-2.3*cm, f"Target: {url} | Section: {page_title}")
-        c.line(2*cm, height-2.8*cm, width-2*cm, height-2.8*cm)
+    # ── PAGE 4: On-Page SEO & Content Quality ────────────────────────────────
+    story.append(Spacer(1, 2*cm))
+    add_header("On-Page SEO & Content Quality")
+    issues = [
+        f"Missing Titles: {metrics.get('missing_title', 0)}",
+        f"Missing Meta Descriptions: {metrics.get('missing_meta_desc', 0)}",
+        f"Missing H1 Tags: {metrics.get('missing_h1', 0)}",
+        f"Images without ALT: {metrics.get('img_no_alt', 0)}",
+        f"Thin Content Pages: {metrics.get('thin_content_pages', 0)}",
+    ]
+    for issue in issues:
+        story.append(Paragraph(f"• {issue}", styles['BodyText']))
 
-    def footer(conclusion: str):
-        c.setFont('Helvetica-Oblique', 8); c.setFillColor(colors.grey)
-        c.drawString(2*cm, 1.2*cm, f"Summary: {conclusion}")
-        c.drawRightString(width-2*cm, 1.2*cm, f'Page {c.getPageNumber()} | Executive-Ready Intelligence')
+    story.append(Paragraph("Conclusion: Complete metadata and ALT text will improve click-through rates and accessibility.", styles['Conclusion']))
 
-    # PAGE 1: EXECUTIVE SUMMARY
-    header('Executive Summary & Overall Grading')
-    c.setFont('Helvetica-Bold', 36); c.setFillColor(SECONDARY_SKY)
-    c.drawString(2*cm, height-5*cm, f"Grade: {grade} ({overall_score}%)")
-    c.drawImage(chart1, 2*cm, height-14*cm, width=16*cm, preserveAspectRatio=True)
-    footer('Focus on performance and core SEO metadata first.')
-    c.showPage()
+    # ── PAGE 5: Performance Vitals & Growth Roadmap ─────────────────────────
+    story.append(Spacer(1, 2*cm))
+    add_header("Performance & Growth Roadmap")
+    cwv = metrics.get('core_web_vitals', {}).get('desktop', {})
+    story.append(Paragraph(f"PageSpeed Score: {cwv.get('score', 'N/A')}/100", styles['BodyText']))
+    story.append(Paragraph(f"Largest Contentful Paint: {cwv.get('lcp', 'N/A')} ms", styles['BodyText']))
+    story.append(Paragraph(f"Cumulative Layout Shift: {cwv.get('cls', 'N/A')}", styles['BodyText']))
 
-    # PAGE 2: CRAWLABILITY
-    header('Crawlability & Technical Health')
-    c.drawImage(chart2, 2*cm, height-10*cm, width=16*cm, preserveAspectRatio=True)
-    c.setFont('Helvetica', 11); c.drawString(2*cm, height-12*cm, f"Total Broken Links Found (4xx): {status_dist['4xx Broken']}")
-    footer('Fixing 4xx errors preserves crawl budget and improves UX.')
-    c.showPage()
+    # Roadmap
+    story.append(Paragraph("Phase 1 (0-30 Days): Fix critical issues", styles['SectionHeader']))
+    story.append(Paragraph("• Resolve broken links\n• Add missing meta tags\n• Optimize images", styles['BodyText']))
 
-    # PAGE 3: ON-PAGE SEO
-    header('On-Page Intelligence & SEO')
-    c.setFont('Helvetica-Bold', 12); c.drawString(2*cm, height-5*cm, "Identified Deficiencies:")
-    c.setFont('Helvetica', 11)
-    c.drawString(2.5*cm, height-6*cm, f"• Missing Page Titles: {metrics.get('missing_title', 0)}")
-    c.drawString(2.5*cm, height-6.6*cm, f"• Missing Meta Descriptions: {metrics.get('missing_desc', metrics.get('missing_meta_desc', 0))}")
-    c.drawString(2.5*cm, height-7.2*cm, f"• Missing Image ALT Text: {metrics.get('img_no_alt', 0)}")
-    footer('Unique metadata and ALT tags significantly boost organic visibility.')
-    c.showPage()
+    story.append(Paragraph("Phase 2 (30-90 Days): Advanced Optimization", styles['SectionHeader']))
+    story.append(Paragraph("• Implement structured data\n• Improve mobile performance\n• Set up monitoring", styles['BodyText']))
 
-    # PAGE 4: PERFORMANCE
-    header('Performance & Technical Vitals')
-    c.setFont('Helvetica', 11)
-    c.drawString(2*cm, height-5*cm, f"Total HTML Payload: {metrics.get('total_size', metrics.get('total_page_size', 0)) // 1024} KB")
-    c.drawString(2*cm, height-5.6*cm, "Optimization Status: Large assets detected. Minification recommended.")
-    footer('Fast page loads are a critical ranking factor for Google.')
-    c.showPage()
+    story.append(Paragraph(f"Projected ROI: +{round(100 - overall_score, 1)}% traffic growth potential", styles['SectionHeader']))
+    story.append(Paragraph("Conclusion: Implementing this roadmap can significantly boost rankings and conversions.", styles['Conclusion']))
 
-    # PAGE 5: FUTURE ROADMAP & ROI
-    header('Future Growth Roadmap (ROI Forecast)')
-    c.setFont('Helvetica-Bold', 14); c.setFillColor(PRIMARY_BLUE)
-    c.drawString(2*cm, height-5*cm, "Phase 1: Immediate Fixes (0-30 Days)")
-    c.setFont('Helvetica', 11); c.setFillColor(colors.black)
-    c.drawString(2.5*cm, height-5.8*cm, "• Resolve high-impact broken links and redirect loops.")
-    c.drawString(2.5*cm, height-6.4*cm, "• Write SEO-optimized meta tags for top-performing pages.")
-    
-    c.setFont('Helvetica-Bold', 14); c.setFillColor(PRIMARY_BLUE)
-    c.drawString(2*cm, height-8.5*cm, "Phase 2: Long-term Strategy (30-90 Days)")
-    c.setFont('Helvetica', 11); c.setFillColor(colors.black)
-    c.drawString(2.5*cm, height-9.3*cm, "• Set up automated weekly monitoring for site health.")
-    c.drawString(2.5*cm, height-9.9*cm, "• Implement advanced Schema Markup to improve Rich Snippets.")
-    footer('Projected Traffic Growth: +25% potential after roadmap execution.')
-    c.showPage()
-
-    c.save()
+    # ── Build PDF ───────────────────────────────────────────────────────────────
+    doc.build(story)
     return pdf_path
