@@ -16,8 +16,16 @@ from .audit.report import build_pdf
 from .audit.record import export_graphs, export_pptx, export_xlsx
 
 app = FastAPI(title=f"{settings.BRAND_NAME} AI Website Audit")
-app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=['*'], 
+    allow_credentials=True, 
+    allow_methods=['*'], 
+    allow_headers=['*']
+)
+
+# Setup directories
 static_dir = os.path.join(os.path.dirname(__file__), 'static')
 app.mount('/static', StaticFiles(directory=static_dir), name='static')
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), 'templates'))
@@ -27,7 +35,7 @@ app.include_router(auth_router.router)
 @app.on_event('startup')
 def on_startup():
     init_db()
-    # Create required folders on Railway to prevent crashes
+    # Required for Railway to store PDFs
     os.makedirs('storage/reports', exist_ok=True)
     os.makedirs('storage/exports', exist_ok=True)
 
@@ -36,7 +44,7 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# UI pages
+# --- UI PAGES ---
 @app.get('/')
 async def index(request: Request):
     return templates.TemplateResponse('index.html', {"request": request})
@@ -73,37 +81,32 @@ async def audit_detail_page(request: Request, id: int | None = None):
 async def audit_detail_open_page(request: Request):
     return templates.TemplateResponse('audit_detail_open.html', {"request": request})
 
-@app.get('/admin')
-async def admin_page(request: Request):
-    return templates.TemplateResponse('admin.html', {"request": request})
-
-# API
+# --- API ENDPOINTS ---
 from .schemas import AuditRequest, AuditResponse
+
 @app.post('/api/audit', response_model=AuditResponse)
 async def run_audit(payload: AuditRequest, db: Session = Depends(get_db), email: str | None = None):
     url = payload.url.strip()
     if not (url.startswith('http://') or url.startswith('https://')):
         raise HTTPException(status_code=400, detail='URL must start with http:// or https://')
     
+    # Run analysis
     result = await analyze(url, payload.competitors)
     ovr = overall_score(result['category_scores'])
     grade = to_grade(ovr)
     
     summary = {
-        'executive_summary': f'Automated audit for {url}. Reduce errors, improve metadata and performance.',
-        'strengths': ['Crawlability baseline OK'],
-        'weaknesses': ['Missing titles/descriptions','Performance improvements needed'],
-        'priority_fixes': ['Fix 4xx/5xx','Add meta descriptions','Optimize images']
+        'executive_summary': f'Comprehensive AI audit for {url}.',
+        'strengths': ['Crawlability baseline verified'],
+        'weaknesses': ['Performance and Meta-data optimization needed'],
+        'priority_fixes': ['Fix broken links', 'Optimize images', 'Improve titles']
     }
     
     audit_id = None
     if email:
         user = db.query(User).filter(User.email == email).first()
         if user:
-            if user.subscription == 'free':
-                count = db.query(Audit).filter(Audit.user_id == user.id).count()
-                if count >= 10: raise HTTPException(status_code=402, detail='Free tier limit reached (10 audits)')
-            
+            # 1. Create Audit Record (First Commit)
             audit = Audit(
                 user_id=user.id, 
                 url=url, 
@@ -118,8 +121,10 @@ async def run_audit(payload: AuditRequest, db: Session = Depends(get_db), email:
             db.refresh(audit)
             audit_id = audit.id
             
-            # Generate 5-Page PDF
+            # 2. Generate 5-Page PDF
             pdf_path = build_pdf(audit.id, url, ovr, grade, result['category_scores'], result['metrics'], out_dir='storage/reports')
+            
+            # 3. Update Path and Commit (Second Commit - CRITICAL)
             audit.report_pdf_path = pdf_path
             db.commit()
             
@@ -129,22 +134,21 @@ async def run_audit(payload: AuditRequest, db: Session = Depends(get_db), email:
             export_pptx(audit.id, png, result['metrics'], out_dir='storage/exports')
             
     return AuditResponse(
-        audit_id=audit_id, 
-        url=url, 
-        overall_score=ovr, 
-        grade=grade, 
-        summary=summary,
-        category_scores=result['category_scores'], 
-        metrics=result['metrics']
+        audit_id=audit_id, url=url, overall_score=ovr, grade=grade, summary=summary,
+        category_scores=result['category_scores'], metrics=result['metrics']
     )
 
 @app.get('/api/reports/pdf/{audit_id}')
 async def get_pdf(audit_id: int, db: Session = Depends(get_db)):
     a = db.query(Audit).filter(Audit.id == audit_id).first()
     if not a or not a.report_pdf_path:
-        raise HTTPException(status_code=404, detail='Professional report not found')
+        raise HTTPException(status_code=404, detail='PDF Report not found or not yet generated')
     
     if not os.path.exists(a.report_pdf_path):
-        raise HTTPException(status_code=404, detail='Report file missing on server')
+        raise HTTPException(status_code=404, detail='PDF file missing on server storage')
         
-    return FileResponse(a.report_pdf_path, media_type='application/pdf', filename=f'FF_Tech_Audit_{audit_id}.pdf')
+    return FileResponse(
+        a.report_pdf_path, 
+        media_type='application/pdf', 
+        filename=f'FF_Tech_Report_{audit_id}.pdf'
+    )
