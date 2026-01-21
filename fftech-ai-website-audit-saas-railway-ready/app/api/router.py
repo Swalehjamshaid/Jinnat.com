@@ -3,11 +3,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import time
 
-# Absolute imports to ensure the app works correctly in Docker
+# Absolute imports
 from app.db import get_db
 from app.models import User, Audit, Schedule
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
-from app.audit.report import run_audit, build_pdf  # Updated to import from report.py
+from app.audit.runner import run_audit  # FIX: Import from runner, not report
+from app.audit.report import build_pdf   # Keep this here for PDF logic
 from app.auth.tokens import decode_token
 
 router = APIRouter(prefix='/api', tags=['api'])
