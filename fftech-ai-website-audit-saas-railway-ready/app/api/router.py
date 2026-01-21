@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from ..db import get_db
-from ..models import User, Audit, Schedule
-from ..schemas import AuditCreate, OpenAuditRequest, AuditOut
-# FIXED: Changed from ..audit.runner import run_audit to analyzer
-from ..audit.analyzer import analyze 
-from ..audit.report import build_pdf
-from ..auth.tokens import decode_token
+
+# Absolute imports are more stable for Railway deployments
+from app.db import get_db
+from app.models import User, Audit, Schedule
+from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
+from app.audit.analyzer import analyze 
+from app.audit.report import build_pdf
+from app.auth.tokens import decode_token
 
 router = APIRouter(prefix='/api', tags=['api'])
 
@@ -23,20 +24,21 @@ def get_current_user(request: Request, db: Session) -> User | None:
 
 @router.post('/open-audit')
 async def open_audit(body: OpenAuditRequest, request: Request):
-    from ..settings import get_settings
+    from app.settings import get_settings
     settings = get_settings()
     ip = (request.client.host if request and request.client else 'anon')
     import time
     now = int(time.time())
     window = now // 3600
     key = f"{ip}:{window}"
+    
     if not hasattr(open_audit, 'RATE_TRACK'):
         open_audit.RATE_TRACK = {}
     count = open_audit.RATE_TRACK.get(key, 0)
     if count >= settings.RATE_LIMIT_OPEN_PER_HOUR:
         raise HTTPException(429, 'Rate limit exceeded for open audits. Please try later or sign in.')
+    
     open_audit.RATE_TRACK[key] = count + 1
-    # Call the correct function name: analyze
     return await analyze(body.url)
 
 @router.post('/audit', response_model=AuditOut)
@@ -45,16 +47,14 @@ async def create_audit(body: AuditCreate, request: Request, db: Session = Depend
     if not user or not user.is_verified:
         raise HTTPException(401, 'Authentication required')
     
-    from ..settings import get_settings
+    from app.settings import get_settings
     settings = get_settings()
     
     if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
         raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
     
-    # Call the correct function name: analyze
     result = await analyze(body.url)
     
-    # Map the result to your Audit model
     audit = Audit(
         user_id=user.id, 
         url=str(body.url), 
@@ -87,23 +87,20 @@ def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
     if not audit:
         raise HTTPException(404, 'Not found')
     
-    # Ensure storage path is set correctly for your build_pdf function
     out_path = f"storage/reports/audit_{audit_id}.pdf"
-    build_pdf(audit.id, audit.url, audit.overall_score, audit.grade, audit.result_json.get('category_scores'), audit.result_json.get('metrics'), "storage/reports")
+    
+    # Ensure variables match the build_pdf signature
+    build_pdf(
+        audit.id, 
+        audit.url, 
+        audit.overall_score, 
+        audit.grade, 
+        audit.result_json.get('category_scores'), 
+        audit.result_json.get('metrics'), 
+        "storage/reports"
+    )
     
     return FileResponse(out_path, media_type='application/pdf', filename=f'FF_Tech_Report_{audit_id}.pdf')
-
-@router.post('/schedule')
-def create_schedule(url: str, request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(401, 'Authentication required')
-    if user.plan == 'free':
-        raise HTTPException(403, 'Subscription required to create schedules')
-    sc = Schedule(user_id=user.id, url=url)
-    db.add(sc)
-    db.commit()
-    return {"message": "Scheduled daily audit created", "id": sc.id}
 
 @router.post('/competitor-audit')
 async def competitor_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
@@ -123,27 +120,6 @@ async def competitor_audit(body: AuditCreate, request: Request, db: Session = De
         'overall':{
             'base': base.get('overall_score'),
             'competitors':[{'url': it['url'], 'score': it['result'].get('overall_score')} for it in results]
-        },
-        'performance':{
-            'base': base.get('category_scores', {}).get('Performance'),
-            'competitors':[{'url': it['url'], 'performance': it['result'].get('category_scores', {}).get('Performance')} for it in results]
         }
     }
     return {'base': {'url': base_url, 'result': base}, 'competitors': results, 'comparison': comparison}
-
-@router.get('/admin/resend-status')
-def resend_status(request: Request):
-    from ..settings import get_settings
-    settings = get_settings()
-    admins = [e.strip().lower() for e in (settings.ADMIN_EMAILS or '').split(',') if e.strip()]
-    token = request.cookies.get('session')
-    if not token:
-        raise HTTPException(401, 'Authentication required')
-    payload = decode_token(token)
-    if not payload:
-        raise HTTPException(401, 'Invalid token')
-    email = (payload.get('sub') or '').lower()
-    if admins and email not in admins:
-        raise HTTPException(403, 'Admin only')
-    from ..services.resend_admin import get_resend_domain_status
-    return get_resend_domain_status()
