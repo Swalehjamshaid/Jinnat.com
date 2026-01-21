@@ -53,8 +53,10 @@ async def create_audit(body: AuditCreate, request: Request, db: Session = Depend
     if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
         raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
     
+    # Trigger the analysis
     result = await analyze(body.url)
     
+    # Save to database
     audit = Audit(
         user_id=user.id, 
         url=str(body.url), 
@@ -68,16 +70,6 @@ async def create_audit(body: AuditCreate, request: Request, db: Session = Depend
     db.refresh(audit)
     return audit
 
-@router.get('/audit/{audit_id}', response_model=AuditOut)
-def get_audit(audit_id: int, request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(401, 'Authentication required')
-    audit = db.query(Audit).filter(Audit.id == audit_id, Audit.user_id == user.id).first()
-    if not audit:
-        raise HTTPException(404, 'Not found')
-    return audit
-
 @router.get('/audit/{audit_id}/report.pdf')
 def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -89,7 +81,7 @@ def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
     
     out_path = f"storage/reports/audit_{audit_id}.pdf"
     
-    # Ensure variables match the build_pdf signature
+    # Generate the 5-page PDF
     build_pdf(
         audit.id, 
         audit.url, 
@@ -101,25 +93,3 @@ def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
     )
     
     return FileResponse(out_path, media_type='application/pdf', filename=f'FF_Tech_Report_{audit_id}.pdf')
-
-@router.post('/competitor-audit')
-async def competitor_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    if not user or not user.is_verified:
-        raise HTTPException(401, 'Authentication required')
-    
-    base_url = str(body.url)
-    competitors = [str(u) for u in (body.competitors or [])][:5]
-    results = []
-    
-    base = await analyze(base_url)
-    for cu in competitors:
-        results.append({'url': cu, 'result': await analyze(cu)})
-    
-    comparison = {
-        'overall':{
-            'base': base.get('overall_score'),
-            'competitors':[{'url': it['url'], 'score': it['result'].get('overall_score')} for it in results]
-        }
-    }
-    return {'base': {'url': base_url, 'result': base}, 'competitors': results, 'comparison': comparison}
