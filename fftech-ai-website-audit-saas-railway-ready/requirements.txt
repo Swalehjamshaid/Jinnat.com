@@ -1,41 +1,36 @@
-# --- CORE WEB FRAMEWORK & SERVER ---
+# --- CORE WEB FRAMEWORK ---
 fastapi==0.110.0
 uvicorn[standard]>=0.24.0
 jinja2==3.1.2
 python-multipart==0.0.9
 
 # --- DATABASE & MODELS ---
-# Using Pydantic 1.10 to maintain stability with internal BaseSettings
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 pydantic==1.10.13
 
 # --- AUDIT ENGINE (Scraping & Analysis) ---
-# httpx added to resolve ModuleNotFoundError
 httpx==0.26.0
 aiohttp==3.9.3
 beautifulsoup4==4.12.2
 lxml==5.1.0
 
-# --- AUTHENTICATION & SECURITY ---
-# itsdangerous added to resolve ModuleNotFoundError for login tokens
+# --- AI & SECURITY ---
+google-generativeai==0.8.4
 itsdangerous==2.1.2
 PyJWT==2.8.0
 email-validator==2.1.0.post1
 
-# --- MULTI-FORMAT REPORTING ---
-# fpdf2 for 5-page PDF; pptx/openpyxl for executive exports
+# --- REPORTING (PDF/XLSX/PPTX) ---
 fpdf2==2.7.7
 reportlab==4.0.8
 python-pptx==0.6.23
 openpyxl==3.1.2
 
-# --- DATA INTELLIGENCE & ROI ---
-# numpy pinned <2.0.0 to prevent breaking changes with pandas/matplotlib
+# --- DATA & ROI ---
 matplotlib==3.8.2
 pandas==2.1.4
 numpy<2.0.0
 
 # --- AUTOMATION ---
-# Supports scheduled audits and email reports
 APScheduler==3.10.4
