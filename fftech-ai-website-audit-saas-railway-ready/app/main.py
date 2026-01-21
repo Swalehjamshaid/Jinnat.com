@@ -90,6 +90,9 @@ async def run_audit(payload: AuditRequest, db: Session = Depends(get_db), email:
     if not (url.startswith('http://') or url.startswith('https://')):
         raise HTTPException(status_code=400, detail='URL must start with http:// or https://')
     
+    # Check if email is in payload if not in query params
+    user_email = email or getattr(payload, 'email', None)
+    
     # 1. Run Analysis
     result = await analyze(url, payload.competitors)
     ovr = overall_score(result['category_scores'])
@@ -103,10 +106,11 @@ async def run_audit(payload: AuditRequest, db: Session = Depends(get_db), email:
     }
     
     audit_id = None
-    if email:
-        user = db.query(User).filter(User.email == email).first()
+    # ONLY if we have a user email do we save to DB and make a PDF
+    if user_email:
+        user = db.query(User).filter(User.email == user_email).first()
         if user:
-            # 2. Save Initial Audit
+            # 2. Save Initial Audit record to get an ID
             audit = Audit(
                 user_id=user.id, 
                 url=url, 
@@ -121,7 +125,7 @@ async def run_audit(payload: AuditRequest, db: Session = Depends(get_db), email:
             db.refresh(audit)
             audit_id = audit.id
             
-            # 3. Build PDF and Update Path in Database
+            # 3. Build PDF and Update Path in Database (The 5-Page Report)
             pdf_path = build_pdf(audit.id, url, ovr, grade, result['category_scores'], result['metrics'], out_dir='storage/reports')
             audit.report_pdf_path = pdf_path
             db.commit()
