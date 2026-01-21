@@ -7,7 +7,7 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     email = Column(String, unique=True, index=True, nullable=False)
-    is_verified = Column(Boolean, default=False)
+    is_verified = Column(Boolean, default=False) # Must match Step 1
     subscription = Column(String, default='free')
     audits = relationship('Audit', back_populates='user')
 
