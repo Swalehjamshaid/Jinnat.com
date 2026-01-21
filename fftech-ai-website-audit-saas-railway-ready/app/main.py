@@ -1,40 +1,50 @@
-
 import uvicorn
 from fastapi import FastAPI, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from .db import Base, engine, get_db
-from .models import User
-from .auth.router import router as auth_router
-from .api.router import router as api_router
-from .services.resend_admin import ensure_resend_ready
+
+# UPGRADE: Switched to absolute imports to resolve ModuleNotFoundError
+from app.db import Base, engine, get_db
+from app.models import User
+from app.auth.router import router as auth_router
+from app.api.router import router as api_router
+from app.services.resend_admin import ensure_resend_ready
 
 app = FastAPI(title='FF Tech AI Website Audit SaaS')
+
+# Route Registration
 app.include_router(auth_router)
 app.include_router(api_router)
+
+# Static files and Templates
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 
 @app.on_event('startup')
 def on_startup():
+    """Initializes the database and external services on app start."""
     Base.metadata.create_all(bind=engine)
     try:
         ensure_resend_ready()
     except Exception:
+        # Prevents app crash if email service is not yet configured
         pass
 
 @app.get('/', response_class=HTMLResponse)
 async def home(request: Request):
+    """Renders the landing page."""
     return templates.TemplateResponse('index.html', {"request": request})
 
 @app.get('/dashboard', response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)):
+    """Renders the user dashboard if authenticated via session cookie."""
     token = request.cookies.get('session')
     user = None
     if token:
-        from .auth.tokens import decode_token
+        # UPGRADE: Absolute import inside function
+        from app.auth.tokens import decode_token
         payload = decode_token(token)
         if payload:
             email = payload.get('sub')
@@ -43,9 +53,12 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
 @app.post('/request-login', response_class=RedirectResponse)
 async def request_login(email: str = Form(...)):
-    from .auth.router import request_link
+    """Handles magic link login requests."""
+    # UPGRADE: Absolute import inside function
+    from app.auth.router import request_link
     request_link(email)
     return RedirectResponse(url='/', status_code=302)
 
 if __name__ == '__main__':
+    # 'app.main:app' ensures uvicorn looks for the 'app' package correctly
     uvicorn.run('app.main:app', host='0.0.0.0', port=8000, reload=True)
