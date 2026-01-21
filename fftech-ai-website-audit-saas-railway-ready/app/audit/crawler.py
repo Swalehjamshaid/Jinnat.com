@@ -29,7 +29,6 @@ def crawl(start_url: str, max_pages: int = 10, timeout: int = 10) -> 'CrawlResul
     seen = set()
     result = CrawlResult()
     
-    # 1. Primary Crawl Loop
     while q and len(seen) < max_pages:
         url = q.popleft()
         if url in seen:
@@ -39,7 +38,7 @@ def crawl(start_url: str, max_pages: int = 10, timeout: int = 10) -> 'CrawlResul
             r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
             result.status_counts[r.status_code] += 1
             
-            # If the page is broken, track it
+            # If the page is broken (4xx or 5xx), track it
             if r.status_code >= 400:
                 result.broken_internal.append(url)
                 continue
@@ -77,17 +76,17 @@ async def analyze(url: str):
     
     # Calculate scores based on crawl data
     total_pages = len(crawl_data.pages)
-    # We count broken links identified during the crawl
     broken_links = len(crawl_data.broken_internal)
     
-    # Basic scoring logic
+    # Logic for individual category scores
     seo_score = max(40, 100 - (broken_links * 15))
-    perf_score = 75  # Placeholder for speed test
-    sec_score = 85   # Placeholder for header checks
+    perf_score = 75  # Placeholder for speed test integration
+    sec_score = 85   # Placeholder for SSL/Header checks
     
     overall = int((seo_score + perf_score + sec_score) / 3)
     grade = to_grade(overall)
 
+    # This structure is strictly required by app/api/router.py
     return {
         "url": url,
         "overall_score": overall,
@@ -100,12 +99,13 @@ async def analyze(url: str):
         "metrics": {
             "pages_crawled": total_pages,
             "broken_links": broken_links,
-            "status_200": crawl_data.status_counts[200]
+            "status_200": crawl_data.status_counts[200],
+            "total_errors": broken_links
         },
         "summary": {
-            "executive_summary": f"Analyzed {total_pages} pages for {url}.",
-            "strengths": ["Site architecture is crawlable" if total_pages > 1 else "Landing page active"],
-            "weaknesses": [f"Found {broken_links} broken links" if broken_links > 0 else "Low page count"],
-            "priority_fixes": ["Repair broken URLs" if broken_links > 0 else "Increase content depth"]
+            "executive_summary": f"Audit completed for {url}. Analyzed {total_pages} pages.",
+            "strengths": ["Crawlable architecture" if total_pages > 1 else "Landing page online"],
+            "weaknesses": [f"Found {broken_links} broken internal links" if broken_links > 0 else "Low crawl depth"],
+            "priority_fixes": ["Fix 404 broken links" if broken_links > 0 else "Optimize page load speed"]
         }
     }
