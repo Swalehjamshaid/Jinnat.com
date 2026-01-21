@@ -23,12 +23,13 @@ def is_same_host(start_url: str, link: str) -> bool:
 
 def crawl(start_url: str, max_pages: int = 10, timeout: int = 10) -> 'CrawlResult':
     """
-    Existing synchronous crawling logic.
+    Synchronous crawling logic with broken link detection.
     """
     q = deque([start_url])
     seen = set()
     result = CrawlResult()
     
+    # 1. Primary Crawl Loop
     while q and len(seen) < max_pages:
         url = q.popleft()
         if url in seen:
@@ -37,13 +38,21 @@ def crawl(start_url: str, max_pages: int = 10, timeout: int = 10) -> 'CrawlResul
         try:
             r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
             result.status_counts[r.status_code] += 1
+            
+            # If the page is broken, track it
+            if r.status_code >= 400:
+                result.broken_internal.append(url)
+                continue
+
             if 'text/html' in r.headers.get('Content-Type', ''):
                 soup = BeautifulSoup(r.text, 'html.parser')
                 result.pages[url] = r.text
                 for a in soup.find_all('a', href=True):
                     href = urljoin(url, a['href'])
+                    
                     if href.startswith('mailto:') or href.startswith('tel:'):
                         continue
+                    
                     if is_same_host(start_url, href):
                         result.internal_links[url].append(href)
                         if href not in seen:
@@ -52,10 +61,11 @@ def crawl(start_url: str, max_pages: int = 10, timeout: int = 10) -> 'CrawlResul
                         result.external_links[url].append(href)
         except requests.RequestException:
             result.status_counts[0] += 1
+            result.broken_internal.append(url)
             
     return result
 
-# --- NEW FUNCTION: The Router is looking for this exact name ---
+# --- ASYNC BRIDGE: The Router calls this ---
 async def analyze(url: str):
     """
     Asynchronous bridge for the FastAPI Router.
@@ -67,17 +77,17 @@ async def analyze(url: str):
     
     # Calculate scores based on crawl data
     total_pages = len(crawl_data.pages)
+    # We count broken links identified during the crawl
     broken_links = len(crawl_data.broken_internal)
     
     # Basic scoring logic
-    seo_score = max(40, 100 - (broken_links * 10))
-    perf_score = 75  # Placeholder
-    sec_score = 85   # Placeholder
+    seo_score = max(40, 100 - (broken_links * 15))
+    perf_score = 75  # Placeholder for speed test
+    sec_score = 85   # Placeholder for header checks
     
     overall = int((seo_score + perf_score + sec_score) / 3)
     grade = to_grade(overall)
 
-    # This dictionary structure matches what AuditOut and the PDF builder expect
     return {
         "url": url,
         "overall_score": overall,
@@ -94,8 +104,8 @@ async def analyze(url: str):
         },
         "summary": {
             "executive_summary": f"Analyzed {total_pages} pages for {url}.",
-            "strengths": ["Site architecture is crawlable"],
-            "weaknesses": ["Broken links found" if broken_links > 0 else "None"],
-            "priority_fixes": ["Fix broken links" if broken_links > 0 else "Optimize mobile speed"]
+            "strengths": ["Site architecture is crawlable" if total_pages > 1 else "Landing page active"],
+            "weaknesses": [f"Found {broken_links} broken links" if broken_links > 0 else "Low page count"],
+            "priority_fixes": ["Repair broken URLs" if broken_links > 0 else "Increase content depth"]
         }
     }
