@@ -1,124 +1,152 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="row">
-  <div class="col-lg-7">
-    <div class="card bg-body-tertiary">
-      <div class="card-body">
-        <h4 class="card-title">Open Access Audit</h4>
-        <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
-        <div class="input-group mb-3">
-          <input id="openUrl" type="url" class="form-control" placeholder="https://example.com">
-          <button id="btnOpenAudit" class="btn btn-primary">Audit</button>
-        </div>
-        
-        <div id="openResults" class="mt-3 d-none">
-          <h6>Results</h6>
-          <div class="row">
-            <div class="col-md-4">
-              <div class="p-3 rounded bg-dark-subtle text-center">
-                <b>Overall Score</b>
-                <div id="ovScore" class="display-6 font-monospace">-</div>
-                <div id="ovGrade" class="badge bg-success mt-2"></div>
-              </div>
-            </div>
-            <div class="col-md-8">
-              <div class="p-2 border rounded">
-                <canvas id="breakdownChart" height="120"></canvas>
-              </div>
-            </div>
-          </div>
-          <pre id="openJson" class="small mt-3 bg-dark p-2 text-info rounded overflow-auto" style="max-height: 200px;"></pre>
-        </div>
-      </div>
-    </div>
-  </div>
+<style>
+    :root { --brand-primary: #3b82f6; --brand-success: #10b981; --bg-dark: #0f172a; }
+    
+    /* Scanning Console UI */
+    .scanner-box { background: var(--bg-dark); border-radius: 12px; padding: 30px; border: 1px solid #1e293b; }
+    .progress-track { height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; position: relative; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #6366f1); width: 0%; transition: width 0.4s ease; }
+    .status-log { font-family: 'Fira Code', monospace; color: var(--brand-success); font-size: 0.85rem; height: 100px; overflow-y: hidden; }
+    
+    /* International Standard Dashboard */
+    .metric-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; height: 100%; transition: transform 0.2s; }
+    .metric-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+    .donut-container { width: 100px; height: 100px; margin: 0 auto; position: relative; }
+    .donut-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: 800; }
+</style>
 
-  <div class="col-lg-5">
-    <div class="card bg-body-tertiary">
-      <div class="card-body">
-        <h4 class="card-title">Passwordless Sign-in</h4>
-        <form method="post" action="/request-login">
-          <div class="mb-3">
-            <label class="form-label">Email</label>
-            <input type="email" name="email" class="form-control" required>
-          </div>
-          <button class="btn btn-success w-100">Send Magic Link</button>
-        </form>
-        <p class="small text-secondary mt-2">Free users can run up to 10 audits; subscribe to unlock scheduling & history.</p>
-      </div>
+<div class="container py-5">
+    <div class="card shadow-lg border-0 bg-primary text-white p-5 mb-5 rounded-4">
+        <h1 class="display-5 fw-bold">Enterprise AI Audit Engine</h1>
+        <p class="lead opacity-75">Global Standard: Scanning 200+ Performance, SEO, and Security checkpoints.</p>
+        <div class="input-group input-group-lg shadow-sm mt-4" style="max-width: 700px;">
+            <input id="auditUrl" type="url" class="form-control border-0" placeholder="https://domain.com">
+            <button id="startBtn" class="btn btn-dark px-5 fw-bold">START GLOBAL SCAN</button>
+        </div>
     </div>
-  </div>
+
+    <div id="scannerConsole" class="d-none animate__animated animate__fadeIn">
+        <div class="scanner-box shadow-2xl mb-5">
+            <div class="d-flex justify-content-between text-white mb-3">
+                <span class="fw-bold"><i class="fas fa-microchip me-2"></i>AI AUDIT IN PROGRESS</span>
+                <span id="progressLabel" class="font-monospace">0%</span>
+            </div>
+            <div class="progress-track mb-3">
+                <div id="progressBar" class="progress-fill"></div>
+            </div>
+            <div id="logWindow" class="status-log mt-4"></div>
+        </div>
+    </div>
+
+    <div id="resultsDashboard" class="d-none">
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="card bg-dark text-white p-4 text-center border-0 rounded-4">
+                    <h6 class="text-uppercase opacity-50 small">Site Health Index</h6>
+                    <div id="mainScore" class="display-2 fw-black">0%</div>
+                    <div id="mainGrade" class="badge bg-primary fs-5 mt-2">GRADE -</div>
+                </div>
+            </div>
+            <div class="col-lg-8">
+                <div class="row g-3" id="categoryGrid">
+                    </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  let chartInstance = null;
+const auditSteps = [
+    { p: 15, m: ">> Initializing W3C Compliance Crawler..." },
+    { p: 30, m: ">> Analyzing HTTP/2 Protocols & SSL Cipher Strength..." },
+    { p: 45, m: ">> Evaluating Core Web Vitals (LCP, CLS, TBT)..." },
+    { p: 60, m: ">> Mapping On-Page SEO Architecture & JSON-LD Data..." },
+    { p: 75, m: ">> Testing Mobile Responsiveness & Touch Target Ratios..." },
+    { p: 90, m: ">> Calculating Competitor Gap & Growth ROI..." },
+    { p: 100, m: ">> Aggregating 200 Metrics to Global Standards..." }
+];
 
-  document.getElementById('btnOpenAudit').onclick = async function() {
-    const urlInput = document.getElementById('openUrl').value;
-    const btn = this;
-    const resultsDiv = document.getElementById('openResults');
+document.getElementById('startBtn').onclick = async function() {
+    const url = document.getElementById('auditUrl').value;
+    if(!url) return;
 
-    if (!urlInput) {
-      alert("Please enter a valid URL");
-      return;
-    }
-
-    // 1. Visual loading state
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Auditing...';
-    btn.disabled = true;
-    resultsDiv.classList.add('d-none');
+    // UI State Change
+    this.disabled = true;
+    document.getElementById('scannerConsole').classList.remove('d-none');
+    document.getElementById('resultsDashboard').classList.add('d-none');
+    
+    // Simulate Terminal Logging
+    let step = 0;
+    const logInterval = setInterval(() => {
+        if(step < auditSteps.length) {
+            const entry = document.createElement('div');
+            entry.innerText = auditSteps[step].m;
+            document.getElementById('logWindow').appendChild(entry);
+            document.getElementById('progressBar').style.width = auditSteps[step].p + '%';
+            document.getElementById('progressLabel').innerText = auditSteps[step].p + '%';
+            step++;
+        }
+    }, 1200);
 
     try {
-      // 2. Fetch data from Python (api_router)
-      const response = await fetch('/api/open-audit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: urlInput })
-      });
-
-      if (!response.ok) throw new Error('Audit failed');
-
-      const data = await response.json();
-
-      // 3. Update HTML with Python data
-      resultsDiv.classList.remove('d-none');
-      document.getElementById('ovScore').innerText = data.overall_score;
-      document.getElementById('ovGrade').innerText = data.grade || '';
-      document.getElementById('openJson').innerText = JSON.stringify(data, null, 2);
-
-      // 4. Render Chart
-      renderChart(data);
-
-    } catch (err) {
-      alert("Error: " + err.message);
+        const response = await fetch('/api/open-audit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ url: url })
+        });
+        const data = await response.json();
+        
+        clearInterval(logInterval);
+        renderDashboard(data);
+    } catch (e) {
+        alert("Scan Interrupt: Connection Refused");
     } finally {
-      btn.innerHTML = 'Audit';
-      btn.disabled = false;
+        this.disabled = false;
+        document.getElementById('scannerConsole').classList.add('d-none');
     }
-  };
+};
 
-  function renderChart(data) {
-    const ctx = document.getElementById('breakdownChart').getContext('2d');
-    
-    if (chartInstance) chartInstance.destroy();
+function renderDashboard(data) {
+    document.getElementById('resultsDashboard').classList.remove('d-none');
+    document.getElementById('mainScore').innerText = Math.round(data.overall_score) + '%';
+    document.getElementById('mainGrade').innerText = "GRADE " + data.grade;
 
-    chartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: ['Performance', 'On-Page', 'Coverage'],
-        datasets: [{
-          label: 'Scores',
-          data: [data.performance || 0, data.onpage || 0, data.coverage || 0],
-          backgroundColor: ['#0d6efd', '#198754', '#ffc107']
-        }]
-      },
-      options: {
-        indexAxis: 'y',
-        plugins: { legend: { display: false } },
-        scales: { x: { min: 0, max: 100 } }
-      }
+    const grid = document.getElementById('categoryGrid');
+    grid.innerHTML = '';
+
+    Object.entries(data.categories).forEach(([key, cat]) => {
+        const canvasId = `chart-${key}`;
+        const card = `
+            <div class="col-md-4">
+                <div class="metric-card p-3">
+                    <div class="donut-container">
+                        <canvas id="${canvasId}"></canvas>
+                        <div class="donut-text" style="color:${cat.color}">${Math.round(cat.score)}%</div>
+                    </div>
+                    <div class="text-center mt-3">
+                        <span class="fw-bold small text-uppercase">${cat.name}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        grid.innerHTML += card;
+
+        setTimeout(() => {
+            new Chart(document.getElementById(canvasId), {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [cat.score, 100 - cat.score],
+                        backgroundColor: [cat.color, '#f1f5f9'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { cutout: '80%', plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+            });
+        }, 100);
     });
-  }
+}
 </script>
 {% endblock %}
