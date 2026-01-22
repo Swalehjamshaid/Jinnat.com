@@ -9,9 +9,9 @@ from app.audit.links import check_links
 
 def run_audit(url: str):
     """
-    Orchestrates realistic audit with proper PSI and crawl depth.
+    Orchestrates the audit suite with safe data handling.
     """
-    # Use more pages for accuracy (env var or default 50)
+    # Increased depth for real audit quality
     max_pages = int(os.getenv("MAX_CRAWL_PAGES", "50"))
     crawl_obj = perform_crawl(url, max_pages=max_pages)
 
@@ -55,11 +55,9 @@ def run_audit(url: str):
         }
     }
 
-    # ────────────────────────────────────────────────
-    # Real PSI integration (safe & fixes fake performance)
-    # ────────────────────────────────────────────────
-    psi_mobile = fetch_psi(url, strategy='mobile')
-    psi_data = psi_mobile if psi_mobile is not None else fetch_psi(url, strategy='desktop')
+    # Safe PSI integration
+    psi_mobile = fetch_psi(url, 'mobile')
+    psi_data = psi_mobile if psi_mobile is not None else fetch_psi(url, 'desktop')
 
     if psi_data is not None:
         lab = psi_data.get('lab', {}) or {}
@@ -70,7 +68,7 @@ def run_audit(url: str):
             "TBT_ms": lab.get('tbt_ms', 'N/A')
         })
 
-        # Realistic penalty (no more fake 100%)
+        # Realistic adjustment
         lcp = lab.get('lcp_ms', 4000)
         cls = lab.get('cls', 0.25)
         tbt = lab.get('tbt_ms', 500)
@@ -88,13 +86,11 @@ def run_audit(url: str):
     else:
         categories["E. Performance"]["metrics"]["PSI_Status"] = "Unavailable"
 
-    # ────────────────────────────────────────────────
-    # Weighted score – performance now more influential
-    # ────────────────────────────────────────────────
+    # Weighted score
     weights = {
         "A. Executive Summary": 1.0,
         "D. On-Page SEO": 1.3,
-        "E. Performance": 2.0,  # Heavier – real performance matters
+        "E. Performance": 2.0,
         "H. Broken Links Intelligence": 1.2
     }
 
@@ -117,10 +113,10 @@ def run_audit(url: str):
     else:
         grade = "F"
 
-    # Always return valid data (fixes "undefined")
+    # FIX: ALWAYS return valid data (no undefined/null)
     return {
         "url": url,
         "overall_score": float(overall_score) if overall_score is not None else 0.0,
-        "grade": grade,
-        "categories": categories
+        "grade": grade or "F",
+        "categories": categories or {}
     }
