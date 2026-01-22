@@ -7,9 +7,12 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 def generate_full_audit_pdf(data, out_path):
     """
-    Certified 5-Page PDF Generator.
-    Aligned with the 200-metric international standard.
+    CATEGORY A - METRIC 10: Certified Export Readiness.
+    Generates a professional 5-page International Standard PDF report.
     """
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    
     doc = SimpleDocTemplate(out_path, pagesize=A4)
     styles = getSampleStyleSheet()
     story = []
@@ -23,18 +26,17 @@ def generate_full_audit_pdf(data, out_path):
     story.append(Paragraph(f"Audit Grade: {data.get('grade', 'B')}", styles['Heading2']))
     story.append(PageBreak())
 
-    # Pages 2-5: Dynamic Category Breakdown
+    # Pages 2-5: Category Detail Sheets
     categories = data.get('categories', {})
     for cat_name, info in categories.items():
         story.append(Paragraph(f"Category: {cat_name}", styles['Heading1']))
-        story.append(Paragraph(f"Health Score: {info.get('score', 0)}%", styles['Heading3']))
+        story.append(Paragraph(f"Section Health Score: {info.get('score', 0)}%", styles['Heading3']))
         story.append(Spacer(1, 10))
         
-        # Metric Table Construction
+        # Metric Table
         t_data = [["Metric ID & Description", "Value"]]
-        metrics = info.get('metrics', {})
-        for key, val in metrics.items():
-            t_data.append([key, str(val)])
+        for k, v in info.get('metrics', {}).items():
+            t_data.append([k, str(v)])
             
         t = Table(t_data, colWidths=[350, 100])
         t.setStyle(TableStyle([
