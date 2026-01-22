@@ -20,8 +20,9 @@ def run_audit(url: str):
     seo_score = seo_res.get('score', 70.0)
     perf_score = perf_res.get('score', 65.0)
 
-    broken_links = crawl_obj.get('broken_links', [])
-    broken_count = len(broken_links)
+    # FIXED: Use attribute access instead of .get() on CrawlResult object
+    broken_internal = getattr(crawl_obj, 'broken_internal', [])
+    broken_count = len(broken_internal)
 
     # ────────────────────────────────────────────────
     # 2. Define categories with realistic structure
@@ -31,7 +32,7 @@ def run_audit(url: str):
             "score": round((seo_score + perf_score) / 2, 1),
             "metrics": {
                 "Overall Health": f"{round((seo_score + perf_score) / 2, 1)}%",
-                "Pages Analyzed": len(crawl_obj.get('pages', [])),
+                "Pages Analyzed": len(getattr(crawl_obj, 'pages', [])),
                 "Priority": "Fix Core Web Vitals & On-Page Issues",
             },
             "color": "#4F46E5"
@@ -60,7 +61,7 @@ def run_audit(url: str):
             "score": 100 if broken_count == 0 else max(30, 100 - broken_count * 4),
             "metrics": {
                 "Total Broken Links": broken_count,
-                "Broken Links Found": ", ".join(broken_links[:3]) if broken_links else "None",
+                "Broken Links Found": ", ".join([str(item) for item in broken_internal[:3]]) if broken_internal else "None",
                 "Redirect Issues": 0  # placeholder – expand later
             },
             "color": "#F59E0B"
