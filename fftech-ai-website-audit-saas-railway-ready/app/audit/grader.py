@@ -1,151 +1,197 @@
-# app/audit/grader.py
-
+import requests
 import logging
-from typing import Dict, Any
-import random
+from typing import Dict
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+HEADERS = {
+    "User-Agent": "FFTech-AuditBot/2.0 (+https://fftech.ai)"
+}
 
-# =========================================================
-# PUBLIC API – CALLED BY HTML / API / PDF
-# =========================================================
-def run_audit(url: str) -> Dict[str, Any]:
+TIMEOUT = 20
+
+
+# -----------------------------
+# CORE FETCH
+# -----------------------------
+def fetch_html(url: str) -> str:
+    response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+    response.raise_for_status()
+    return response.text
+
+
+# -----------------------------
+# SEO ANALYSIS
+# -----------------------------
+def analyze_seo(html: str) -> Dict:
+    soup = BeautifulSoup(html, "html.parser")
+
+    score = 100
+    metrics = {}
+
+    title = soup.title.string.strip() if soup.title else None
+    metrics["title_present"] = bool(title)
+    if not title:
+        score -= 15
+    elif len(title) < 10 or len(title) > 65:
+        score -= 5
+
+    meta_desc = soup.find("meta", attrs={"name": "description"})
+    metrics["meta_description"] = bool(meta_desc)
+    if not meta_desc:
+        score -= 15
+
+    h1_tags = soup.find_all("h1")
+    metrics["h1_count"] = len(h1_tags)
+    if len(h1_tags) != 1:
+        score -= 10
+
+    canonical = soup.find("link", rel="canonical")
+    metrics["canonical_present"] = bool(canonical)
+    if not canonical:
+        score -= 5
+
+    images = soup.find_all("img")
+    missing_alt = sum(1 for img in images if not img.get("alt"))
+    metrics["images_missing_alt"] = missing_alt
+    if images and missing_alt / len(images) > 0.3:
+        score -= 10
+
+    return {
+        "score": max(score, 0),
+        "metrics": metrics,
+        "color": "#22C55E" if score >= 80 else "#F59E0B"
+    }
+
+
+# -----------------------------
+# SECURITY ANALYSIS
+# -----------------------------
+def analyze_security(url: str, response_headers: Dict) -> Dict:
+    score = 100
+    metrics = {}
+
+    parsed = urlparse(url)
+    metrics["https"] = parsed.scheme == "https"
+    if parsed.scheme != "https":
+        score -= 40
+
+    headers_to_check = [
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "Strict-Transport-Security",
+        "X-Content-Type-Options",
+        "Referrer-Policy"
+    ]
+
+    missing = []
+    for h in headers_to_check:
+        if h not in response_headers:
+            missing.append(h)
+
+    metrics["missing_security_headers"] = missing
+    score -= len(missing) * 6
+
+    return {
+        "score": max(score, 0),
+        "metrics": metrics,
+        "color": "#0EA5E9" if score >= 80 else "#EF4444"
+    }
+
+
+# -----------------------------
+# CONTENT QUALITY
+# -----------------------------
+def analyze_content(html: str) -> Dict:
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text(separator=" ", strip=True)
+    words = len(text.split())
+
+    score = 100
+    metrics = {"word_count": words}
+
+    if words < 400:
+        score -= 40
+    elif words < 900:
+        score -= 20
+
+    return {
+        "score": max(score, 0),
+        "metrics": metrics,
+        "color": "#10B981"
+    }
+
+
+# -----------------------------
+# INTERNATIONALIZATION
+# -----------------------------
+def analyze_i18n(html: str) -> Dict:
+    soup = BeautifulSoup(html, "html.parser")
+    hreflang = soup.find_all("link", rel="alternate", hreflang=True)
+
+    score = 90 if hreflang else 60
+    return {
+        "score": score,
+        "metrics": {"hreflang_count": len(hreflang)},
+        "color": "#6366F1"
+    }
+
+
+# -----------------------------
+# PERFORMANCE (REAL PSI)
+# -----------------------------
+def analyze_performance(url: str) -> Dict:
     """
-    Runs a standardized website audit and returns a
-    frontend-safe, internationally aligned audit payload.
-
-    This output is designed to be consumed by:
-    - HTML dashboards
-    - PDF generators
-    - REST / SaaS APIs
+    Uses Google PageSpeed Insights (no key = public tier).
     """
-
     try:
-        raw_metrics = _collect_site_metrics(url)
-        category_results = _build_categories(raw_metrics)
-        overall_score = _calculate_overall_score(category_results)
-        grade = _assign_grade(overall_score)
+        psi_url = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+        params = {"url": url, "strategy": "mobile"}
+        res = requests.get(psi_url, params=params, timeout=TIMEOUT)
+        data = res.json()
 
-        return {
-            "meta": {
-                "audit_version": "1.0",
-                "standard": "FFTECH-WEB-AUDIT-INTL",
-                "generated_by": "FFTech AI Engine",
-            },
-            "input": {
-                "url": url,
-            },
-            "output": {
-                "overall_score": overall_score,
-                "grade": grade,
-                "risk_level": _risk_from_score(overall_score),
-                "summary": _executive_summary(overall_score),
-            },
-            "categories": category_results,
-            "competitors": [],
+        lighthouse = data["lighthouseResult"]["categories"]["performance"]
+        score = round(lighthouse["score"] * 100, 2)
+
+        audits = data["lighthouseResult"]["audits"]
+        metrics = {
+            "lcp_ms": audits["largest-contentful-paint"]["numericValue"],
+            "cls": audits["cumulative-layout-shift"]["numericValue"],
+            "inp_ms": audits.get("interaction-to-next-paint", {}).get("numericValue"),
         }
 
-    except Exception as exc:
-        logger.exception("Audit execution failed")
-        return _safe_failure_response(url, str(exc))
+        return {
+            "score": score,
+            "metrics": metrics,
+            "color": "#3B82F6"
+        }
+
+    except Exception as e:
+        logger.warning(f"PSI failed: {e}")
+        return {
+            "score": 70,
+            "metrics": {"note": "PSI unavailable"},
+            "color": "#94A3B8"
+        }
 
 
-# =========================================================
-# METRIC COLLECTION (SIMULATED FOR NOW)
-# =========================================================
-def _collect_site_metrics(url: str) -> Dict[str, int]:
-    """
-    Placeholder for real scanners:
-    - Google Lighthouse
-    - PSI
-    - OWASP ZAP
-    - SEO crawlers
-    """
-
-    base_score = 40
-    if "apple" in url.lower():
-        base_score = 75
-    elif "haier" in url.lower():
-        base_score = 65
-
-    return {
-        "performance": min(100, base_score + random.randint(5, 20)),
-        "seo": min(100, base_score + random.randint(5, 25)),
-        "security": min(100, base_score + random.randint(5, 15)),
-        "internationalization": min(100, base_score + random.randint(0, 15)),
-        "content_quality": min(100, base_score + random.randint(5, 20)),
-    }
+# -----------------------------
+# OVERALL SCORING
+# -----------------------------
+def calculate_overall_score(cats: Dict) -> float:
+    return round(
+        cats["Performance"]["score"] * 0.30 +
+        cats["SEO"]["score"] * 0.25 +
+        cats["Security"]["score"] * 0.20 +
+        cats["Internationalization"]["score"] * 0.10 +
+        cats["Content Quality"]["score"] * 0.15,
+        2
+    )
 
 
-# =========================================================
-# CATEGORY NORMALIZATION (HTML SAFE)
-# =========================================================
-def _build_categories(metrics: Dict[str, int]) -> Dict[str, Dict[str, Any]]:
-    return {
-        "performance": _category_block(
-            "Performance",
-            metrics["performance"],
-            metrics
-        ),
-        "seo": _category_block(
-            "SEO",
-            metrics["seo"],
-            metrics
-        ),
-        "security": _category_block(
-            "Security",
-            metrics["security"],
-            metrics
-        ),
-        "internationalization": _category_block(
-            "Internationalization",
-            metrics["internationalization"],
-            metrics
-        ),
-        "content_quality": _category_block(
-            "Content Quality",
-            metrics["content_quality"],
-            metrics
-        ),
-    }
-
-
-def _category_block(title: str, score: int, metrics: Dict) -> Dict[str, Any]:
-    return {
-        "title": title,
-        "score": score,
-        "status": _status_from_score(score),
-        "risk_level": _risk_from_score(score),
-        "business_impact": _business_impact(score),
-        "metrics": metrics,
-    }
-
-
-# =========================================================
-# SCORING & INTERPRETATION
-# =========================================================
-def _calculate_overall_score(categories: Dict[str, Dict]) -> float:
-    """
-    Internationally accepted weighted scoring model.
-    """
-
-    weights = {
-        "performance": 0.30,
-        "seo": 0.25,
-        "security": 0.20,
-        "internationalization": 0.10,
-        "content_quality": 0.15,
-    }
-
-    total = 0.0
-    for key, weight in weights.items():
-        total += categories[key]["score"] * weight
-
-    return round(total, 2)
-
-
-def _assign_grade(score: float) -> str:
+def assign_grade(score: float) -> str:
     if score >= 90:
         return "A+"
     if score >= 80:
@@ -157,57 +203,45 @@ def _assign_grade(score: float) -> str:
     return "C"
 
 
-def _status_from_score(score: float) -> str:
-    if score >= 85:
-        return "Excellent"
-    if score >= 70:
-        return "Acceptable"
-    if score >= 50:
-        return "Needs Improvement"
-    return "Critical"
+# -----------------------------
+# MAIN ENTRY (HTML + PDF SAFE)
+# -----------------------------
+def run_audit(url: str) -> Dict:
+    try:
+        html = fetch_html(url)
+        response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
 
+        performance = analyze_performance(url)
+        seo = analyze_seo(html)
+        security = analyze_security(url, response.headers)
+        i18n = analyze_i18n(html)
+        content = analyze_content(html)
 
-def _risk_from_score(score: float) -> str:
-    if score >= 85:
-        return "Low"
-    if score >= 70:
-        return "Medium"
-    return "High"
+        categories = {
+            "Performance": performance,
+            "SEO": seo,
+            "Security": security,
+            "Internationalization": i18n,
+            "Content Quality": content,
+        }
 
+        overall = calculate_overall_score(categories)
+        grade = assign_grade(overall)
 
-def _business_impact(score: float) -> str:
-    if score >= 85:
-        return "Optimized for growth and scalability"
-    if score >= 70:
-        return "Moderate revenue and conversion leakage"
-    return "High risk of traffic, revenue, and trust loss"
+        return {
+            "url": url,
+            "overall_score": overall,
+            "grade": grade,
+            "categories": categories,
+            "competitors": []
+        }
 
-
-def _executive_summary(score: float) -> str:
-    if score >= 85:
-        return "The website demonstrates strong technical health and global readiness."
-    if score >= 70:
-        return "The website performs adequately but shows clear optimization opportunities."
-    return "The website presents critical technical and commercial risks requiring immediate action."
-
-
-# =========================================================
-# FAILURE SAFE (NEVER BREAK HTML)
-# =========================================================
-def _safe_failure_response(url: str, reason: str) -> Dict[str, Any]:
-    return {
-        "meta": {
-            "audit_version": "1.0",
-            "status": "failed",
-            "reason": reason,
-        },
-        "input": {"url": url},
-        "output": {
+    except Exception as e:
+        logger.exception(f"AUDIT FAILED: {e}")
+        return {
+            "url": url,
             "overall_score": 0,
             "grade": "N/A",
-            "risk_level": "Unknown",
-            "summary": "Audit could not be completed.",
-        },
-        "categories": {},
-        "competitors": [],
-    }
+            "categories": {},
+            "competitors": []
+        }
