@@ -1,116 +1,191 @@
 {% extends 'base.html' %}
 {% block content %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-    .scan-box { background: #0f172a; border-radius: 12px; padding: 30px; border: 1px solid #1e293b; }
-    .bar-bg { background: #1e293b; border-radius: 4px; overflow: hidden; height: 10px; }
-    .bar-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #10b981); width: 0%; transition: width 0.5s; }
-    .cat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }
+  /* Improvement: Scanning Bar UI */
+  .scan-container { background: #1a1a1a; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+  .prog-track { height: 10px; background: #333; border-radius: 5px; overflow: hidden; }
+  .prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #0d6efd, #198754); transition: width 0.4s ease; }
+  .scan-log { color: #198754; font-family: monospace; font-size: 0.8rem; margin-top: 8px; }
+
+  /* Improvement: Graphical Category Cards */
+  .category-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+  .cat-card { background: #fff; border: 1px solid #dee2e6; border-radius: 10px; padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+  .donut-box { position: relative; height: 100px; width: 100px; margin: 0 auto 10px; }
+  .donut-val { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; }
 </style>
 
-<div class="container py-5">
-    <div class="card bg-primary text-white p-5 rounded-4 border-0 mb-5">
-        <h1 class="fw-bold">Global AI Audit SaaS</h1>
-        <div class="input-group input-group-lg mt-4 shadow-sm">
-            <input id="url" type="url" class="form-control" placeholder="https://domain.com">
-            <button id="start" class="btn btn-dark px-5 fw-bold">START SCAN</button>
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card bg-body-tertiary">
+      <div class="card-body">
+        <h4 class="card-title">Open Access Audit</h4>
+        <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
+        
+        <div class="input-group mb-3">
+          <input id="openUrl" type="url" class="form-control" placeholder="https://example.com">
+          <button id="btnOpenAudit" class="btn btn-primary">Audit</button>
         </div>
-    </div>
 
-    <div id="scanner" class="d-none">
-        <div class="scan-box mb-5 shadow-lg">
-            <div class="d-flex justify-content-between text-white mb-2">
-                <span id="stTxt">Initializing AI Crawler...</span>
-                <span id="stPerc">0%</span>
+        <div id="scanningSection" class="d-none">
+          <div class="scan-container">
+            <div class="d-flex justify-content-between text-white mb-2 small">
+              <span id="scanStatus">Initializing AI Engine...</span>
+              <span id="scanPercent">0%</span>
             </div>
-            <div class="bar-bg">
-                <div id="bar" class="bar-fill"></div>
-            </div>
+            <div class="prog-track"><div id="scanFill" class="prog-fill"></div></div>
+            <div id="scanLog" class="scan-log">> Accessing global metrics...</div>
+          </div>
         </div>
-    </div>
 
-    <div id="results" class="d-none">
-        <div class="row g-4">
+        <div id="openResults" class="mt-3 d-none">
+          <h6>Results</h6>
+          <div class="row mb-4">
             <div class="col-md-4">
-                <div class="card bg-dark text-white p-4 text-center rounded-4 h-100 border-0">
-                    <div class="display-3 fw-bold" id="ovS">0%</div>
-                    <div class="badge bg-primary fs-6 mt-2" id="ovG">GRADE -</div>
-                </div>
+              <div class="p-3 rounded bg-dark-subtle text-center">
+                <b>Overall Score</b>
+                <div id="ovScore" class="display-6 font-monospace">-</div>
+              </div>
             </div>
             <div class="col-md-8">
-                <div class="row g-3" id="grid"></div>
+              <canvas id="breakdownChart" height="120"></canvas>
             </div>
+          </div>
+
+          <div id="categoryContainer" class="category-grid">
+             </div>
+
+          <pre id="openJson" class="small mt-3 d-none"></pre>
         </div>
+      </div>
     </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card bg-body-tertiary">
+      <div class="card-body">
+        <h4 class="card-title">Passwordless Sign-in</h4>
+        <form method="post" action="/request-login">
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" name="email" class="form-control" required>
+          </div>
+          <button class="btn btn-success w-100">Send Magic Link</button>
+        </form>
+        <p class="small text-secondary mt-2">Free users can run up to 10 audits; subscribe to unlock scheduling & history.</p>
+      </div>
+    </div>
+  </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const phases = [
-    {p: 25, m: "> Crawling site architecture..."},
-    {p: 50, m: "> Analyzing SEO & Meta data..."},
-    {p: 75, m: "> Running Performance & Speed tests..."},
-    {p: 100, m: "> Finalizing international report..."}
-];
+  let chartInstance = null;
+  const statusSteps = [
+    { p: 20, m: "> Crawling site architecture (Metrics 21-40)..." },
+    { p: 50, m: "> Analyzing On-Page SEO & Content (Metrics 41-75)..." },
+    { p: 80, m: "> Testing Performance & Technical (Metrics 76-150)..." },
+    { p: 100, m: "> Finalizing international standard report..." }
+  ];
 
-document.getElementById('start').onclick = async function() {
-    const url = document.getElementById('url').value;
-    if(!url) return;
-    
-    this.disabled = true;
-    document.getElementById('scanner').classList.remove('d-none');
-    document.getElementById('results').classList.add('d-none');
-    
+  document.getElementById('btnOpenAudit').onclick = async function() {
+    const urlInput = document.getElementById('openUrl').value;
+    const btn = this;
+    const resultsDiv = document.getElementById('openResults');
+    const scanDiv = document.getElementById('scanningSection');
+
+    if (!urlInput) { alert("Please enter a valid URL"); return; }
+
+    // Start Scanning UI
+    btn.disabled = true;
+    btn.innerText = "Auditing...";
+    resultsDiv.classList.add('d-none');
+    scanDiv.classList.remove('d-none');
+
     let step = 0;
-    const interval = setInterval(() => {
-        if(step < phases.length) {
-            document.getElementById('bar').style.width = phases[step].p + '%';
-            document.getElementById('stPerc').innerText = phases[step].p + '%';
-            document.getElementById('stTxt').innerText = phases[step].m;
-            step++;
-        }
-    }, 1500);
+    const progressInt = setInterval(() => {
+      if(step < statusSteps.length) {
+        document.getElementById('scanFill').style.width = statusSteps[step].p + '%';
+        document.getElementById('scanPercent').innerText = statusSteps[step].p + '%';
+        document.getElementById('scanStatus').innerText = statusSteps[step].m;
+        step++;
+      }
+    }, 1200);
 
-    const res = await fetch('/api/open-audit', {
+    try {
+      const response = await fetch('/api/open-audit', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({url: url})
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlInput })
+      });
+      const data = await response.json();
+
+      clearInterval(progressInt);
+      scanDiv.classList.add('d-none');
+      resultsDiv.classList.remove('d-none');
+
+      // Update Attributes
+      document.getElementById('ovScore').innerText = data.overall_score + '%';
+      document.getElementById('openJson').innerText = JSON.stringify(data, null, 2);
+
+      renderMainChart(data);
+      renderCategoryCharts(data.categories);
+
+    } catch (err) {
+      alert("Audit Failed: " + err.message);
+      clearInterval(progressInt);
+    } finally {
+      btn.disabled = false;
+      btn.innerText = "Audit";
+    }
+  };
+
+  function renderMainChart(data) {
+    const ctx = document.getElementById('breakdownChart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['Performance', 'SEO', 'Links'],
+        datasets: [{
+          label: 'Category Scores',
+          data: [data.performance?.score || 0, data.categories?.['D. On-Page SEO']?.score || 0, 80],
+          backgroundColor: ['#0d6efd', '#198754', '#ffc107']
+        }]
+      },
+      options: { indexAxis: 'y', plugins: { legend: { display: false } } }
     });
-    const data = await res.json();
+  }
+
+  function renderCategoryCharts(categories) {
+    const container = document.getElementById('categoryContainer');
+    container.innerHTML = '';
     
-    clearInterval(interval);
-    document.getElementById('scanner').classList.add('d-none');
-    document.getElementById('results').classList.remove('d-none');
-    
-    document.getElementById('ovS').innerText = data.overall_score + '%';
-    document.getElementById('ovG').innerText = "GRADE " + data.grade;
-    
-    const grid = document.getElementById('grid');
-    grid.innerHTML = '';
-    Object.entries(data.categories).forEach(([name, info], i) => {
-        const cid = `c-${i}`;
-        grid.innerHTML += `
-            <div class="col-md-6">
-                <div class="cat-card h-100 shadow-sm">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="small fw-bold text-uppercase text-secondary">${name}</span>
-                        <span style="color:${info.color}" class="fw-bold">${info.score}%</span>
-                    </div>
-                    <div style="height:120px; position:relative;"><canvas id="${cid}"></canvas></div>
-                    <div class="mt-3 small border-top pt-2">
-                        ${Object.entries(info.metrics).slice(0,3).map(([k,v]) => `<div>${k}: ${v}</div>`).join('')}
-                    </div>
-                </div>
-            </div>`;
-        
-        setTimeout(() => {
-            new Chart(document.getElementById(cid), {
-                type: 'doughnut',
-                data: { datasets: [{ data: [info.score, 100-info.score], backgroundColor: [info.color, '#f1f5f9'], borderWidth: 0 }] },
-                options: { cutout: '85%', plugins: { legend: { display: false } } }
-            });
-        }, 100);
+    Object.entries(categories).forEach(([name, info], i) => {
+      const id = `catChart-${i}`;
+      container.innerHTML += `
+        <div class="cat-card">
+          <div class="donut-box">
+            <canvas id="${id}"></canvas>
+            <div class="donut-val" style="color:${info.color}">${Math.round(info.score)}%</div>
+          </div>
+          <div class="small fw-bold text-uppercase">${name.split('. ')[1] || name}</div>
+        </div>
+      `;
+
+      setTimeout(() => {
+        new Chart(document.getElementById(id), {
+          type: 'doughnut',
+          data: {
+            datasets: [{
+              data: [info.score, 100 - info.score],
+              backgroundColor: [info.color, '#e9ecef'],
+              borderWidth: 0
+            }]
+          },
+          options: { cutout: '80%', plugins: { legend: { display: false } } }
+        });
+      }, 100);
     });
-    this.disabled = false;
-};
+  }
 </script>
 {% endblock %}
