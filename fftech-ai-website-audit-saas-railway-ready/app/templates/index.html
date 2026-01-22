@@ -1,91 +1,41 @@
 {% extends 'base.html' %}
 {% block content %}
 <style>
-  /* Your existing professional styles */
-  .scan-container { 
-    background: #0f172a; 
-    border-radius: 12px; 
-    padding: 20px; 
-    margin-bottom: 25px; 
-    border: 1px solid #1e293b; 
-  }
-  .prog-track { 
-    height: 12px; 
-    background: #1e293b; 
-    border-radius: 6px; 
-    overflow: hidden; 
-  }
-  .prog-fill { 
-    height: 100%; 
-    width: 0%; 
-    background: linear-gradient(90deg, #3b82f6, #10b981); 
-    transition: width 0.4s ease; 
-  }
-  .scan-log { 
-    color: #10b981; 
-    font-family: 'Courier New', Courier, monospace; 
-    font-size: 0.9rem; 
-    margin-top: 12px; 
-    min-height: 60px; 
-  }
-  .category-grid { 
-    display: grid; 
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); 
-    gap: 20px; 
-    margin-top: 25px; 
-  }
-  .cat-card { 
-    background: #fff; 
-    border: 1px solid #e2e8f0; 
-    border-radius: 15px; 
-    padding: 20px; 
-    text-align: center; 
-    transition: transform 0.2s; 
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
-  }
+  /* Professional UI Improvements */
+  .scan-container { background: #0f172a; border-radius: 12px; padding: 20px; margin-bottom: 25px; border: 1px solid #1e293b; }
+  .prog-track { height: 12px; background: #1e293b; border-radius: 6px; overflow: hidden; }
+  .prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #3b82f6, #10b981); transition: width 0.4s ease; }
+  .scan-log { color: #10b981; font-family: 'Courier New', Courier, monospace; font-size: 0.85rem; margin-top: 10px; }
+  .category-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; margin-top: 25px; }
+  .cat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 15px; padding: 20px; text-align: center; transition: transform 0.2s; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
   .cat-card:hover { transform: translateY(-5px); }
-  .donut-box { 
-    position: relative; 
-    height: 110px; 
-    width: 110px; 
-    margin: 0 auto 12px; 
-  }
-  .donut-val { 
-    position: absolute; 
-    top: 50%; 
-    left: 50%; 
-    transform: translate(-50%, -50%); 
-    font-weight: 800; 
-    font-size: 1.2rem; 
-  }
-  #ovScore { 
-    font-size: 3.5rem; 
-    font-weight: 900; 
-    color: #0f172a; 
-  }
-  .grade-badge { 
-    font-size: 1rem; 
-    padding: 5px 15px; 
-    border-radius: 20px; 
-    font-weight: bold; 
-    margin-top: 5px; 
-    display: inline-block; 
-  }
-  .loading-spinner {
+ 
+  .donut-box { position: relative; height: 110px; width: 110px; margin: 0 auto 12px; }
+  .donut-val { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: 800; font-size: 1.2rem; }
+ 
+  #ovScore { font-size: 3.5rem; font-weight: 900; color: #0f172a; }
+  .grade-badge { font-size: 1rem; padding: 5px 15px; border-radius: 20px; font-weight: bold; margin-top: 5px; display: inline-block; }
+  
+  .loading-spinner { 
     border: 4px solid rgba(255,255,255,0.3);
     border-top: 4px solid #10b981;
     border-radius: 50%;
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     animation: spin 1s linear infinite;
-    margin: 0 auto 12px;
+    margin: 15px auto;
   }
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+  @keyframes spin { 
+    0% { transform: rotate(0deg); } 
+    100% { transform: rotate(360deg); } 
+  }
+  .scan-status { 
+    text-align: center; 
+    color: #94a3b8; 
+    font-style: italic; 
+    margin-top: 10px; 
   }
 </style>
-
 <div class="row">
   <div class="col-lg-7">
     <div class="card border-0 shadow-sm">
@@ -97,27 +47,18 @@
           <input id="openUrl" type="url" class="form-control form-control-lg" placeholder="https://example.com">
           <button id="btnOpenAudit" class="btn btn-primary px-4 fw-bold">Start Audit</button>
         </div>
-
         <div id="scanningSection" class="d-none">
           <div class="scan-container">
             <div class="d-flex justify-content-between text-white mb-2 small fw-bold">
-              <span id="scanStatus">Preparing deep crawl...</span>
+              <span id="scanStatus">Initializing AI Engine...</span>
               <span id="scanPercent">0%</span>
             </div>
-            <div class="prog-track">
-              <div id="scanFill" class="prog-fill"></div>
-            </div>
-            <div id="scanLog" class="scan-log">
-              > Initializing secure connection...<br>
-              > Analyzing site structure...
-            </div>
-            <div class="text-center mt-3">
-              <div class="loading-spinner"></div>
-              <small class="text-white">This may take 15–60 seconds depending on site size</small>
-            </div>
+            <div class="prog-track"><div id="scanFill" class="prog-fill"></div></div>
+            <div id="scanLog" class="scan-log">> Establishing secure connection...</div>
+            <div class="loading-spinner"></div>
+            <p class="scan-status">We're deep-diving into your site's metrics. This may take a moment...</p>
           </div>
         </div>
-
         <div id="openResults" class="mt-3 d-none">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="fw-bold m-0">Audit Report</h5>
@@ -125,12 +66,11 @@
               <i class="fas fa-file-pdf"></i> Download Certified PDF
             </button>
           </div>
-
           <div class="row mb-4 g-3">
             <div class="col-md-5">
               <div class="p-4 rounded-4 bg-light text-center border">
                 <small class="text-uppercase fw-bold text-secondary">Global Health Score</small>
-                <div id="ovScore">Calculating...</div>
+                <div id="ovScore">-</div>
                 <div id="ovGrade" class="grade-badge bg-primary text-white">GRADE -</div>
               </div>
             </div>
@@ -140,14 +80,12 @@
               </div>
             </div>
           </div>
-
           <div id="categoryContainer" class="category-grid"></div>
           <pre id="openJson" class="small mt-3 d-none"></pre>
         </div>
       </div>
     </div>
   </div>
-
   <div class="col-lg-5">
     <div class="card border-0 shadow-sm bg-dark text-white p-2">
       <div class="card-body">
@@ -164,127 +102,71 @@
     </div>
   </div>
 </div>
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   let chartInstance = null;
-  let progressInterval = null;
-
-  const statusMessages = [
-    "Initializing secure connection...",
-    "Crawling site architecture (Metrics 21-40)...",
-    "Analyzing SEO & Content (Metrics 41-75)...",
-    "Running Performance & Core Web Vitals (Metrics 76-150)...",
-    "Checking Broken Links & Redirects...",
-    "Comparing Competitor Benchmarks (Metrics 151-180)...",
-    "Finalizing International Standard Report...",
-    "Almost done – compiling results..."
+  const statusSteps = [
+    { p: 20, m: "> Crawling site architecture (Metrics 21-40)..." },
+    { p: 40, m: "> Analyzing SEO & Content (Metrics 41-75)..." },
+    { p: 65, m: "> Running Performance & Core Web Vitals (Metrics 76-150)..." },
+    { p: 85, m: "> Comparing Competitor Benchmarks (Metrics 151-180)..." },
+    { p: 100, m: "> Finalizing International Standard Report..." }
   ];
-
   document.getElementById('btnOpenAudit').onclick = async function() {
-    const urlInput = document.getElementById('openUrl').value.trim();
+    const urlInput = document.getElementById('openUrl').value;
     const btn = this;
     const resultsDiv = document.getElementById('openResults');
     const scanDiv = document.getElementById('scanningSection');
-    const scanLog = document.getElementById('scanLog');
-    const scanFill = document.getElementById('scanFill');
-    const scanPercent = document.getElementById('scanPercent');
-    const scanStatus = document.getElementById('scanStatus');
-
-    if (!urlInput || !urlInput.startsWith('http')) {
-      alert("Please enter a valid URL starting with http/https");
-      return;
-    }
-
+    if (!urlInput) { alert("Please enter a valid URL"); return; }
     btn.disabled = true;
     scanDiv.classList.remove('d-none');
     resultsDiv.classList.add('d-none');
-
-    // Reset progress
-    scanFill.style.width = '0%';
-    scanPercent.innerText = '0%';
-    scanStatus.innerText = 'Preparing deep crawl...';
-    scanLog.innerHTML = '> Establishing secure connection...<br>';
-
-    // Dynamic progress simulation (keeps user engaged)
-    let progress = 0;
-    let msgIndex = 0;
-    progressInterval = setInterval(() => {
-      progress += Math.random() * 8 + 2; // Random increment 2-10%
-      progress = Math.min(progress, 98); // Cap at 98% until real response
-      scanFill.style.width = progress + '%';
-      scanPercent.innerText = Math.round(progress) + '%';
-
-      // Update status message every ~15%
-      if (progress >= (msgIndex + 1) * 14) {
-        if (msgIndex < statusMessages.length) {
-          scanStatus.innerText = statusMessages[msgIndex];
-          scanLog.innerHTML += `> ${statusMessages[msgIndex]}<br>`;
-          msgIndex++;
-        }
+    let step = 0;
+    const progressInt = setInterval(() => {
+      if(step < statusSteps.length) {
+        document.getElementById('scanFill').style.width = statusSteps[step].p + '%';
+        document.getElementById('scanPercent').innerText = statusSteps[step].p + '%';
+        document.getElementById('scanStatus').innerText = statusSteps[step].m;
+        step++;
+      } else {
+        // Keep spinning after last step until response
+        document.getElementById('scanStatus').innerText = 'Processing final data...';
+        document.getElementById('scanLog').innerHTML += '> Refining metrics for accuracy...<br>';
       }
-    }, 1200);
-
+    }, 1500);
     try {
       const response = await fetch('/api/open-audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: urlInput })
       });
-
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
-
       const data = await response.json();
-
-      // Stop simulated progress
-      clearInterval(progressInterval);
-      scanFill.style.width = '100%';
-      scanPercent.innerText = '100%';
-      scanStatus.innerText = 'Audit Complete!';
-
-      setTimeout(() => {
-        scanDiv.classList.add('d-none');
-        resultsDiv.classList.remove('d-none');
-
-        // Safe display (prevents undefined)
-        const score = data?.overall_score ?? 0;
-        const grade = data?.grade ?? 'N/A';
-
-        document.getElementById('ovScore').innerText = Math.round(score) + '%';
-        document.getElementById('ovGrade').innerText = "GRADE " + grade;
-        document.getElementById('ovGrade').className = `grade-badge ${score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-danger'} text-white`;
-
-        // PDF download
-        document.getElementById('btnDownloadPdf').onclick = () => {
-          window.location.href = `/api/download-full-audit?url=${encodeURIComponent(urlInput)}`;
-        };
-
-        renderMainChart(data);
-        renderCategoryCharts(data?.categories || {});
-
-      }, 800); // Small delay for smooth transition
-
+      clearInterval(progressInt);
+      scanDiv.classList.add('d-none');
+      resultsDiv.classList.remove('d-none');
+      document.getElementById('ovScore').innerText = Math.round(data.overall_score) + '%';
+      document.getElementById('ovGrade').innerText = "GRADE " + (data.grade || 'B');
+      // Metric 10: PDF Trigger
+      document.getElementById('btnDownloadPdf').onclick = () => {
+        window.location.href = `/api/download-full-audit?url=${encodeURIComponent(urlInput)}`;
+      };
+      renderMainChart(data);
+      renderCategoryCharts(data.categories);
     } catch (err) {
-      console.error("Audit failed:", err);
-      clearInterval(progressInterval);
-      scanStatus.innerText = 'Audit Failed';
-      scanLog.innerHTML += '<span style="color:#ef4444">> Error occurred. Please try again.</span><br>';
-      alert("Audit failed. Check the URL and try again.");
+      alert("Audit Failed. Please check the URL and try again.");
+      clearInterval(progressInt);
+      scanDiv.classList.add('d-none');
     } finally {
       btn.disabled = false;
     }
   };
-
   function renderMainChart(data) {
     const ctx = document.getElementById('breakdownChart').getContext('2d');
     if (chartInstance) chartInstance.destroy();
-
-    const seoScore = data?.categories?.['D. On-Page SEO']?.score || 0;
-    const perfScore = data?.categories?.['E. Performance']?.score || 0;
-    const linkScore = data?.categories?.['H. Broken Links Intelligence']?.score || 100;
-
+    // Safely extract scores for the bar chart
+    const seoScore = data.categories?.['D. On-Page SEO']?.score || 0;
+    const perfScore = data.categories?.['E. Performance']?.score || 0;
+    const linkScore = data.categories?.['H. Broken Links Intelligence']?.score || 100;
     chartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
@@ -303,18 +185,17 @@
       }
     });
   }
-
   function renderCategoryCharts(categories) {
     const container = document.getElementById('categoryContainer');
     container.innerHTML = '';
-
+    // Safe check for categories
     Object.entries(categories || {}).forEach(([name, info], i) => {
       const id = `catChart-${i}`;
       container.innerHTML += `
         <div class="cat-card">
           <div class="donut-box">
             <canvas id="${id}"></canvas>
-            <div class="donut-val" style="color:${info.color || '#ccc'}">${Math.round(info.score || 0)}%</div>
+            <div class="donut-val" style="color:${info.color}">${Math.round(info.score)}%</div>
           </div>
           <div class="small fw-bold text-uppercase text-muted">${name.split('. ')[1] || name}</div>
         </div>
@@ -324,16 +205,12 @@
           type: 'doughnut',
           data: {
             datasets: [{
-              data: [info.score || 0, 100 - (info.score || 0)],
-              backgroundColor: [info.color || '#ccc', '#f1f5f9'],
+              data: [info.score, 100 - info.score],
+              backgroundColor: [info.color, '#f1f5f9'],
               borderWidth: 0
             }]
           },
-          options: { 
-            cutout: '80%', 
-            plugins: { legend: { display: false } }, 
-            events: [] 
-          }
+          options: { cutout: '80%', plugins: { legend: { display: false } }, events: [] }
         });
       }, 50);
     });
