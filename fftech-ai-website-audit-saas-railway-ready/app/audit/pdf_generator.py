@@ -10,7 +10,7 @@ def generate_full_audit_pdf(data, out_path):
     CATEGORY A - METRIC 10: Certified Export Readiness.
     Generates a professional 5-page International Standard PDF report.
     """
-    # Ensure directory exists
+    # Ensure the reports directory exists in the container
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     
     doc = SimpleDocTemplate(out_path, pagesize=A4)
@@ -33,10 +33,11 @@ def generate_full_audit_pdf(data, out_path):
         story.append(Paragraph(f"Section Health Score: {info.get('score', 0)}%", styles['Heading3']))
         story.append(Spacer(1, 10))
         
-        # Metric Table
+        # Metric Table Construction
         t_data = [["Metric ID & Description", "Value"]]
-        for k, v in info.get('metrics', {}).items():
-            t_data.append([k, str(v)])
+        metrics = info.get('metrics', {})
+        for key, val in metrics.items():
+            t_data.append([key, str(val)])
             
         t = Table(t_data, colWidths=[350, 100])
         t.setStyle(TableStyle([
@@ -44,7 +45,7 @@ def generate_full_audit_pdf(data, out_path):
             ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
             ('GRID', (0,0), (-1,-1), 1, colors.black),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('PADDING', (0,0), (-1,-1), 6)
+            ('BOTTOMPADDING', (0,0), (-1,0), 8)
         ]))
         story.append(t)
         story.append(PageBreak())
