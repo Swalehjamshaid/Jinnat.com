@@ -9,7 +9,7 @@ def run_seo_audit(crawl_obj):
     html_docs = {page.url: page.html for page in crawl_obj.pages if hasattr(page, 'html')}
     raw = analyze_onpage(html_docs)
     
-    # Mapping to official numbered metrics
+    # Official International Numbering
     metrics = {
         "21_HTTP_2xx": len([p for p in crawl_obj.pages if 200 <= p.get('status_code', 0) < 300]),
         "23_HTTP_4xx": len([p for p in crawl_obj.pages if p.get('status_code') == 404]),
@@ -20,7 +20,7 @@ def run_seo_audit(crawl_obj):
         "65_Missing_Alt": raw['image_missing_alt']
     }
 
-    # Calculation logic
+    # Internal Scoring Logic
     penalty = (raw['missing_title_tags'] * 5) + (raw['missing_h1'] * 2)
     score = max(0, 100 - penalty)
 
