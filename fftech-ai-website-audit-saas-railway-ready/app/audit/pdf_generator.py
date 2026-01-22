@@ -8,29 +8,29 @@ from reportlab.lib.styles import getSampleStyleSheet
 def generate_full_audit_pdf(data, out_path):
     """
     CATEGORY A - METRIC 10: Certified Export Readiness.
-    Generates a professional 5-page International Standard PDF report.
+    Generates a comprehensive 5-page international standard PDF report.
     """
-    # Ensure the reports directory exists in the container
+    # Ensure reports directory exists in the container
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     
     doc = SimpleDocTemplate(out_path, pagesize=A4)
     styles = getSampleStyleSheet()
     story = []
 
-    # Page 1: Official Cover
+    # --- PAGE 1: COVER ---
     story.append(Spacer(1, 100))
     story.append(Paragraph("<b>CERTIFIED WEBSITE AUDIT REPORT</b>", styles['Title']))
     story.append(Spacer(1, 20))
     story.append(Paragraph(f"URL: {data.get('url', 'N/A')}", styles['Normal']))
     story.append(Paragraph(f"Global Health Score: {data.get('overall_score', 0)}%", styles['Heading2']))
-    story.append(Paragraph(f"Audit Grade: {data.get('grade', 'B')}", styles['Heading2']))
+    story.append(Paragraph(f"Final Grade: {data.get('grade', 'B')}", styles['Heading2']))
     story.append(PageBreak())
 
-    # Pages 2-5: Category Detail Sheets
+    # --- PAGES 2-5: CATEGORY BREAKDOWNS ---
     categories = data.get('categories', {})
     for cat_name, info in categories.items():
-        story.append(Paragraph(f"Category: {cat_name}", styles['Heading1']))
-        story.append(Paragraph(f"Section Health Score: {info.get('score', 0)}%", styles['Heading3']))
+        story.append(Paragraph(f"Category Analysis: {cat_name}", styles['Heading1']))
+        story.append(Paragraph(f"Section Score: {info.get('score', 0)}%", styles['Heading3']))
         story.append(Spacer(1, 10))
         
         # Metric Table Construction
@@ -45,7 +45,7 @@ def generate_full_audit_pdf(data, out_path):
             ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
             ('GRID', (0,0), (-1,-1), 1, colors.black),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0,0), (-1,0), 8)
+            ('PADDING', (0,0), (-1,-1), 6)
         ]))
         story.append(t)
         story.append(PageBreak())
