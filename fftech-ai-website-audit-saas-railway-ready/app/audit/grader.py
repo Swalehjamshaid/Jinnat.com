@@ -9,9 +9,9 @@ from app.audit.links import check_links
 
 def run_audit(url: str):
     """
-    Orchestrates the full audit suite with realistic scoring.
+    Orchestrates realistic audit with proper PSI and crawl depth.
     """
-    # Use env var or default 50 pages (real audits need depth)
+    # Use more pages for accuracy (env var or default 50)
     max_pages = int(os.getenv("MAX_CRAWL_PAGES", "50"))
     crawl_obj = perform_crawl(url, max_pages=max_pages)
 
@@ -56,7 +56,7 @@ def run_audit(url: str):
     }
 
     # ────────────────────────────────────────────────
-    # Real PSI integration (safe & fixes fake scores)
+    # Real PSI integration (safe & fixes fake performance)
     # ────────────────────────────────────────────────
     psi_mobile = fetch_psi(url, strategy='mobile')
     psi_data = psi_mobile if psi_mobile is not None else fetch_psi(url, strategy='desktop')
@@ -67,12 +67,10 @@ def run_audit(url: str):
             "LCP_ms": lab.get('lcp_ms', 'N/A'),
             "CLS": lab.get('cls', 'N/A'),
             "INP_ms": lab.get('inp_ms', 'N/A'),
-            "TBT_ms": lab.get('tbt_ms', 'N/A'),
-            "Speed_Index_ms": lab.get('speed_index_ms', 'N/A'),
-            "TTI_ms": lab.get('tti_ms', 'N/A')
+            "TBT_ms": lab.get('tbt_ms', 'N/A')
         })
 
-        # Realistic PSI-based adjustment (no more fake 100%)
+        # Realistic penalty (no more fake 100%)
         lcp = lab.get('lcp_ms', 4000)
         cls = lab.get('cls', 0.25)
         tbt = lab.get('tbt_ms', 500)
@@ -88,15 +86,15 @@ def run_audit(url: str):
         perf_score = max(30, perf_score - penalty)
         categories["E. Performance"]["score"] = round(perf_score, 1)
     else:
-        categories["E. Performance"]["metrics"]["PSI_Status"] = "Unavailable (check key/quotas)"
+        categories["E. Performance"]["metrics"]["PSI_Status"] = "Unavailable"
 
     # ────────────────────────────────────────────────
-    # Weighted overall score (performance now has more influence)
+    # Weighted score – performance now more influential
     # ────────────────────────────────────────────────
     weights = {
         "A. Executive Summary": 1.0,
         "D. On-Page SEO": 1.3,
-        "E. Performance": 2.0,  # Heavier weight – real performance matters more
+        "E. Performance": 2.0,  # Heavier – real performance matters
         "H. Broken Links Intelligence": 1.2
     }
 
@@ -105,9 +103,7 @@ def run_audit(url: str):
 
     overall_score = round(weighted_sum / total_weight, 2)
 
-    # ────────────────────────────────────────────────
     # Grade
-    # ────────────────────────────────────────────────
     if overall_score >= 90:
         grade = "A+"
     elif overall_score >= 80:
@@ -121,9 +117,7 @@ def run_audit(url: str):
     else:
         grade = "F"
 
-    # ────────────────────────────────────────────────
-    # ALWAYS return valid data (fixes "undefined")
-    # ────────────────────────────────────────────────
+    # Always return valid data (fixes "undefined")
     return {
         "url": url,
         "overall_score": float(overall_score) if overall_score is not None else 0.0,
