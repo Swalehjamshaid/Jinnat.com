@@ -1,165 +1,138 @@
-import os
-from app.audit.crawler import perform_crawl
-from app.audit.seo import run_seo_audit
-from app.audit.performance import get_performance_metrics
-from app.audit.psi import fetch_psi
-from app.audit.links import check_links
+# app/audit/grader.py
 
-# Severity weights for SEO issues
-SEO_WEIGHTS = {
-    "missing_title": 3,
-    "duplicate_title": 2,
-    "missing_h1": 2,
-    "multiple_h1": 1,
-    "missing_meta": 2,
-    "thin_content": 1,
-    "canonical_missing": 3,
-    "robots_noindex": 3,
-}
+import math
+from typing import Dict, List
 
-# Core Web Vitals thresholds
-CWV_THRESHOLDS = {
-    "LCP": 2500,
-    "CLS": 0.1,
-    "INP": 200,
-    "TBT": 200
-}
+def normalize_score(value, max_val=100, min_val=0):
+    """Normalize metric to 0-100 scale safely."""
+    if value is None:
+        return 0
+    value = max(min_val, min(value, max_val))
+    return (value - min_val) / (max_val - min_val) * 100
 
-# Grade mapping
-GRADE_MAPPING = [
-    (95, "A+"),
-    (85, "A"),
-    (75, "B"),
-    (65, "C"),
-    (50, "D"),
-    (0, "F")
-]
+def score_core_web_vitals(metrics: Dict) -> float:
+    """Technical scoring based on Core Web Vitals."""
+    lcp = metrics.get('lcp')  # Largest Contentful Paint in seconds
+    cls = metrics.get('cls')  # Cumulative Layout Shift
+    inp = metrics.get('inp')  # Interaction to Next Paint in ms
 
-def calculate_severity_score(page_metrics):
-    """Calculate per-page SEO severity penalties."""
-    penalties = 0
-    # Titles
-    penalties += page_metrics.get("41_Missing_Titles", 0) * SEO_WEIGHTS["missing_title"]
-    penalties += page_metrics.get("42_Duplicate_Titles", 0) * SEO_WEIGHTS["duplicate_title"]
-    # H1
-    penalties += page_metrics.get("49_Missing_H1", 0) * SEO_WEIGHTS["missing_h1"]
-    penalties += page_metrics.get("50_Multiple_H1", 0) * SEO_WEIGHTS["multiple_h1"]
-    # Meta
-    penalties += page_metrics.get("43_Missing_Meta_Descriptions", 0) * SEO_WEIGHTS["missing_meta"]
-    # Content
-    penalties += page_metrics.get("45_Thin_Content_Pages", 0) * SEO_WEIGHTS["thin_content"]
-    # Canonical & robots
-    penalties += page_metrics.get("Canonical_Missing", 0) * SEO_WEIGHTS["canonical_missing"]
-    penalties += page_metrics.get("Robots_NoIndex_Pages", 0) * SEO_WEIGHTS["robots_noindex"]
+    lcp_score = max(0, 100 - (lcp or 5) / 2.5 * 100)  # Faster LCP -> higher score
+    cls_score = max(0, 100 - (cls or 0.5) * 200)      # CLS <0.1 -> 100
+    inp_score = max(0, 100 - (inp or 2000) / 2000 * 100)  # INP <200ms -> 100
 
-    return penalties
+    return (lcp_score * 0.4 + cls_score * 0.3 + inp_score * 0.3)
 
-def calculate_cwv_penalty(lcp, cls, inp, tbt):
-    """Calculate Core Web Vitals penalty."""
-    penalty = 0
-    penalty += max(0, (lcp - CWV_THRESHOLDS["LCP"]) / 50)
-    penalty += max(0, (cls - CWV_THRESHOLDS["CLS"]) * 300)
-    penalty += max(0, (inp - CWV_THRESHOLDS["INP"]) / 5)
-    penalty += max(0, (tbt - CWV_THRESHOLDS["TBT"]) / 5)
-    return penalty
+def score_seo(metrics: Dict) -> float:
+    """SEO scoring based on meta, headings, content, links."""
+    title = 1 if metrics.get('title_present') else 0
+    meta = 1 if metrics.get('meta_description') else 0
+    headings = metrics.get('headings_score', 0)
+    links = metrics.get('internal_links_score', 0)
+    content = metrics.get('content_score', 0)
 
-def map_grade(score):
-    for threshold, grade in GRADE_MAPPING:
-        if score >= threshold:
-            return grade
-    return "F"
+    raw = (title * 10 + meta * 10 + headings * 25 + links * 25 + content * 30)
+    return normalize_score(raw, 100)
 
-def run_audit(url: str):
-    """Run enterprise-grade audit on a website."""
-    max_pages = int(os.getenv("MAX_CRAWL_PAGES", "50"))
-    crawl_obj = perform_crawl(url, max_pages=max_pages)
+def score_security(metrics: Dict) -> float:
+    """Security & best practices scoring."""
+    https = 100 if metrics.get('https', False) else 0
+    headers = metrics.get('security_headers_score', 0)
+    robots = 10 if metrics.get('robots') else 0
+    sitemap = 10 if metrics.get('sitemap') else 0
+    vulns = metrics.get('vulnerabilities', 0)
+    vulns_score = max(0, 100 - vulns * 20)  # Each vulnerability reduces score
 
-    # SEO and Performance audits
-    seo_res = run_seo_audit(crawl_obj)
-    perf_res = get_performance_metrics(url)
+    return (https * 0.4 + headers * 0.3 + (robots + sitemap) * 0.3 + vulns_score * 0.0)
 
-    # Broken links
-    broken_links = getattr(crawl_obj, 'broken_internal', [])
-    broken_count = len(broken_links)
+def score_ux(metrics: Dict) -> float:
+    """UX & accessibility scoring."""
+    mobile = 100 if metrics.get('mobile_friendly') else 50
+    nav = metrics.get('navigation_score', 0)
+    contrast = metrics.get('color_contrast_score', 0)
+    aria = metrics.get('aria_score', 0)
 
-    # Per-page SEO penalty
-    seo_penalty = calculate_severity_score(seo_res.get("metrics", {}))
-    seo_score = max(0, 100 - (seo_penalty / max(1, len(getattr(crawl_obj, 'pages', [])))))
+    return normalize_score(mobile * 0.25 + nav * 0.25 + contrast * 0.25 + aria * 0.25, 100)
 
-    # Core Web Vitals penalty
-    psi_mobile = fetch_psi(url, "mobile")
-    psi_data = psi_mobile or fetch_psi(url, "desktop")
-    cwv_penalty = 0
-    cwv_metrics = {}
-    if psi_data:
-        lab = psi_data.get("lab", {})
-        lcp = lab.get("lcp_ms", 4000)
-        cls = lab.get("cls", 0.25)
-        inp = lab.get("inp_ms", 300)
-        tbt = lab.get("tbt_ms", 500)
-        cwv_penalty = calculate_cwv_penalty(lcp, cls, inp, tbt)
-        cwv_metrics.update({"LCP_ms": lcp, "CLS": cls, "INP_ms": inp, "TBT_ms": tbt})
-    else:
-        cwv_metrics["PSI_Status"] = "Unavailable"
+def score_international(metrics: Dict) -> float:
+    """Internationalization & export readiness."""
+    hreflang = 25 if metrics.get('hreflang') else 0
+    multi_lang = 25 if metrics.get('multi_language') else 0
+    export_pages = metrics.get('export_pages_score', 0)
+    compliance = metrics.get('intl_compliance', 0)
 
-    perf_score = max(0, perf_res.get("score", 50) - cwv_penalty)
+    return normalize_score(hreflang + multi_lang + export_pages + compliance, 100)
 
-    # Broken links impact
-    broken_score = max(0, 100 - broken_count * 4)
+def per_page_opportunity(metrics: List[Dict]) -> float:
+    """Deduct points for missing meta, thin content, broken links."""
+    total_pages = len(metrics)
+    if total_pages == 0:
+        return 0
+    deductions = 0
+    for page in metrics:
+        if not page.get('title_present'):
+            deductions += 3
+        if not page.get('meta_description'):
+            deductions += 3
+        if page.get('content_score', 0) < 50:
+            deductions += 5
+        if page.get('broken_links', 0) > 0:
+            deductions += min(page.get('broken_links',0)*2, 10)
+    avg_deduction = min(deductions / total_pages, 20)  # Max deduction 20%
+    return avg_deduction
 
-    # Weighted overall score
-    weights = {
-        "seo": 0.4,
-        "performance": 0.5,
-        "broken": 0.1
-    }
-    overall_score = (
-        seo_score * weights["seo"] +
-        perf_score * weights["performance"] +
-        broken_score * weights["broken"]
+def calculate_overall_score(metrics: Dict, page_metrics: List[Dict]=None) -> float:
+    """Weighted overall score combining all categories + per-page deductions."""
+    tech = score_core_web_vitals(metrics)
+    seo = score_seo(metrics)
+    sec = score_security(metrics)
+    ux = score_ux(metrics)
+    intl = score_international(metrics)
+
+    weighted = (
+        tech * 0.4 +
+        seo * 0.25 +
+        sec * 0.15 +
+        ux * 0.1 +
+        intl * 0.1
     )
 
-    grade = map_grade(overall_score)
+    if page_metrics:
+        deduction = per_page_opportunity(page_metrics)
+        weighted = max(0, weighted - deduction)
 
-    # Categories output
+    return round(weighted, 2)
+
+def assign_grade(score: float) -> str:
+    if score >= 85:
+        return "A+"
+    elif score >= 75:
+        return "A"
+    elif score >= 65:
+        return "B+"
+    elif score >= 50:
+        return "B"
+    else:
+        return "C"
+
+def run_audit(metrics: Dict, page_metrics: List[Dict]=None) -> Dict:
+    """
+    Input: metrics dictionary with all scoring metrics
+           page_metrics list for per-page analysis
+    Output: audit report dictionary
+    """
+    overall = calculate_overall_score(metrics, page_metrics)
+    grade = assign_grade(overall)
+
     categories = {
-        "A. Executive Summary": {
-            "score": round(overall_score, 1),
-            "metrics": {
-                "Overall Health": f"{round(overall_score, 1)}%",
-                "Pages Analyzed": len(getattr(crawl_obj, 'pages', [])),
-                "Priority": "Fix Core Web Vitals & On-Page Issues",
-            },
-            "color": "#4F46E5"
-        },
-        "D. On-Page SEO": {
-            "score": round(seo_score, 1),
-            "metrics": seo_res.get("metrics", {}),
-            "color": "#8B5CF6"
-        },
-        "E. Performance": {
-            "score": round(perf_score, 1),
-            "metrics": {**perf_res.get("metrics", {}), **cwv_metrics},
-            "color": "#10B981"
-        },
-        "H. Broken Links Intelligence": {
-            "score": round(broken_score, 1),
-            "metrics": {
-                "Total Broken Links": broken_count,
-                "Broken Links Found": ", ".join([str(item) for item in broken_links[:3]]) if broken_links else "None",
-            },
-            "color": "#F59E0B"
-        },
-        "I. AI Recommendations": {
-            "score": None,
-            "metrics": {"note": "AI suggestions can be integrated here"},
-            "color": "#3B82F6"
-        }
+        "Technical": {"score": score_core_web_vitals(metrics), "metrics": metrics},
+        "SEO": {"score": score_seo(metrics), "metrics": metrics},
+        "Security": {"score": score_security(metrics), "metrics": metrics},
+        "UX & Accessibility": {"score": score_ux(metrics), "metrics": metrics},
+        "Internationalization": {"score": score_international(metrics), "metrics": metrics}
     }
 
     return {
-        "url": url,
-        "overall_score": round(overall_score, 2),
+        "overall_score": overall,
         "grade": grade,
         "categories": categories
     }
