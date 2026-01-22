@@ -8,16 +8,22 @@ from app.db import get_db
 from app.models import User, Audit
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
 from app.audit.grader import run_audit  
-from app.services.pdf_generator import generate_full_audit_pdf # Metric 10
+from app.services.pdf_generator import generate_full_audit_pdf
 from app.auth.tokens import decode_token
 
 router = APIRouter(prefix='/api', tags=['api'])
 
-# ... get_current_user function preserved ...
+def get_current_user(request: Request, db: Session) -> User | None:
+    token = request.cookies.get('session')
+    if not token: return None
+    payload = decode_token(token)
+    if not payload: return None
+    email = payload.get('sub')
+    return db.query(User).filter(User.email == email).first()
 
 @router.post('/open-audit')
 async def open_audit(body: OpenAuditRequest, request: Request):
-    """Triggers the 200-metric grader."""
+    """Triggers the 200-metric audit suite."""
     from app.settings import get_settings
     settings = get_settings()
     
