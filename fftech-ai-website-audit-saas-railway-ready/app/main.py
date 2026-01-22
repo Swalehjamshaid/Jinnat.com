@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
-# Global Exception Handler: Catches the 'unhashable type' and other audit errors
+# Global Exception Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"GLOBAL ERROR CAUGHT: {exc}", exc_info=True)
