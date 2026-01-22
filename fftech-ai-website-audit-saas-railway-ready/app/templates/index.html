@@ -36,6 +36,7 @@
     margin-top: 10px; 
   }
 </style>
+
 <div class="row">
   <div class="col-lg-7">
     <div class="card border-0 shadow-sm">
@@ -47,6 +48,7 @@
           <input id="openUrl" type="url" class="form-control form-control-lg" placeholder="https://example.com">
           <button id="btnOpenAudit" class="btn btn-primary px-4 fw-bold">Start Audit</button>
         </div>
+
         <div id="scanningSection" class="d-none">
           <div class="scan-container">
             <div class="d-flex justify-content-between text-white mb-2 small fw-bold">
@@ -59,6 +61,7 @@
             <p class="scan-status">We're deep-diving into your site's metrics. This may take a moment...</p>
           </div>
         </div>
+
         <div id="openResults" class="mt-3 d-none">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="fw-bold m-0">Audit Report</h5>
@@ -80,12 +83,14 @@
               </div>
             </div>
           </div>
+
           <div id="categoryContainer" class="category-grid"></div>
           <pre id="openJson" class="small mt-3 d-none"></pre>
         </div>
       </div>
     </div>
   </div>
+
   <div class="col-lg-5">
     <div class="card border-0 shadow-sm bg-dark text-white p-2">
       <div class="card-body">
@@ -102,6 +107,7 @@
     </div>
   </div>
 </div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   let chartInstance = null;
@@ -112,15 +118,18 @@
     { p: 85, m: "> Comparing Competitor Benchmarks (Metrics 151-180)..." },
     { p: 100, m: "> Finalizing International Standard Report..." }
   ];
+
   document.getElementById('btnOpenAudit').onclick = async function() {
     const urlInput = document.getElementById('openUrl').value;
     const btn = this;
     const resultsDiv = document.getElementById('openResults');
     const scanDiv = document.getElementById('scanningSection');
     if (!urlInput) { alert("Please enter a valid URL"); return; }
+
     btn.disabled = true;
     scanDiv.classList.remove('d-none');
     resultsDiv.classList.add('d-none');
+
     let step = 0;
     const progressInt = setInterval(() => {
       if(step < statusSteps.length) {
@@ -129,11 +138,11 @@
         document.getElementById('scanStatus').innerText = statusSteps[step].m;
         step++;
       } else {
-        // Keep spinning after last step until response
         document.getElementById('scanStatus').innerText = 'Processing final data...';
         document.getElementById('scanLog').innerHTML += '> Refining metrics for accuracy...<br>';
       }
     }, 1500);
+
     try {
       const response = await fetch('/api/open-audit', {
         method: 'POST',
@@ -144,12 +153,14 @@
       clearInterval(progressInt);
       scanDiv.classList.add('d-none');
       resultsDiv.classList.remove('d-none');
+
       document.getElementById('ovScore').innerText = Math.round(data.overall_score) + '%';
       document.getElementById('ovGrade').innerText = "GRADE " + (data.grade || 'B');
-      // Metric 10: PDF Trigger
+
       document.getElementById('btnDownloadPdf').onclick = () => {
         window.location.href = `/api/download-full-audit?url=${encodeURIComponent(urlInput)}`;
       };
+
       renderMainChart(data);
       renderCategoryCharts(data.categories);
     } catch (err) {
@@ -160,22 +171,19 @@
       btn.disabled = false;
     }
   };
+
   function renderMainChart(data) {
     const ctx = document.getElementById('breakdownChart').getContext('2d');
     if (chartInstance) chartInstance.destroy();
-    // Safely extract scores for the bar chart
     const seoScore = data.categories?.['D. On-Page SEO']?.score || 0;
     const perfScore = data.categories?.['E. Performance']?.score || 0;
     const linkScore = data.categories?.['H. Broken Links Intelligence']?.score || 100;
+
     chartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
         labels: ['Performance', 'SEO', 'Links'],
-        datasets: [{
-          data: [perfScore, seoScore, linkScore],
-          backgroundColor: ['#3b82f6', '#10b981', '#f59e0b'],
-          borderRadius: 8
-        }]
+        datasets: [{ data: [perfScore, seoScore, linkScore], backgroundColor: ['#3b82f6', '#10b981', '#f59e0b'], borderRadius: 8 }]
       },
       options: {
         indexAxis: 'y',
@@ -185,34 +193,45 @@
       }
     });
   }
+
   function renderCategoryCharts(categories) {
     const container = document.getElementById('categoryContainer');
     container.innerHTML = '';
-    // Safe check for categories
-    Object.entries(categories || {}).forEach(([name, info], i) => {
+    console.log("Categories:", categories); // Debug
+
+    const defaultCategories = {
+      "E. Performance": {score: 0, color: "#3b82f6"},
+      "D. On-Page SEO": {score: 0, color: "#10b981"},
+      "F. Security": {score: 0, color: "#f87171"},
+      "G. Internationalization": {score: 0, color: "#fbbf24"},
+      "H. Content Quality": {score: 0, color: "#8b5cf6"}
+    };
+
+    const allCategories = {...defaultCategories, ...(categories || {})};
+
+    Object.entries(allCategories).forEach(([name, info], i) => {
       const id = `catChart-${i}`;
       container.innerHTML += `
         <div class="cat-card">
           <div class="donut-box">
             <canvas id="${id}"></canvas>
-            <div class="donut-val" style="color:${info.color}">${Math.round(info.score)}%</div>
+            <div class="donut-val" style="color:${info.color || '#000'}">${Math.round(info.score || 0)}%</div>
           </div>
           <div class="small fw-bold text-uppercase text-muted">${name.split('. ')[1] || name}</div>
         </div>
       `;
       setTimeout(() => {
-        new Chart(document.getElementById(id), {
-          type: 'doughnut',
-          data: {
-            datasets: [{
-              data: [info.score, 100 - info.score],
-              backgroundColor: [info.color, '#f1f5f9'],
-              borderWidth: 0
-            }]
-          },
-          options: { cutout: '80%', plugins: { legend: { display: false } }, events: [] }
-        });
-      }, 50);
+        const ctx = document.getElementById(id)?.getContext('2d');
+        if(ctx){
+          new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+              datasets: [{ data: [info.score || 0, 100 - (info.score || 0)], backgroundColor: [info.color || '#000', '#f1f5f9'], borderWidth: 0 }]
+            },
+            options: { cutout: '80%', plugins: { legend: { display: false } }, events: [] }
+          });
+        }
+      }, 100);
     });
   }
 </script>
