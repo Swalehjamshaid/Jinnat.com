@@ -2,15 +2,7 @@ import os
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
-    PageBreak,
-    Flowable
-)
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import HorizontalBarChart
@@ -18,7 +10,6 @@ from reportlab.pdfgen import canvas
 
 
 class NumberedCanvas(canvas.Canvas):
-    """Custom canvas for page numbers"""
     def __init__(self, *args, **kwargs):
         canvas.Canvas.__init__(self, *args, **kwargs)
         self._saved_page_states = []
@@ -43,7 +34,6 @@ class NumberedCanvas(canvas.Canvas):
 
 
 class ScoreBar(Flowable):
-    """Improved score bar"""
     def __init__(self, score, width=440, height=26, max_score=100):
         Flowable.__init__(self)
         self.score = min(max(float(score or 0), 0), max_score)
@@ -60,15 +50,7 @@ class ScoreBar(Flowable):
         self.canv.rect(0, 0, self.width, self.height, fill=1, stroke=0)
 
         fillw = (self.score / self.max_score) * self.width
-        if self.score >= 85:
-            col = colors.green
-        elif self.score >= 70:
-            col = colors.limegreen
-        elif self.score >= 50:
-            col = colors.orange
-        else:
-            col = colors.red
-
+        col = colors.green if self.score >= 85 else colors.limegreen if self.score >= 70 else colors.orange if self.score >= 50 else colors.red
         self.canv.setFillColor(col)
         self.canv.rect(0, 0, fillw, self.height, fill=1, stroke=0)
 
@@ -83,14 +65,10 @@ class ScoreBar(Flowable):
         else:
             self.canv.setFillColor(colors.black)
             self.canv.drawString(fillw + 12, 8, txt)
-
         self.canv.restoreState()
 
 
 def generate_full_audit_pdf(data, out_path):
-    """
-    Generates professional PDF report
-    """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     doc = SimpleDocTemplate(
@@ -185,7 +163,7 @@ def generate_full_audit_pdf(data, out_path):
 
     story.append(PageBreak())
 
-    # Competitor Benchmarking
+    # Competitor section (improved placeholder)
     story.append(Paragraph("Competitor Benchmarking", h1))
     story.append(Spacer(1, 14))
 
@@ -236,7 +214,7 @@ def generate_full_audit_pdf(data, out_path):
     else:
         story.append(Paragraph("No competitor data available.", normal))
         story.append(Spacer(1, 20))
-        story.append(Paragraph("Provide competitor URLs for full benchmarking.", normal))
+        story.append(Paragraph("Provide 3–5 competitor URLs for benchmarking.", normal))
 
     story.append(PageBreak())
 
@@ -273,12 +251,12 @@ def generate_full_audit_pdf(data, out_path):
 
         story.append(PageBreak())
 
-    # Recommendations & Conclusion
+    # Recommendations
     story.append(Paragraph("Recommendations & Conclusion", h1))
     story.append(Spacer(1, 14))
     story.append(Paragraph(
-        "This audit evaluates export readiness across technical SEO, performance, security, mobile usability, accessibility, and international readiness. "
-        "The score reflects current strengths and priority improvement areas.",
+        "This audit evaluates export readiness across technical, performance, and international dimensions. "
+        "The score highlights strengths and priority areas for global competitiveness.",
         normal
     ))
     story.append(Spacer(1, 20))
@@ -288,10 +266,10 @@ def generate_full_audit_pdf(data, out_path):
     recs = [
         "Prioritize Core Web Vitals (LCP, CLS, INP) and server response time",
         "Fix missing titles, meta descriptions, thin content, and broken links",
-        "Enable HTTPS and review security headers (HSTS, CSP)",
-        "Add multilingual support (hreflang) and export-specific pages (shipping, customs)",
-        "Conduct monthly re-audits and compare against competitors",
-        "Use AI tools for content and technical optimization"
+        "Enable HTTPS and review security headers",
+        "Add multilingual support (hreflang) and export pages (shipping, customs)",
+        "Re-audit monthly and benchmark against competitors",
+        "Use AI for content & technical optimization"
     ]
     for rec in recs:
         story.append(Paragraph(f"• {rec}", normal))
@@ -300,7 +278,7 @@ def generate_full_audit_pdf(data, out_path):
     story.append(Spacer(1, 30))
     story.append(Paragraph("Thank you for using FFTech Certified Audit Service.", normal))
     story.append(Spacer(1, 12))
-    story.append(Paragraph("Generated on: January 2026 | Contact: support@fftech.ai", normal))
+    story.append(Paragraph("Generated on: January 2026 | support@fftech.ai", normal))
 
     doc.build(story, canvasmaker=NumberedCanvas)
     return out_path
