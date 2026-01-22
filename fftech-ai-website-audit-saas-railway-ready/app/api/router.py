@@ -37,13 +37,36 @@ async def open_audit(body: OpenAuditRequest, request: Request):
         raise HTTPException(429, 'Rate limit exceeded.')
     
     open_audit.RATE_TRACK[key] = count + 1
-    return run_audit(body.url)
+    
+    # CRITICAL FIX: Convert Pydantic HttpUrl object to string to prevent 'unhashable' error
+    url_string = str(body.url)
+    
+    return run_audit(url_string)
 
 @router.get('/download-full-audit')
 async def download_report(url: str = Query(...)):
     """Metric 10: Certified Export Readiness."""
-    report_data = run_audit(url)
+    # Ensure URL is a string
+    url_string = str(url)
+    report_data = run_audit(url_string)
+    
     if not os.path.exists('reports'): os.makedirs('reports')
     file_path = f"reports/Audit_{int(time.time())}.pdf"
     generate_full_audit_pdf(report_data, file_path)
     return FileResponse(path=file_path, filename="FFTech_Certified_Audit.pdf")
+
+@router.post('/audit', response_model=AuditOut)
+def create_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user: raise HTTPException(401, 'Authentication required')
+    
+    # Convert URL to string
+    url_string = str(body.url)
+    
+    result = run_audit(url_string)
+    audit = Audit(user_id=user.id, url=url_string, result_json=result)
+    db.add(audit)
+    user.audit_count += 1
+    db.commit()
+    db.refresh(audit)
+    return audit
