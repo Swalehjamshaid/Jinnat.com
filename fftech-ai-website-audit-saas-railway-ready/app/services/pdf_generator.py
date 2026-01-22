@@ -12,15 +12,15 @@ from reportlab.platypus import (
     Flowable
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.shapes import Drawing, Rect
 from reportlab.graphics.charts.barcharts import HorizontalBarChart
 
 
 class ScoreBar(Flowable):
-    """Custom horizontal score bar"""
+    """Custom horizontal score/progress bar"""
     def __init__(self, score, width=380, height=20, max_score=100):
         Flowable.__init__(self)
-        self.score = min(max(float(score or 0), 0), max_score)
+        self.score = min(max(float(score), 0), max_score)
         self.width = width
         self.height = height
         self.max_score = max_score
@@ -30,13 +30,19 @@ class ScoreBar(Flowable):
 
     def draw(self):
         self.canv.saveState()
-        # Background
+        # Background (unfilled part)
         self.canv.setFillColor(colors.lightgrey)
         self.canv.rect(0, 0, self.width, self.height, fill=1, stroke=0)
 
-        # Filled portion
+        # Filled part
         fill_width = (self.score / self.max_score) * self.width
-        col = colors.ForestGreen if self.score >= 80 else colors.orange if self.score >= 60 else colors.red
+        if self.score >= 80:
+            col = colors.ForestGreen
+        elif self.score >= 60:
+            col = colors.orange
+        else:
+            col = colors.red
+
         self.canv.setFillColor(col)
         self.canv.rect(0, 0, fill_width, self.height, fill=1, stroke=0)
 
@@ -44,7 +50,7 @@ class ScoreBar(Flowable):
         self.canv.setStrokeColor(colors.black)
         self.canv.rect(0, 0, self.width, self.height, fill=0, stroke=1)
 
-        # Text
+        # Text inside / beside
         self.canv.setFont("Helvetica-Bold", 10)
         text = f"{self.score:.0f}%"
         if fill_width > 50:
@@ -60,9 +66,10 @@ class ScoreBar(Flowable):
 def generate_full_audit_pdf(data, out_path):
     """
     CATEGORY A - METRIC 10: Certified Export Readiness.
-    Generates a professional ~5-page graphical PDF report
-    with added Competitor Analysis section.
+    Generates a professional ~5-page graphical PDF report.
+    Keeps same input/output signature.
     """
+    # Ensure output directory exists
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     doc = SimpleDocTemplate(
@@ -76,6 +83,7 @@ def generate_full_audit_pdf(data, out_path):
 
     styles = getSampleStyleSheet()
 
+    # Custom styles for better look
     title_style = ParagraphStyle(
         name='CustomTitle',
         parent=styles['Title'],
@@ -85,8 +93,20 @@ def generate_full_audit_pdf(data, out_path):
         textColor=colors.darkblue
     )
 
-    h1 = ParagraphStyle(name='Heading1', parent=styles['Heading1'], fontSize=16, spaceAfter=10)
-    h2 = ParagraphStyle(name='Heading2', parent=styles['Heading2'], fontSize=13, spaceAfter=8)
+    h1 = ParagraphStyle(
+        name='Heading1',
+        parent=styles['Heading1'],
+        fontSize=16,
+        spaceAfter=10
+    )
+
+    h2 = ParagraphStyle(
+        name='Heading2',
+        parent=styles['Heading2'],
+        fontSize=13,
+        spaceAfter=8
+    )
+
     normal = styles['Normal']
 
     story = []
@@ -124,15 +144,16 @@ def generate_full_audit_pdf(data, out_path):
 
     categories = data.get('categories', {})
 
+    # Summary table
     summary_data = [["Category", "Score", "Grade"]]
     cat_names = []
     cat_scores = []
 
     for cat, info in categories.items():
         score = info.get('score', 0)
-        cat_grade = 'A' if score >= 85 else 'B' if score >= 70 else 'C' if score >= 50 else 'D'
-        summary_data.append([cat, f"{score}%", cat_grade])
-        cat_names.append(cat[:18])
+        grade = 'A' if score >= 85 else 'B' if score >= 70 else 'C' if score >= 50 else 'D'
+        summary_data.append([cat, f"{score}%", grade])
+        cat_names.append(cat[:18])   # shorten for chart labels
         cat_scores.append(score)
 
     summary_table = Table(summary_data, colWidths=[240, 80, 80])
@@ -143,12 +164,16 @@ def generate_full_audit_pdf(data, out_path):
         ('GRID', (0,0), (-1,-1), 0.6, colors.grey),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('PADDING', (0,0), (-1,-1), 7),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(summary_table)
     story.append(Spacer(1, 14*mm))
 
+    # Horizontal bar chart of category scores
     if cat_scores:
-        story.append(Paragraph("Category Performance", h2))
+        story.append(Paragraph("Category Performance Overview", h2))
+        story.append(Spacer(1, 6*mm))
+
         drawing = Drawing(420, 160)
         bc = HorizontalBarChart()
         bc.x = 70
@@ -172,70 +197,7 @@ def generate_full_audit_pdf(data, out_path):
     story.append(PageBreak())
 
     # ────────────────────────────────────────────────
-    # Page 3 – Competitor Analysis (new section)
-    # ────────────────────────────────────────────────
-    competitors = data.get('competitors', [])
-    if competitors:
-        story.append(Paragraph("Competitor Analysis", h1))
-        story.append(Spacer(1, 6*mm))
-        story.append(Paragraph("Benchmark comparison with selected competitors", normal))
-        story.append(Spacer(1, 10*mm))
-
-        comp_data = [["Website", "Score", "Grade"]]
-        comp_names = [url.split('//')[-1].split('/')[0][:20] or "This Site"]
-        comp_scores = [overall_score]
-
-        for comp in competitors:
-            c_url = comp.get('url', 'Competitor').split('//')[-1].split('/')[0][:20]
-            c_score = comp.get('overall_score', 0)
-            c_grade = comp.get('grade', '—')
-            comp_data.append([c_url, f"{c_score}%", c_grade])
-            comp_names.append(c_url)
-            comp_scores.append(c_score)
-
-        comp_table = Table(comp_data, colWidths=[240, 80, 80])
-        comp_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.darkgreen),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (1,1), (-1,-1), 'CENTER'),
-            ('GRID', (0,0), (-1,-1), 0.6, colors.grey),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('PADDING', (0,0), (-1,-1), 7),
-        ]))
-        story.append(comp_table)
-        story.append(Spacer(1, 12*mm))
-
-        # Bar chart comparison
-        story.append(Paragraph("Score Comparison", h2))
-        drawing = Drawing(420, 180)
-        bc = HorizontalBarChart()
-        bc.x = 70
-        bc.y = 30
-        bc.height = 130
-        bc.width = 330
-        bc.data = [comp_scores]
-        bc.categoryAxis.categoryNames = comp_names
-        bc.categoryAxis.labels.boxAnchor = 'e'
-        bc.categoryAxis.labels.dx = -5
-        bc.categoryAxis.labels.dy = -2
-        bc.categoryAxis.labels.angle = -30
-        bc.valueAxis.valueMin = 0
-        bc.valueAxis.valueMax = 100
-        bc.valueAxis.valueStep = 20
-        bc.bars.strokeWidth = 0.6
-        bc.bars.fillColor = colors.teal
-        drawing.add(bc)
-        story.append(drawing)
-
-    else:
-        story.append(Paragraph("Competitor Analysis", h1))
-        story.append(Spacer(1, 6*mm))
-        story.append(Paragraph("No competitor data available in this report.", normal))
-
-    story.append(PageBreak())
-
-    # ────────────────────────────────────────────────
-    # Remaining pages – Category Details
+    # Pages 3–5+: Category Details
     # ────────────────────────────────────────────────
     for cat_name, info in categories.items():
         story.append(Paragraph(f"Category: {cat_name}", h1))
@@ -260,14 +222,23 @@ def generate_full_audit_pdf(data, out_path):
             t = Table(table_data, colWidths=[320, 130])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.black),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
                 ('ALIGN', (1,1), (1,-1), 'CENTER'),
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
                 ('PADDING', (0,0), (-1,-1), 7),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ]))
             story.append(t)
 
         story.append(PageBreak())
 
+    # Optional last page if needed (e.g. recommendations)
+    # story.append(Paragraph("Recommendations & Next Steps", h1))
+    # story.append(Spacer(1, 8*mm))
+    # story.append(Paragraph("• Improve low-scoring categories\n• Re-audit in 3 months\n• ...", normal))
+    # story.append(PageBreak())
+
+    # Build PDF
     doc.build(story)
     return out_path
