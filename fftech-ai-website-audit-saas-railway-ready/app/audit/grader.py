@@ -1,4 +1,5 @@
 import time
+import os
 from app.audit.crawler import perform_crawl
 from app.audit.seo import run_seo_audit
 from app.audit.performance import get_performance_metrics
@@ -14,16 +15,20 @@ def run_audit(url: str):
     # ────────────────────────────────────────────────
     # 1. Collect raw data from existing audit modules
     # ────────────────────────────────────────────────
-    crawl_obj = perform_crawl(url, max_pages=10)
+    # Use env var for crawl depth (default 40 for real audit)
+    max_pages = int(os.getenv("MAX_CRAWL_PAGES", "40"))
+    crawl_obj = perform_crawl(url, max_pages=max_pages)
+    
     seo_res = run_seo_audit(crawl_obj)
     perf_res = get_performance_metrics(url)
 
-    # Fallback values in case any module returns incomplete data
-    seo_score = seo_res.get('score', 70.0)
-    perf_score = perf_res.get('score', 65.0)
-
+    # Safe broken links access
     broken_links = getattr(crawl_obj, 'broken_internal', [])
     broken_count = len(broken_links)
+
+    # Fallback values
+    seo_score = seo_res.get('score', 70.0)
+    perf_score = perf_res.get('score', 65.0)
 
     # ────────────────────────────────────────────────
     # 2. Define categories with realistic structure
@@ -70,22 +75,44 @@ def run_audit(url: str):
     }
 
     # ────────────────────────────────────────────────
-    # 3. Integrate PSI data safely (FIXED: handle None)
+    # 3. Integrate real PSI data SAFELY (this fixes the crash)
     # ────────────────────────────────────────────────
     psi_mobile = fetch_psi(url, strategy='mobile')
     psi_desktop = fetch_psi(url, strategy='desktop')
 
-    # Add PSI to performance category (safe)
-    if psi_mobile is not None:
+    # Use whichever PSI succeeded (prefer mobile)
+    psi_data = psi_mobile if psi_mobile is not None else psi_desktop
+
+    if psi_data is not None:
+        # Add real PSI metrics to performance category
+        lab = psi_data.get('lab', {})
         categories["E. Performance"]["metrics"].update({
-            "LCP_ms": psi_mobile.get('lab', {}).get('lcp_ms', 'N/A'),
-            "CLS": psi_mobile.get('lab', {}).get('cls', 'N/A'),
-            "INP_ms": psi_mobile.get('lab', {}).get('inp_ms', 'N/A')
+            "LCP_ms": lab.get('lcp_ms', 'N/A'),
+            "CLS": lab.get('cls', 'N/A'),
+            "INP_ms": lab.get('inp_ms', 'N/A'),
+            "TBT_ms": lab.get('tbt_ms', 'N/A'),
+            "Speed_Index_ms": lab.get('speed_index_ms', 'N/A'),
+            "TTI_ms": lab.get('tti_ms', 'N/A')
         })
-        # Adjust performance score with real PSI data
-        lcp = psi_mobile.get('lab', {}).get('lcp_ms', 4000)
-        perf_score = max(30, perf_score - (lcp - 2500) / 20 if lcp > 2500 else perf_score)
-        categories["E. Performance"]["score"] = perf_score
+
+        # Adjust performance score using real PSI data
+        lcp = lab.get('lcp_ms', 4000)
+        cls = lab.get('cls', 0.25)
+        tbt = lab.get('tbt_ms', 500)
+
+        psi_penalty = 0
+        if lcp > 2500:
+            psi_penalty += (lcp - 2500) / 20
+        if cls > 0.1:
+            psi_penalty += cls * 300
+        if tbt > 200:
+            psi_penalty += (tbt - 200) / 5
+
+        perf_score = max(30, perf_score - psi_penalty)
+        categories["E. Performance"]["score"] = round(perf_score, 1)
+    else:
+        # PSI failed - add clear note
+        categories["E. Performance"]["metrics"]["PSI_Status"] = "API Unavailable (check key or quota)"
 
     # ────────────────────────────────────────────────
     # 4. Calculate weighted overall score
@@ -93,7 +120,7 @@ def run_audit(url: str):
     weights = {
         "A. Executive Summary": 1.0,
         "D. On-Page SEO": 1.3,
-        "E. Performance": 1.8,        # Performance is critical → higher weight
+        "E. Performance": 1.8,
         "H. Broken Links Intelligence": 1.2
     }
 
@@ -106,7 +133,7 @@ def run_audit(url: str):
     overall_score = round(weighted_sum / total_weight, 2)
 
     # ────────────────────────────────────────────────
-    # 5. Determine grade with better granularity
+    # 5. Determine grade
     # ────────────────────────────────────────────────
     if overall_score >= 90:
         grade = "A+"
@@ -122,11 +149,11 @@ def run_audit(url: str):
         grade = "F"
 
     # ────────────────────────────────────────────────
-    # 6. Return in exactly the same format as before
+    # 6. Return (same exact format)
     # ────────────────────────────────────────────────
     return {
         "url": url,
-        "overall_score": overall_score,     # always float, never undefined
+        "overall_score": overall_score,
         "grade": grade,
         "categories": categories
     }
