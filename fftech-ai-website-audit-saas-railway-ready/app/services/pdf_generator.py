@@ -12,56 +12,56 @@ from reportlab.platypus import (
     Flowable
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.graphics.shapes import Drawing, Rect
+from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import HorizontalBarChart
-from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics.charts.legends import Legend
 
 
 class ScoreBar(Flowable):
-    """Simple horizontal score bar widget"""
-    def __init__(self, score, width=380, height=18, max_score=100, label=None):
+    """Custom horizontal score bar"""
+    def __init__(self, score, width=380, height=20, max_score=100):
         Flowable.__init__(self)
-        self.score = min(max(score, 0), max_score)
+        self.score = min(max(float(score or 0), 0), max_score)
         self.width = width
         self.height = height
         self.max_score = max_score
-        self.label = label or f"{int(self.score)}%"
 
-    def wrap(self, *args):
-        return (self.width, self.height + 10 if self.label else self.height)
+    def wrap(self, availWidth, availHeight):
+        return (self.width, self.height + 4)
 
     def draw(self):
         self.canv.saveState()
         # Background
         self.canv.setFillColor(colors.lightgrey)
         self.canv.rect(0, 0, self.width, self.height, fill=1, stroke=0)
-        
-        # Filled
+
+        # Filled portion
         fill_width = (self.score / self.max_score) * self.width
-        color = colors.green if self.score >= 80 else colors.orange if self.score >= 60 else colors.red
-        self.canv.setFillColor(color)
+        col = colors.ForestGreen if self.score >= 80 else colors.orange if self.score >= 60 else colors.red
+        self.canv.setFillColor(col)
         self.canv.rect(0, 0, fill_width, self.height, fill=1, stroke=0)
-        
+
         # Border
         self.canv.setStrokeColor(colors.black)
         self.canv.rect(0, 0, self.width, self.height, fill=0, stroke=1)
-        
-        # Label
+
+        # Text
         self.canv.setFont("Helvetica-Bold", 10)
-        text_color = colors.white if fill_width > 60 else colors.black
-        self.canv.setFillColor(text_color)
-        self.canv.drawCentredString(fill_width / 2 if fill_width > 60 else fill_width + 10, 4, self.label)
-        
+        text = f"{self.score:.0f}%"
+        if fill_width > 50:
+            self.canv.setFillColor(colors.white)
+            self.canv.drawCentredString(fill_width / 2, 6, text)
+        else:
+            self.canv.setFillColor(colors.black)
+            self.canv.drawString(fill_width + 8, 6, text)
+
         self.canv.restoreState()
 
 
 def generate_full_audit_pdf(data, out_path):
     """
     CATEGORY A - METRIC 10: Certified Export Readiness.
-    Generates a professional ~5-7 page International Standard PDF report
-    with comprehensive details, clean format, graphical presentations,
-    and competitor analysis (assumes 'competitors' key in data as list of similar dicts).
+    Generates a professional ~5-page graphical PDF report
+    with added Competitor Analysis section.
     """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
@@ -70,274 +70,204 @@ def generate_full_audit_pdf(data, out_path):
         pagesize=A4,
         rightMargin=15*mm,
         leftMargin=15*mm,
-        topMargin=20*mm,
-        bottomMargin=20*mm
+        topMargin=18*mm,
+        bottomMargin=18*mm
     )
 
     styles = getSampleStyleSheet()
 
-    # Custom styles for clean format
-    title_style = ParagraphStyle('Title', alignment=1, fontSize=24, spaceAfter=12, textColor=colors.darkblue)
-    h1 = ParagraphStyle('Heading1', parent=styles['Heading1'], fontSize=18, spaceAfter=10, textColor=colors.black)
-    h2 = ParagraphStyle('Heading2', parent=styles['Heading2'], fontSize=14, spaceAfter=8)
-    h3 = ParagraphStyle('Heading3', parent=styles['Heading3'], fontSize=12, spaceAfter=6)
-    normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=10, spaceAfter=4)
-    summary = ParagraphStyle('Summary', parent=normal, textColor=colors.grey, spaceAfter=8)
+    title_style = ParagraphStyle(
+        name='CustomTitle',
+        parent=styles['Title'],
+        fontSize=22,
+        alignment=1,
+        spaceAfter=18,
+        textColor=colors.darkblue
+    )
+
+    h1 = ParagraphStyle(name='Heading1', parent=styles['Heading1'], fontSize=16, spaceAfter=10)
+    h2 = ParagraphStyle(name='Heading2', parent=styles['Heading2'], fontSize=13, spaceAfter=8)
+    normal = styles['Normal']
 
     story = []
 
-    # Helper to add header/footer (for all pages)
-    def add_page_elements(canvas, doc):
-        canvas.saveState()
-        canvas.setFont('Helvetica', 8)
-        canvas.setFillColor(colors.grey)
-        canvas.drawString(20*mm, doc.bottomMargin - 5*mm, f"Certified Audit Report - {data.get('url', 'N/A')}")
-        canvas.drawRightString(doc.width + doc.leftMargin, doc.bottomMargin - 5*mm, f"Page {doc.page}")
-        canvas.restoreState()
-
-    doc.onLaterPages = add_page_elements
-    doc.onFirstPage = add_page_elements
-
     # ────────────────────────────────────────────────
-    # Page 1 – Professional Cover
+    # Page 1 – Cover
     # ────────────────────────────────────────────────
-    story.append(Spacer(1, 50*mm))
+    story.append(Spacer(1, 70*mm))
     story.append(Paragraph("CERTIFIED WEBSITE AUDIT REPORT", title_style))
-    story.append(Spacer(1, 10*mm))
+    story.append(Spacer(1, 18*mm))
 
     url = data.get('url', 'N/A')
     story.append(Paragraph(f"Website: {url}", h2))
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 6*mm))
 
-    overall = data.get('overall_score', 0)
+    overall_score = data.get('overall_score', 0)
     grade = data.get('grade', 'B')
-    story.append(Paragraph(f"Global Health Score: {overall}%", h2))
+    story.append(Paragraph(f"Global Health Score: {overall_score}%", h2))
     story.append(Paragraph(f"Final Grade: {grade}", h2))
-    story.append(Spacer(1, 10*mm))
+    story.append(Spacer(1, 14*mm))
 
-    story.append(ScoreBar(overall, width=400, height=24, label=f"{overall}% - Grade {grade}"))
-    story.append(Spacer(1, 20*mm))
+    story.append(ScoreBar(overall_score, width=400, height=24))
+    story.append(Spacer(1, 30*mm))
 
-    story.append(Paragraph("Comprehensive Export Readiness Assessment", summary))
-    story.append(Paragraph("Generated on: [Date Placeholder]", summary))  # Add dynamic date if needed
+    story.append(Paragraph("Professional Export Readiness Assessment Report", normal))
     story.append(PageBreak())
 
     # ────────────────────────────────────────────────
-    # Page 2 – Executive Summary & Category Overview
+    # Page 2 – Category Overview + Chart
     # ────────────────────────────────────────────────
-    story.append(Paragraph("Executive Summary", h1))
-    story.append(Spacer(1, 4*mm))
-    story.append(Paragraph(f"This report evaluates the website '{url}' across key categories for export readiness.", normal))
-    story.append(Paragraph(f"Overall Performance: {overall}% ({grade}) - Strong in [Strengths Placeholder], opportunities in [Weaknesses Placeholder].", normal))
-    story.append(Spacer(1, 8*mm))
-
-    story.append(Paragraph("Category Breakdown", h2))
-    story.append(Spacer(1, 4*mm))
+    story.append(Paragraph("Audit Summary", h1))
+    story.append(Spacer(1, 6*mm))
+    story.append(Paragraph(f"Website audited: {url}", normal))
+    story.append(Spacer(1, 12*mm))
 
     categories = data.get('categories', {})
-    cat_data = [["Category", "Score", "Grade"]]
-    cat_scores = []
+
+    summary_data = [["Category", "Score", "Grade"]]
     cat_names = []
+    cat_scores = []
 
-    for cat_name, info in categories.items():
+    for cat, info in categories.items():
         score = info.get('score', 0)
-        cat_grade = 'A' if score >= 85 else 'B' if score >= 70 else 'C' if score >= 50 else 'D/F'
-        cat_data.append([cat_name, f"{score}%", cat_grade])
+        cat_grade = 'A' if score >= 85 else 'B' if score >= 70 else 'C' if score >= 50 else 'D'
+        summary_data.append([cat, f"{score}%", cat_grade])
+        cat_names.append(cat[:18])
         cat_scores.append(score)
-        cat_names.append(cat_name)
 
-    # Clean table style
-    cat_table = Table(cat_data, colWidths=[240, 80, 80])
-    cat_table.setStyle(TableStyle([
+    summary_table = Table(summary_data, colWidths=[240, 80, 80])
+    summary_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('ALIGN', (1,1), (2,-1), 'CENTER'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+        ('GRID', (0,0), (-1,-1), 0.6, colors.grey),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('PADDING', (0,0), (-1,-1), 6),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
+        ('PADDING', (0,0), (-1,-1), 7),
     ]))
-    story.append(cat_table)
-    story.append(Spacer(1, 8*mm))
+    story.append(summary_table)
+    story.append(Spacer(1, 14*mm))
 
-    # Graphical: Pie Chart for Category Distribution
     if cat_scores:
-        story.append(Paragraph("Category Score Distribution", h3))
-        drawing = Drawing(400, 200)
-        pie = Pie()
-        pie.x = 100
-        pie.y = 20
-        pie.width = pie.height = 150
-        pie.data = cat_scores
-        pie.labels = cat_names
-        pie.slices.strokeWidth = 0.5
-        pie.slices.fontSize = 8
-
-        legend = Legend()
-        legend.x = 260
-        legend.y = 100
-        legend.dx = 8
-        legend.dy = 8
-        legend.fontName = 'Helvetica'
-        legend.fontSize = 8
-        legend.boxAnchor = 'w'
-        legend.columnMaximum = 10
-        legend.strokeWidth = 0.5
-        legend.strokeColor = colors.grey
-        legend.deltax = 75
-        legend.deltay = 0
-        legend.autoXPadding = 5
-        legend.yGap = 0
-        legend.dxTextSpace = 5
-        legend.alignment = 'right'
-        legend.columnMaximum = 99
-        legend.rightPadding = 15
-        legend.colorNamePairs = [(pie.slices[i].fillColor, (pie.labels[i][0:20], '%0.2f%%' % (pie.data[i]/sum(pie.data)*100.0))) for i in range(len(pie.data))]
-
-        drawing.add(pie)
-        drawing.add(legend)
+        story.append(Paragraph("Category Performance", h2))
+        drawing = Drawing(420, 160)
+        bc = HorizontalBarChart()
+        bc.x = 70
+        bc.y = 20
+        bc.height = 120
+        bc.width = 330
+        bc.data = [cat_scores]
+        bc.categoryAxis.categoryNames = cat_names
+        bc.categoryAxis.labels.boxAnchor = 'e'
+        bc.categoryAxis.labels.dx = -5
+        bc.categoryAxis.labels.dy = -2
+        bc.categoryAxis.labels.angle = -30
+        bc.valueAxis.valueMin = 0
+        bc.valueAxis.valueMax = 100
+        bc.valueAxis.valueStep = 20
+        bc.bars.strokeWidth = 0.6
+        bc.bars.fillColor = colors.mediumblue
+        drawing.add(bc)
         story.append(drawing)
 
     story.append(PageBreak())
 
     # ────────────────────────────────────────────────
-    # Page 3 – Competitor Analysis (New Section)
+    # Page 3 – Competitor Analysis (new section)
     # ────────────────────────────────────────────────
-    competitors = data.get('competitors', [])  # Assume list of dicts like main data
+    competitors = data.get('competitors', [])
     if competitors:
         story.append(Paragraph("Competitor Analysis", h1))
-        story.append(Spacer(1, 4*mm))
-        story.append(Paragraph("Comparison with key competitors to benchmark performance.", normal))
-        story.append(Spacer(1, 8*mm))
+        story.append(Spacer(1, 6*mm))
+        story.append(Paragraph("Benchmark comparison with selected competitors", normal))
+        story.append(Spacer(1, 10*mm))
 
-        comp_data = [["Website", "Overall Score", "Grade"]]
-        comp_scores = [overall]
-        comp_names = [url.split('//')[-1] if url else 'Main']  # Short name
+        comp_data = [["Website", "Score", "Grade"]]
+        comp_names = [url.split('//')[-1].split('/')[0][:20] or "This Site"]
+        comp_scores = [overall_score]
 
         for comp in competitors:
-            c_url = comp.get('url', 'Competitor')
+            c_url = comp.get('url', 'Competitor').split('//')[-1].split('/')[0][:20]
             c_score = comp.get('overall_score', 0)
-            c_grade = comp.get('grade', 'B')
+            c_grade = comp.get('grade', '—')
             comp_data.append([c_url, f"{c_score}%", c_grade])
+            comp_names.append(c_url)
             comp_scores.append(c_score)
-            comp_names.append(c_url.split('//')[-1])
 
-        # Comparison Table
         comp_table = Table(comp_data, colWidths=[240, 80, 80])
         comp_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.darkgreen),
             ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-            ('ALIGN', (1,1), (2,-1), 'CENTER'),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+            ('GRID', (0,0), (-1,-1), 0.6, colors.grey),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('PADDING', (0,0), (-1,-1), 6),
+            ('PADDING', (0,0), (-1,-1), 7),
         ]))
         story.append(comp_table)
-        story.append(Spacer(1, 8*mm))
+        story.append(Spacer(1, 12*mm))
 
-        # Graphical: Bar Chart for Comparison
-        story.append(Paragraph("Score Comparison", h3))
-        drawing = Drawing(400, 200)
+        # Bar chart comparison
+        story.append(Paragraph("Score Comparison", h2))
+        drawing = Drawing(420, 180)
         bc = HorizontalBarChart()
-        bc.x = 50
-        bc.y = 20
-        bc.height = 150
-        bc.width = 300
+        bc.x = 70
+        bc.y = 30
+        bc.height = 130
+        bc.width = 330
         bc.data = [comp_scores]
         bc.categoryAxis.categoryNames = comp_names
-        bc.categoryAxis.labels.angle = 45
-        bc.categoryAxis.labels.dy = -10
+        bc.categoryAxis.labels.boxAnchor = 'e'
+        bc.categoryAxis.labels.dx = -5
+        bc.categoryAxis.labels.dy = -2
+        bc.categoryAxis.labels.angle = -30
         bc.valueAxis.valueMin = 0
         bc.valueAxis.valueMax = 100
         bc.valueAxis.valueStep = 20
-        bc.bars[0].fillColor = colors.blue
-        bc.bars.strokeWidth = 0.5
+        bc.bars.strokeWidth = 0.6
+        bc.bars.fillColor = colors.teal
         drawing.add(bc)
         story.append(drawing)
-        story.append(Spacer(1, 8*mm))
-
-        # Brief Insights
-        story.append(Paragraph("Insights: Your site outperforms competitors in [Areas], but lags in [Others]. Recommendations: [Placeholder].", summary))
 
     else:
         story.append(Paragraph("Competitor Analysis", h1))
-        story.append(Paragraph("No competitor data provided.", normal))
+        story.append(Spacer(1, 6*mm))
+        story.append(Paragraph("No competitor data available in this report.", normal))
 
     story.append(PageBreak())
 
     # ────────────────────────────────────────────────
-    # Pages 4+ – Detailed Category Breakdown (Comprehensive)
+    # Remaining pages – Category Details
     # ────────────────────────────────────────────────
-    for i, (cat_name, info) in enumerate(categories.items(), start=1):
-        story.append(Paragraph(f"Category {i}: {cat_name}", h1))
-        story.append(Spacer(1, 4*mm))
+    for cat_name, info in categories.items():
+        story.append(Paragraph(f"Category: {cat_name}", h1))
+        story.append(Spacer(1, 6*mm))
 
         score = info.get('score', 0)
-        cat_grade = 'A' if score >= 85 else 'B' if score >= 70 else 'C' if score >= 50 else 'D/F'
-        story.append(Paragraph(f"Health Score: {score}% ({cat_grade})", h2))
-        story.append(Spacer(1, 4*mm))
-        story.append(ScoreBar(score, width=400, height=20))
+        story.append(Paragraph(f"Section Health Score: {score}%", h2))
         story.append(Spacer(1, 8*mm))
-
-        story.append(Paragraph("Description: [Category Description Placeholder]. Strengths: [ ]. Opportunities: [ ].", normal))
-        story.append(Spacer(1, 8*mm))
+        story.append(ScoreBar(score, width=400, height=22))
+        story.append(Spacer(1, 12*mm))
 
         metrics = info.get('metrics', {})
         if metrics:
-            story.append(Paragraph("Detailed Metrics", h3))
-            t_data = [["Metric", "Value", "Status"]]
-            for key, val in metrics.items():
-                nice_key = key.replace('_', ' ').title()
-                status = 'Good' if int(str(val).rstrip('%')) > 70 else 'Needs Improvement'  # Simple logic
-                t_data.append([nice_key, str(val), status])
+            story.append(Paragraph("Metrics", h2))
+            story.append(Spacer(1, 4*mm))
 
-            t = Table(t_data, colWidths=[220, 100, 120])
+            table_data = [["Metric", "Value"]]
+            for key, value in metrics.items():
+                nice_key = key.replace('_', ' ').title()
+                table_data.append([nice_key, str(value)])
+
+            t = Table(table_data, colWidths=[320, 130])
             t.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.lightblue),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.darkblue),
+                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-                ('ALIGN', (1,1), (2,-1), 'CENTER'),
+                ('ALIGN', (1,1), (1,-1), 'CENTER'),
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('PADDING', (0,0), (-1,-1), 6),
-                ('FONTSIZE', (0,0), (-1,-1), 10),
+                ('PADDING', (0,0), (-1,-1), 7),
             ]))
             story.append(t)
 
-        # Add per-category competitor comparison if available
-        if competitors:
-            story.append(Spacer(1, 8*mm))
-            story.append(Paragraph("Competitor Comparison for this Category", h3))
-            comp_cat_data = [["Website", "Score"]]
-            comp_cat_data.append(["Main Site", f"{score}%"])
-            for comp in competitors:
-                c_cat = comp.get('categories', {}).get(cat_name, {})
-                c_score = c_cat.get('score', 0)
-                comp_cat_data.append([comp.get('url', 'Comp'), f"{c_score}%"])
-
-            comp_cat_table = Table(comp_cat_data, colWidths=[240, 200])
-            comp_cat_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.grey),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ]))
-            story.append(comp_cat_table)
-
         story.append(PageBreak())
 
-    # ────────────────────────────────────────────────
-    # Final Page – Recommendations & Conclusion
-    # ────────────────────────────────────────────────
-    story.append(Paragraph("Recommendations & Conclusion", h1))
-    story.append(Spacer(1, 4*mm))
-    story.append(Paragraph("Based on the audit, prioritize improvements in low-scoring categories. Aim for 85%+ overall.", normal))
-    story.append(Paragraph("Next Steps: [Actionable List Placeholder].", normal))
-    story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("For questions, contact [Support Placeholder].", summary))
-
-    # Build
     doc.build(story)
     return out_path
