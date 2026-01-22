@@ -9,29 +9,21 @@ from app.audit.links import check_links
 
 def run_audit(url: str):
     """
-    Orchestrates the 200-metric audit suite.
-    Calculates weighted overall health score to eliminate 'undefined' frontend issues.
+    Orchestrates the 200-metric audit suite with real data.
     """
-    # ────────────────────────────────────────────────
-    # 1. Collect raw data (increased crawl depth for real audit)
-    # ────────────────────────────────────────────────
-    max_pages = int(os.getenv("MAX_CRAWL_PAGES", "40"))  # real audits need more pages
+    # Use env var or default 50 pages for real audit
+    max_pages = int(os.getenv("MAX_CRAWL_PAGES", "50"))
     crawl_obj = perform_crawl(url, max_pages=max_pages)
-    
+
     seo_res = run_seo_audit(crawl_obj)
     perf_res = get_performance_metrics(url)
 
-    # Safe broken links
     broken_links = getattr(crawl_obj, 'broken_internal', [])
     broken_count = len(broken_links)
 
-    # Fallbacks
     seo_score = seo_res.get('score', 70.0)
     perf_score = perf_res.get('score', 65.0)
 
-    # ────────────────────────────────────────────────
-    # 2. Categories (same structure)
-    # ────────────────────────────────────────────────
     categories = {
         "A. Executive Summary": {
             "score": round((seo_score + perf_score) / 2, 1),
@@ -44,22 +36,12 @@ def run_audit(url: str):
         },
         "D. On-Page SEO": {
             "score": seo_score,
-            "metrics": seo_res.get('metrics', {
-                "Title Optimization": "N/A",
-                "Meta Descriptions": "N/A",
-                "Heading Structure": "N/A",
-                "Keyword Usage": "N/A"
-            }),
+            "metrics": seo_res.get('metrics', {}),
             "color": "#8B5CF6"
         },
         "E. Performance": {
             "score": perf_score,
-            "metrics": perf_res.get('metrics', {
-                "LCP": perf_res.get('lcp', "N/A"),
-                "INP": perf_res.get('inp', "N/A"),
-                "CLS": perf_res.get('cls', "N/A"),
-                "Page Load Time": perf_res.get('load_time', "N/A")
-            }),
+            "metrics": perf_res.get('metrics', {}),
             "color": "#10B981"
         },
         "H. Broken Links Intelligence": {
@@ -74,16 +56,12 @@ def run_audit(url: str):
     }
 
     # ────────────────────────────────────────────────
-    # 3. Integrate PSI data SAFELY (fixes NoneType crash)
+    # Real PSI integration (safe)
     # ────────────────────────────────────────────────
-    psi_mobile = fetch_psi(url, strategy='mobile')
-    psi_desktop = fetch_psi(url, strategy='desktop')
-
-    # Prefer mobile, fallback to desktop
-    psi_data = psi_mobile if psi_mobile is not None else psi_desktop
+    psi_mobile = fetch_psi(url, 'mobile')
+    psi_data = psi_mobile if psi_mobile is not None else fetch_psi(url, 'desktop')
 
     if psi_data is not None:
-        # Add real PSI metrics
         lab = psi_data.get('lab', {})
         categories["E. Performance"]["metrics"].update({
             "LCP_ms": lab.get('lcp_ms', 'N/A'),
@@ -94,45 +72,40 @@ def run_audit(url: str):
             "TTI_ms": lab.get('tti_ms', 'N/A')
         })
 
-        # Adjust performance score with real PSI
+        # Realistic penalty based on PSI
         lcp = lab.get('lcp_ms', 4000)
         cls = lab.get('cls', 0.25)
         tbt = lab.get('tbt_ms', 500)
 
-        psi_penalty = 0
+        penalty = 0
         if lcp > 2500:
-            psi_penalty += (lcp - 2500) / 20
+            penalty += (lcp - 2500) / 20
         if cls > 0.1:
-            psi_penalty += cls * 300
+            penalty += cls * 300
         if tbt > 200:
-            psi_penalty += (tbt - 200) / 5
+            penalty += (tbt - 200) / 5
 
-        perf_score = max(30, perf_score - psi_penalty)
+        perf_score = max(30, perf_score - penalty)
         categories["E. Performance"]["score"] = round(perf_score, 1)
     else:
-        categories["E. Performance"]["metrics"]["PSI_Status"] = "API Unavailable (check key/quotas)"
+        categories["E. Performance"]["metrics"]["PSI_Status"] = "Unavailable"
 
     # ────────────────────────────────────────────────
-    # 4. Weighted overall score
+    # Weighted score (performance heavier)
     # ────────────────────────────────────────────────
     weights = {
         "A. Executive Summary": 1.0,
         "D. On-Page SEO": 1.3,
-        "E. Performance": 1.8,
+        "E. Performance": 2.0,  # now heaviest
         "H. Broken Links Intelligence": 1.2
     }
 
     total_weight = sum(weights.values())
-    weighted_sum = sum(
-        categories[cat]["score"] * weights[cat]
-        for cat in categories
-    )
+    weighted_sum = sum(categories[cat]["score"] * weights[cat] for cat in categories)
 
     overall_score = round(weighted_sum / total_weight, 2)
 
-    # ────────────────────────────────────────────────
-    # 5. Grade
-    # ────────────────────────────────────────────────
+    # Grade
     if overall_score >= 90:
         grade = "A+"
     elif overall_score >= 80:
@@ -146,9 +119,6 @@ def run_audit(url: str):
     else:
         grade = "F"
 
-    # ────────────────────────────────────────────────
-    # 6. Return (unchanged format)
-    # ────────────────────────────────────────────────
     return {
         "url": url,
         "overall_score": overall_score,
