@@ -10,8 +10,9 @@ from reportlab.pdfgen import canvas
 
 
 class NumberedCanvas(canvas.Canvas):
+    """Canvas with page numbers and footer"""
     def __init__(self, *args, **kwargs):
-        canvas.Canvas.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._saved_page_states = []
 
     def showPage(self):
@@ -23,8 +24,8 @@ class NumberedCanvas(canvas.Canvas):
         for state in self._saved_page_states:
             self.__dict__.update(state)
             self.draw_page_number(num_pages)
-            canvas.Canvas.showPage(self)
-        canvas.Canvas.save(self)
+            super().showPage()
+        super().save()
 
     def draw_page_number(self, page_count):
         self.setFont("Helvetica", 9)
@@ -34,8 +35,9 @@ class NumberedCanvas(canvas.Canvas):
 
 
 class ScoreBar(Flowable):
+    """Horizontal bar for score visualization"""
     def __init__(self, score, width=440, height=26, max_score=100):
-        Flowable.__init__(self)
+        super().__init__()
         self.score = min(max(float(score or 0), 0), max_score)
         self.width = width
         self.height = height
@@ -49,26 +51,27 @@ class ScoreBar(Flowable):
         self.canv.setFillColor(colors.lightgrey)
         self.canv.rect(0, 0, self.width, self.height, fill=1, stroke=0)
 
-        fillw = (self.score / self.max_score) * self.width
+        fill_width = (self.score / self.max_score) * self.width
         col = colors.green if self.score >= 85 else colors.limegreen if self.score >= 70 else colors.orange if self.score >= 50 else colors.red
         self.canv.setFillColor(col)
-        self.canv.rect(0, 0, fillw, self.height, fill=1, stroke=0)
+        self.canv.rect(0, 0, fill_width, self.height, fill=1, stroke=0)
 
         self.canv.setStrokeColor(colors.black)
         self.canv.rect(0, 0, self.width, self.height, fill=0, stroke=1)
 
         self.canv.setFont("Helvetica-Bold", 12)
         txt = f"{self.score:.1f}%"
-        if fillw > 70:
+        if fill_width > 70:
             self.canv.setFillColor(colors.white)
-            self.canv.drawCentredString(fillw / 2, 8, txt)
+            self.canv.drawCentredString(fill_width / 2, 8, txt)
         else:
             self.canv.setFillColor(colors.black)
-            self.canv.drawString(fillw + 12, 8, txt)
+            self.canv.drawString(fill_width + 12, 8, txt)
         self.canv.restoreState()
 
 
 def generate_full_audit_pdf(data, out_path):
+    """Enterprise-level PDF with per-page & per-category visuals"""
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     doc = SimpleDocTemplate(
@@ -81,7 +84,6 @@ def generate_full_audit_pdf(data, out_path):
     )
 
     styles = getSampleStyleSheet()
-
     h1 = ParagraphStyle('Heading1', parent=styles['Heading1'], fontSize=22, spaceAfter=16, textColor=colors.darkblue)
     h2 = ParagraphStyle('Heading2', parent=styles['Heading2'], fontSize=16, spaceAfter=12)
     normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=11, leading=14)
@@ -94,7 +96,6 @@ def generate_full_audit_pdf(data, out_path):
     story.append(Spacer(1, 36))
     story.append(Paragraph(f"Website: {data.get('url', 'N/A')}", h2))
     story.append(Spacer(1, 16))
-
     overall = data.get('overall_score', 0)
     grade = data.get('grade', 'B')
     story.append(Paragraph(f"Global Health Score: {overall:.2f}%", h2))
@@ -102,22 +103,16 @@ def generate_full_audit_pdf(data, out_path):
     story.append(Spacer(1, 24))
     story.append(ScoreBar(overall, width=440, height=28))
     story.append(Spacer(1, 80*mm))
-
     story.append(Paragraph("Comprehensive Export Readiness Assessment — 2026", normal))
     story.append(PageBreak())
 
     # Executive Summary
     story.append(Paragraph("Executive Summary", h1))
     story.append(Spacer(1, 12))
-    story.append(Paragraph(f"Analyzed website: {data.get('url', 'N/A')}", normal))
-    story.append(Spacer(1, 20))
-
     categories = data.get('categories', {})
 
     table_data = [["Category", "Score", "Status"]]
-    cat_names = []
-    cat_scores = []
-
+    cat_names, cat_scores = [], []
     for name, info in categories.items():
         score = info.get('score', 0)
         status = "Excellent" if score >= 85 else "Good" if score >= 70 else "Needs Attention" if score >= 50 else "Critical"
@@ -139,6 +134,7 @@ def generate_full_audit_pdf(data, out_path):
     story.append(summary_table)
     story.append(Spacer(1, 28))
 
+    # Category Performance Chart
     if cat_scores:
         story.append(Paragraph("Category Performance Overview", h2))
         drawing = Drawing(460, 200)
@@ -160,19 +156,62 @@ def generate_full_audit_pdf(data, out_path):
         bc.bars.fillColor = colors.navy
         drawing.add(bc)
         story.append(drawing)
-
     story.append(PageBreak())
 
-    # Competitor section (improved placeholder)
-    story.append(Paragraph("Competitor Benchmarking", h1))
-    story.append(Spacer(1, 14))
+    # Per-Page Opportunity Section
+    story.append(Paragraph("Per-Page Opportunity Scoring (Top 5 Pages)", h1))
+    pages = data.get('pages', [])
+    if pages:
+        top_pages = sorted(pages, key=lambda p: p.get('score', 0))[:5]
+        page_table_data = [["Page URL", "Score"]]
+        page_names, page_scores = [], []
+        for page in top_pages:
+            url = page.get('url', 'N/A')[:50]
+            score = page.get('score', 0)
+            page_table_data.append([url, f"{score:.1f}%"])
+            page_names.append(url[:20])
+            page_scores.append(score)
 
+        page_table = Table(page_table_data, colWidths=[360, 120])
+        page_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.darkorange),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+            ('GRID', (0,0), (-1,-1), 0.7, colors.grey),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('PADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(page_table)
+        story.append(Spacer(1, 20))
+
+        # Bar chart for pages
+        drawing = Drawing(460, 160)
+        bc = HorizontalBarChart()
+        bc.x = 100
+        bc.y = 20
+        bc.height = 120
+        bc.width = 350
+        bc.data = [page_scores]
+        bc.categoryAxis.categoryNames = page_names
+        bc.categoryAxis.labels.boxAnchor = 'e'
+        bc.categoryAxis.labels.angle = -40
+        bc.valueAxis.valueMin = 0
+        bc.valueAxis.valueMax = 100
+        bc.valueAxis.valueStep = 20
+        bc.bars.strokeWidth = 0.7
+        bc.bars.fillColor = colors.purple
+        drawing.add(bc)
+        story.append(drawing)
+    else:
+        story.append(Paragraph("No per-page data available.", normal))
+    story.append(PageBreak())
+
+    # Competitor Benchmarking
+    story.append(Paragraph("Competitor Benchmarking", h1))
     competitors = data.get('competitors', [])
     if competitors:
         comp_data = [["Website", "Score", "Grade"]]
-        comp_names = ["This Site"]
-        comp_scores = [overall]
-
+        comp_names, comp_scores = ["This Site"], [overall]
         for comp in competitors:
             c_url = comp.get('url', 'Competitor')[:30]
             c_score = comp.get('overall_score', 0)
@@ -191,38 +230,14 @@ def generate_full_audit_pdf(data, out_path):
             ('PADDING', (0,0), (-1,-1), 9),
         ]))
         story.append(comp_table)
-        story.append(Spacer(1, 28))
-
-        drawing = Drawing(460, 220)
-        bc = HorizontalBarChart()
-        bc.x = 100
-        bc.y = 45
-        bc.height = 160
-        bc.width = 350
-        bc.data = [comp_scores]
-        bc.categoryAxis.categoryNames = comp_names
-        bc.categoryAxis.labels.boxAnchor = 'e'
-        bc.categoryAxis.labels.dx = -8
-        bc.categoryAxis.labels.angle = -40
-        bc.valueAxis.valueMin = 0
-        bc.valueAxis.valueMax = 100
-        bc.valueAxis.valueStep = 20
-        bc.bars.strokeWidth = 0.7
-        bc.bars.fillColor = colors.teal
-        drawing.add(bc)
-        story.append(drawing)
     else:
         story.append(Paragraph("No competitor data available.", normal))
-        story.append(Spacer(1, 20))
-        story.append(Paragraph("Provide 3–5 competitor URLs for benchmarking.", normal))
-
     story.append(PageBreak())
 
     # Category Details
     for cat_name, info in categories.items():
         story.append(Paragraph(f"Category: {cat_name}", h1))
         story.append(Spacer(1, 14))
-
         score = info.get('score', 0)
         story.append(Paragraph(f"Health Score: {score:.1f}%", h2))
         story.append(Spacer(1, 16))
@@ -233,9 +248,7 @@ def generate_full_audit_pdf(data, out_path):
         if metrics:
             t_data = [["Metric", "Value"]]
             for k, v in metrics.items():
-                nice_name = k.replace('_', ' ').title()
-                t_data.append([nice_name, str(v)])
-
+                t_data.append([k.replace('_', ' ').title(), str(v)])
             t = Table(t_data, colWidths=[380, 140])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
@@ -248,7 +261,6 @@ def generate_full_audit_pdf(data, out_path):
             ]))
             story.append(t)
             story.append(Spacer(1, 20))
-
         story.append(PageBreak())
 
     # Recommendations
@@ -256,13 +268,10 @@ def generate_full_audit_pdf(data, out_path):
     story.append(Spacer(1, 14))
     story.append(Paragraph(
         "This audit evaluates export readiness across technical, performance, and international dimensions. "
-        "The score highlights strengths and priority areas for global competitiveness.",
-        normal
-    ))
+        "The score highlights strengths and priority areas for global competitiveness.", normal))
     story.append(Spacer(1, 20))
 
     story.append(Paragraph("Key Recommendations:", h2))
-    story.append(Spacer(1, 10))
     recs = [
         "Prioritize Core Web Vitals (LCP, CLS, INP) and server response time",
         "Fix missing titles, meta descriptions, thin content, and broken links",
