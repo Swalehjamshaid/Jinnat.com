@@ -42,12 +42,12 @@ def run_seo_audit(crawl_obj):
     metrics["45_Thin_Content_Pages"] = len([wc for wc in word_counts if wc < 150])
 
     # ────────────────────────────────────────────────
-    # NEW: Canonicals & Robots meta (safely handled)
+    # Canonicals & Robots meta (FIXED: safe handling of None)
     # ────────────────────────────────────────────────
-    canonicals = [p.get('canonical') for p in pages if p.get('canonical')]
+    canonicals = [p.get('canonical') for p in pages if p.get('canonical') is not None]
     metrics["Canonical_Missing"] = len(pages) - len(canonicals)
 
-    # Safe robots meta check — avoid .lower() on None
+    # Safe robots meta check - avoid .lower() on None
     robots_values = [p.get('robots_meta') for p in pages if p.get('robots_meta') is not None]
     no_index_count = sum(1 for v in robots_values if v and 'noindex' in str(v).lower())
     metrics["Robots_NoIndex_Pages"] = no_index_count
@@ -70,8 +70,10 @@ def run_seo_audit(crawl_obj):
 
     # Minor / content issues
     penalties += metrics["45_Thin_Content_Pages"] * 2
+
+    # Additional from canonical & robots
     penalties += metrics["Canonical_Missing"] * 5
-    penalties += metrics["Robots_NoIndex_Pages"] * 4
+    penalties += metrics["Robots_NoIndex_Pages"] * 8  # Noindex hurts SEO visibility
 
     # Server errors (very bad)
     penalties += metrics["24_HTTP_5xx"] * 15
