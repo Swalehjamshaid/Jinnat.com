@@ -1,5 +1,4 @@
 
-# app/audit/runner.py
 from __future__ import annotations
 
 import time
@@ -11,29 +10,29 @@ import requests
 from bs4 import BeautifulSoup
 
 from .crawler import crawl
-from .grader import compute_scores  # reuse your current scoring bands/logic
+from .grader import compute_scores  # reuse your scoring logic
 
 HEADERS = {"User-Agent": "FFTechAuditor/1.1 (+https://fftech.ai)"}
 
 
 def _normalize_url(url: str) -> str:
+    """Ensure URL has a scheme (default to https)."""
     parsed = urlparse(url)
-    if not parsed.scheme:
-        return f"https://{url}"
-    return url
+    return url if parsed.scheme else f"https://{url}"
 
 
 def measure_homepage_perf(url: str, attempts: int = 2, timeout: int = 10) -> Dict[str, float]:
     """
     Lightweight performance proxy using requests timing.
-    Not Lighthouse, but gives real, repeatable signals for your score model.
+    Not a replacement for Lighthouse, but gives real, repeatable signals.
     """
-    timings_ms = []
-    sizes_kb = []
+    timings_ms: list[float] = []
+    sizes_kb: list[float] = []
+
     for _ in range(max(1, attempts)):
         start = time.perf_counter()
         r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
-        elapsed_ms = (time.perf_counter() - start) * 1000
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
         timings_ms.append(elapsed_ms)
         sizes_kb.append(len(r.content) / 1024.0)
 
@@ -41,13 +40,13 @@ def measure_homepage_perf(url: str, attempts: int = 2, timeout: int = 10) -> Dic
     p95_ms = max(timings_ms) if len(timings_ms) > 1 else timings_ms[0]
     avg_kb = statistics.mean(sizes_kb)
 
-    # Map to scorer's expected fields (proxies keep your model compatible)
     return {
         "response_ms": round(avg_ms, 1),
         "response_p95_ms": round(p95_ms, 1),
         "html_kb": round(avg_kb, 1),
-        "fcp_ms": round(avg_ms, 1),          # proxy
-        "lcp_ms": round(avg_ms * 1.6, 1),    # proxy
+        # Map to fields your scorer expects (simple proxies):
+        "fcp_ms": round(avg_ms, 1),
+        "lcp_ms": round(avg_ms * 1.6, 1),
     }
 
 
@@ -59,10 +58,9 @@ def analyze_onpage(pages_html: Dict[str, str]) -> Tuple[Dict[str, int], Dict[str
     missing_meta_desc = 0
     multiple_h1 = 0
     images_missing_alt = 0
+    page_samples: list[Dict[str, Any]] = []
 
-    page_samples = []  # limited sample to keep payload small
-
-    for idx, (url, html) in enumerate(pages_html.items()):
+    for idx, (page_url, html) in enumerate(pages_html.items()):
         soup = BeautifulSoup(html, "html.parser")
 
         # <title>
@@ -93,7 +91,7 @@ def analyze_onpage(pages_html: Dict[str, str]) -> Tuple[Dict[str, int], Dict[str
 
         if idx < 8:
             page_samples.append({
-                "url": url,
+                "url": page_url,
                 "title": title[:120],
                 "has_meta_description": bool(meta_desc),
                 "h1_count": len(h1s),
@@ -110,7 +108,7 @@ def analyze_onpage(pages_html: Dict[str, str]) -> Tuple[Dict[str, int], Dict[str
 
 
 def build_priorities(onpage: Dict[str, int], broken_links_total: int, perf: Dict[str, float]) -> list[str]:
-    prios = []
+    prios: list[str] = []
     if broken_links_total > 0:
         prios.append(f"Fix {broken_links_total} broken links (internal + external).")
     if onpage.get("missing_meta_descriptions", 0) > 0:
@@ -121,7 +119,7 @@ def build_priorities(onpage: Dict[str, int], broken_links_total: int, perf: Dict
         prios.append("Reduce multiple <h1> headings per page to a single primary heading.")
     if onpage.get("images_missing_alt", 0) > 0:
         prios.append("Add descriptive alt text to images for accessibility & SEO.")
-    if perf.get("response_ms", 0) > 2200:
+    if perf.get("response_ms", 0.0) > 2200:
         prios.append("Reduce server response time (cache/CDN/minify). Target < 1s.")
     if not prios:
         prios.append("Maintain current quality; consider performance budgets and structured data.")
@@ -131,9 +129,9 @@ def build_priorities(onpage: Dict[str, int], broken_links_total: int, perf: Dict
 def build_executive_summary(grade: str, overall: float, crawl_pages: int, broken: int) -> str:
     if grade in ("A+", "A"):
         tone = "strong technical baseline"
-    elif grade in ("B",):
+    elif grade == "B":
         tone = "healthy foundation with clear optimization opportunities"
-    elif grade in ("C",):
+    elif grade == "C":
         tone = "noticeable issues impacting UX and crawlability"
     else:
         tone = "significant issues that warrant immediate attention"
@@ -207,4 +205,6 @@ def run_audit(url: str) -> Dict[str, Any]:
         ),
     }
     return result
-``
+
+
+__all__ = ["run_audit"]
