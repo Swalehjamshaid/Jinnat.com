@@ -10,14 +10,14 @@ class AuditCreate(AuditBase):
 class OpenAuditRequest(BaseModel):
     url: HttpUrl
     
-    # V2 Config: Removes UserWarning
+    # FIXED: Removes UserWarning by using v2 syntax
     model_config = ConfigDict(from_attributes=True)
 
 class AuditOut(AuditBase):
     id: int
     result_json: Optional[dict] = None
     
-    # V2 Config: Removes UserWarning
+    # FIXED: Replaces 'orm_mode = True'
     model_config = ConfigDict(from_attributes=True)
 
 class UserBase(BaseModel):
