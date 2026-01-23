@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-# Absolute imports for stable Docker/Railway deployment
+# Absolute imports - these require PYTHONPATH to be set in Railway
 from app.db import get_db
 from app.models import User, Audit, Schedule
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
@@ -56,7 +56,7 @@ async def create_audit(body: AuditCreate, request: Request, db: Session = Depend
     if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
         raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
     
-    # Absolute Import and async handling
+    # async handling for the audit runner
     result = await run_audit(body.url) if hasattr(run_audit, '__await__') else run_audit(body.url)
     
     audit = Audit(user_id=user.id, url=str(body.url), result_json=result)
