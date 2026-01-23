@@ -6,6 +6,7 @@ from typing import Any, Dict, Tuple
 from urllib.parse import urlparse
 
 import requests
+import certifi  # SSL certificates fix
 from bs4 import BeautifulSoup
 
 from .crawler import crawl
@@ -14,27 +15,38 @@ from .grader import compute_scores  # reuse your scoring logic
 HEADERS = {"User-Agent": "FFTechAuditor/1.1 (+https://fftech.ai)"}
 
 
-def _normalize_url(url: str | Any) -> str:
-    """Ensure URL has a scheme (default to https). Handles Pydantic HttpUrl objects."""
-    url_str = str(url)  # Convert HttpUrl to string if needed
-    parsed = urlparse(url_str)
-    return url_str if parsed.scheme else f"https://{url_str}"
+def _normalize_url(url: str) -> str:
+    """Ensure URL has a scheme (default to https)."""
+    parsed = urlparse(url)
+    return url if parsed.scheme else f"https://{url}"
 
 
 def measure_homepage_perf(url: str, attempts: int = 2, timeout: int = 10) -> Dict[str, float]:
     """
     Lightweight performance proxy using requests timing.
     Not a replacement for Lighthouse, but gives real, repeatable signals.
+    Uses certifi to ensure SSL certificates are verified correctly.
     """
     timings_ms: list[float] = []
     sizes_kb: list[float] = []
 
     for _ in range(max(1, attempts)):
         start = time.perf_counter()
-        r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        timings_ms.append(elapsed_ms)
-        sizes_kb.append(len(r.content) / 1024.0)
+        try:
+            r = requests.get(
+                url,
+                headers=HEADERS,
+                timeout=timeout,
+                allow_redirects=True,
+                verify=certifi.where()  # <-- ensures SSL verification works
+            )
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            timings_ms.append(elapsed_ms)
+            sizes_kb.append(len(r.content) / 1024.0)
+        except requests.exceptions.SSLError as ssl_err:
+            raise RuntimeError(f"SSL verification failed for {url}: {ssl_err}") from ssl_err
+        except requests.exceptions.RequestException as req_err:
+            raise RuntimeError(f"Request failed for {url}: {req_err}") from req_err
 
     avg_ms = statistics.mean(timings_ms)
     p95_ms = max(timings_ms) if len(timings_ms) > 1 else timings_ms[0]
@@ -44,7 +56,6 @@ def measure_homepage_perf(url: str, attempts: int = 2, timeout: int = 10) -> Dic
         "response_ms": round(avg_ms, 1),
         "response_p95_ms": round(p95_ms, 1),
         "html_kb": round(avg_kb, 1),
-        # Map to fields your scorer expects (simple proxies):
         "fcp_ms": round(avg_ms, 1),
         "lcp_ms": round(avg_ms * 1.6, 1),
     }
@@ -81,7 +92,7 @@ def analyze_onpage(pages_html: Dict[str, str]) -> Tuple[Dict[str, int], Dict[str
         if len(h1s) > 1:
             multiple_h1 += 1
 
-        # <img alt="">
+        # <img alt="...">
         for img in soup.find_all("img"):
             if img.has_attr("alt"):
                 if not str(img.get("alt") or "").strip():
@@ -144,7 +155,7 @@ def build_executive_summary(grade: str, overall: float, crawl_pages: int, broken
     )
 
 
-def run_audit(url: str | Any) -> Dict[str, Any]:
+def run_audit(url: str) -> Dict[str, Any]:
     """
     REAL audit flow:
       1) Normalize URL
