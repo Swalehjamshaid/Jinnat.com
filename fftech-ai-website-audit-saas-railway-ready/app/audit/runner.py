@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import time
@@ -15,10 +14,11 @@ from .grader import compute_scores  # reuse your scoring logic
 HEADERS = {"User-Agent": "FFTechAuditor/1.1 (+https://fftech.ai)"}
 
 
-def _normalize_url(url: str) -> str:
-    """Ensure URL has a scheme (default to https)."""
-    parsed = urlparse(url)
-    return url if parsed.scheme else f"https://{url}"
+def _normalize_url(url: str | Any) -> str:
+    """Ensure URL has a scheme (default to https). Handles Pydantic HttpUrl objects."""
+    url_str = str(url)  # Convert HttpUrl to string if needed
+    parsed = urlparse(url_str)
+    return url_str if parsed.scheme else f"https://{url_str}"
 
 
 def measure_homepage_perf(url: str, attempts: int = 2, timeout: int = 10) -> Dict[str, float]:
@@ -144,7 +144,7 @@ def build_executive_summary(grade: str, overall: float, crawl_pages: int, broken
     )
 
 
-def run_audit(url: str) -> Dict[str, Any]:
+def run_audit(url: str | Any) -> Dict[str, Any]:
     """
     REAL audit flow:
       1) Normalize URL
