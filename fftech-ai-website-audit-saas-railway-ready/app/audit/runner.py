@@ -1,116 +1,90 @@
-from __future__ import annotations
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+from app.db import get_db
+from app.models import User, Audit
+from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
+from app.audit.runner import run_audit
+from app.audit.report import build_pdf
+from app.auth.tokens import decode_token
+from app.settings import get_settings
 
-import time
-import statistics
-from typing import Any, Dict, Tuple
-from urllib.parse import urlparse
+router = APIRouter(prefix='/api', tags=['api'])
 
-import requests
-from bs4 import BeautifulSoup
+def get_current_user(request: Request, db: Session) -> User | None:
+    token = request.cookies.get('session')
+    if not token:
+        return None
+    payload = decode_token(token)
+    if not payload:
+        return None
+    email = payload.get('sub')
+    return db.query(User).filter(User.email == email).first()
 
-from .crawler import crawl
-from .grader import compute_scores  # reuse your scoring logic
+@router.post('/open-audit')
+async def open_audit(body: OpenAuditRequest, request: Request):
+    settings = get_settings()
+    ip = request.client.host if request.client else 'anon'
 
-HEADERS = {"User-Agent": "FFTechAuditor/1.1 (+https://fftech.ai)"}
+    import time
+    now = int(time.time())
+    window = now // 3600
+    key = f"{ip}:{window}"
 
+    if not hasattr(open_audit, 'RATE_TRACK'):
+        open_audit.RATE_TRACK = {}
 
-def _normalize_url(url: str | Any) -> str:
-    """Ensure URL has a scheme (default to https). Accepts str or HttpUrl."""
-    url_str = str(url)  # Convert HttpUrl or any type to string
-    parsed = urlparse(url_str)
-    return url_str if parsed.scheme else f"https://{url_str}"
+    count = open_audit.RATE_TRACK.get(key, 0)
+    if count >= settings.RATE_LIMIT_OPEN_PER_HOUR:
+        raise HTTPException(429, 'Rate limit exceeded for open audits. Please try later or sign in.')
 
+    open_audit.RATE_TRACK[key] = count + 1
 
-def measure_homepage_perf(url: str, attempts: int = 2, timeout: int = 10) -> Dict[str, float]:
-    """
-    Lightweight performance proxy using requests timing.
-    """
-    timings_ms: list[float] = []
-    sizes_kb: list[float] = []
-
-    for _ in range(max(1, attempts)):
-        start = time.perf_counter()
-        try:
-            # Add verify=False to bypass SSL issues (optional; use carefully)
-            r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True, verify=True)
-        except requests.exceptions.SSLError:
-            # fallback: ignore SSL errors
-            r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True, verify=False)
-
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        timings_ms.append(elapsed_ms)
-        sizes_kb.append(len(r.content) / 1024.0)
-
-    avg_ms = statistics.mean(timings_ms)
-    p95_ms = max(timings_ms) if len(timings_ms) > 1 else timings_ms[0]
-    avg_kb = statistics.mean(sizes_kb)
-
-    return {
-        "response_ms": round(avg_ms, 1),
-        "response_p95_ms": round(p95_ms, 1),
-        "html_kb": round(avg_kb, 1),
-        "fcp_ms": round(avg_ms, 1),
-        "lcp_ms": round(avg_ms * 1.6, 1),
-    }
-
-
-# ... (keep analyze_onpage, build_priorities, build_executive_summary unchanged)
-
-
-def run_audit(url: str | Any) -> Dict[str, Any]:
-    """
-    REAL audit flow:
-    """
-    target = _normalize_url(url)
-
-    # 1 & 2) Crawl
-    cr = crawl(target, max_pages=40, timeout=10)
-
-    # 3) On-page analysis
-    onpage, onpage_details = analyze_onpage(cr.pages)
-
-    # 4) Simple performance proxy
-    perf = measure_homepage_perf(target, attempts=2, timeout=10)
-
-    # Link metrics
-    broken_internal = len(cr.broken_internal)
-    broken_external = len(cr.broken_external)
-    broken_total = broken_internal + broken_external
-    crawl_pages_count = len(cr.pages)
-    links = {"total_broken_links": broken_total}
-
-    # 5) Score
-    overall, grade, breakdown = compute_scores(
-        onpage=onpage,
-        perf=perf,
-        links=links,
-        crawl_pages_count=crawl_pages_count,
-    )
-
-    # 6) Chart/PDF/UI-friendly payload
-    result: Dict[str, Any] = {
-        "url": target,
-        "overall_score": round(overall, 1),
-        "grade": grade,
-        "breakdown": breakdown,
-        "performance": perf,
-        "issues_overview": {
-            "pages_crawled": crawl_pages_count,
-            "broken_internal_links": broken_internal,
-            "broken_external_links": broken_external,
-            "http_status_distribution": dict(cr.status_counts),
-        },
-        "onpage": onpage,
-        "onpage_details": onpage_details,
-        "priorities": build_priorities(onpage, broken_total, perf),
-        "executive_summary": build_executive_summary(
-            grade=grade,
-            overall=overall,
-            crawl_pages=crawl_pages_count,
-            broken=broken_total,
-        ),
-    }
+    url_str = str(body.url)  # Fix HttpUrl.decode issue
+    result = await run_audit(url_str) if hasattr(run_audit, '__await__') else run_audit(url_str)
     return result
 
+@router.post('/audit', response_model=AuditOut)
+async def create_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user or not user.is_verified:
+        raise HTTPException(401, 'Authentication required')
 
-__all__ = ["run_audit"]
+    settings = get_settings()
+    if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
+        raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
+
+    url_str = str(body.url)  # Fix HttpUrl.decode issue
+    result = await run_audit(url_str) if hasattr(run_audit, '__await__') else run_audit(url_str)
+
+    audit = Audit(user_id=user.id, url=url_str, result_json=result)
+    db.add(audit)
+    user.audit_count += 1
+    db.commit()
+    db.refresh(audit)
+    return audit
+
+@router.get('/audit/{audit_id}', response_model=AuditOut)
+def get_audit(audit_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(401, 'Authentication required')
+
+    audit = db.query(Audit).filter(Audit.id == audit_id, Audit.user_id == user.id).first()
+    if not audit:
+        raise HTTPException(404, 'Not found')
+    return audit
+
+@router.get('/audit/{audit_id}/report.pdf')
+def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(401, 'Authentication required')
+
+    audit = db.query(Audit).filter(Audit.id == audit_id, Audit.user_id == user.id).first()
+    if not audit:
+        raise HTTPException(404, 'Not found')
+
+    out_path = f"/tmp/audit_{audit_id}.pdf"
+    build_pdf(audit.result_json, out_path)
+    return FileResponse(out_path, media_type='application/pdf', filename=f'audit_{audit_id}.pdf')
