@@ -1,41 +1,78 @@
 
-import requests
-from ..settings import get_settings
+# app/services/ai_service.py
+import logging
+from typing import Dict, Any
 
-def _build_prompt(audit: dict) -> str:
-    br = audit.get('breakdown', {})
-    perf = audit.get('performance', {})
-    onp = audit.get('onpage', {})
-    links = audit.get('links', {})
-    overall = audit.get('overall_score')
-    grade = audit.get('grade')
-    return (
-        "You are an SEO audit assistant. Write a 180-220 word executive summary for a client-ready report. "
-        f"Overall score: {overall}, Grade: {grade}. "
-        f"Category scores (0-100): Performance={br.get('performance')}, On-page={br.get('onpage')}, Coverage={br.get('coverage')}. "
-        f"Key performance (ms): LCP={perf.get('lcp_ms')}, FCP={perf.get('fcp_ms')}, TBT={perf.get('tbt_ms')}. "
-        f"On-page flags: missing_titles={onp.get('missing_title_tags')}, missing_meta={onp.get('missing_meta_descriptions')}. "
-        f"Links: broken_total={links.get('total_broken_links')}. "
-        "Structure into: Strengths, Weaknesses, and Top 3 Priorities (imperative verbs)."
-    )
+logger = logging.getLogger("AIService")
 
-def generate_exec_summary(audit: dict) -> str | None:
-    s = get_settings()
-    if not s.GOOGLE_GEMINI_API_KEY:
-        return None
-    model = s.GEMINI_MODEL or 'models/gemini-2.5-flash'
-    url = f'https://generativelanguage.googleapis.com/v1beta/{model}:generateContent'
-    body = { 'contents': [ { 'parts': [ { 'text': _build_prompt(audit) } ] } ] }
-    try:
-        r = requests.post(url, headers={'x-goog-api-key': s.GOOGLE_GEMINI_API_KEY, 'Content-Type':'application/json'}, json=body, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        cand = (data.get('candidates') or [{}])[0]
-        parts = ((cand.get('content') or {}).get('parts') or [{}])
-        txt = ''
-        for p in parts:
-            if 'text' in p:
-                txt += p.get('text','')
-        return txt.strip() or None
-    except Exception:
-        return None
+
+class AIService:
+    """
+    Offline AI summary generator (no external API calls).
+    Produces a clear, actionable summary from the audit report.
+    """
+
+    def __init__(self) -> None:
+        logger.info("AIService initialized in OFFLINE mode (no external APIs).")
+
+    async def generate_audit_summary(self, audit_data: Dict[str, Any]) -> str:
+        """
+        Expects audit_data with:
+          - url: str
+          - score: float 0..100
+          - category_scores: dict (performance, ux, connectivity, security)
+          - performance: dict with 'fcp', 'lcp', 'cls' (strings, estimated)
+          - connectivity: dict with 'status', 'detail'
+        """
+        try:
+            url = audit_data.get("url", "N/A")
+            score = float(audit_data.get("score", 0.0))
+            categories = audit_data.get("category_scores") or {}
+            perf = audit_data.get("performance") or {}
+            conn = audit_data.get("connectivity") or {}
+
+            perf_pct = categories.get("performance", 0.0)
+            ux_pct = categories.get("ux", 0.0)
+            con_pct = categories.get("connectivity", 0.0)
+            sec_pct = categories.get("security", 0.0)
+
+            lines = [
+                f"Executive Summary (Offline) for {url}",
+                f"Health Index: {score:.2f} / 100",
+                "Category Highlights:",
+                f"- Performance: {perf_pct:.1f}%",
+                f"- UX: {ux_pct:.1f}%",
+                f"- Connectivity: {con_pct:.1f}%",
+                f"- Security: {sec_pct:.1f}%",
+                "Key Metrics (estimated):",
+                f"- FCP: {perf.get('fcp', 'N/A')}",
+                f"- LCP: {perf.get('lcp', 'N/A')}",
+                f"- CLS: {perf.get('cls', 'N/A')}",
+                f"Connectivity: {conn.get('status', 'UNKNOWN')} ({conn.get('detail', 'N/A')})",
+                "Recommendations:",
+            ]
+
+            # Tiered recommendations
+            if score < 60:
+                lines += [
+                    "• Improve TTFB with caching/CDN and backend optimizations.",
+                    "• Reduce render‑blocking JS/CSS; inline critical CSS, defer non-essential JS.",
+                    "• Compress/resize images; adopt WebP/AVIF with lazy‑loading.",
+                    "• Address SSL issues and add HSTS/CSP security headers.",
+                ]
+            elif score < 85:
+                lines += [
+                    "• Trim unused JS/CSS and split bundles; leverage HTTP/2.",
+                    "• Optimize image delivery and establish performance budgets.",
+                    "• Review security headers and enforce stricter policies.",
+                ]
+            else:
+                lines += [
+                    "• Maintain current performance; enforce budgets in CI.",
+                    "• Routinely review third‑party scripts and headers.",
+                ]
+
+            return "\n".join(lines)
+        except Exception as e:
+            logger.exception("Offline AI summary failed: %s", e)
+            return "Summary unavailable due to an internal error. Please re-run the audit."
