@@ -1,3 +1,4 @@
+google-genai==1.60.0
 # Add this if you're using Pydantic BaseSettings (as previously discussed)
 pydantic-settings==2.12.0              # Was >=2.0.0 → now latest stable (Nov 2025)
 
