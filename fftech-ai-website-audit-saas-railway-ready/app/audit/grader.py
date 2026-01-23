@@ -7,12 +7,13 @@ import ssl
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, ConfigDict, Field
-from app.services.ai_service import AIService # New Import
+from app.services.ai_service import AIService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AuditEngine")
 
 class AuditMetrics(BaseModel):
+    """Pydantic V2 Model for Data Integrity."""
     overall_score: float = Field(..., ge=0, le=1)
     fcp: str
     lcp: str
@@ -27,6 +28,7 @@ class WebsiteGrader:
         self.ai_service = AIService()
 
     async def validate_connectivity(self, url: str) -> Dict[str, Any]:
+        """Reliability Check with SSL Fallback for sites like haier.com.pk."""
         async with httpx.AsyncClient(verify=self.ssl_context, timeout=15.0) as client:
             try:
                 response = await client.get(url)
@@ -42,10 +44,12 @@ class WebsiteGrader:
     async def fetch_performance(self, url: str) -> Optional[AuditMetrics]:
         if not self.api_key: return None
         params = {"url": url, "key": self.api_key, "category": "PERFORMANCE"}
+        
         async with httpx.AsyncClient(verify=self.ssl_context, timeout=45.0) as client:
             try:
                 response = await client.get(self.psi_endpoint, params=params)
                 if response.status_code != 200: return None
+                
                 data = response.json()
                 lh = data.get("lighthouseResult", {})
                 audits = lh.get("audits", {})
@@ -58,27 +62,21 @@ class WebsiteGrader:
             except Exception: return None
 
     async def run_full_audit(self, url: str) -> Dict[str, Any]:
-        """ISO Orchestration with AI Analysis."""
         if not url.startswith('http'): url = f"https://{url}"
         start_time = datetime.now(timezone.utc)
         
         conn_task = asyncio.create_task(self.validate_connectivity(url))
         perf_task = asyncio.create_task(self.fetch_performance(url))
-        
         conn_res, perf_res = await asyncio.gather(conn_task, perf_task)
         
         report = {
+            "url": url,
             "metadata": {"timestamp": datetime.now(timezone.utc).isoformat(), "duration": 0},
             "connectivity": conn_res,
             "performance": perf_res.model_dump() if perf_res else None,
-            "score": round(perf_res.overall_score * 100, 2) if perf_res else 0,
-            "url": url
+            "score": round(perf_res.overall_score * 100, 2) if perf_res else 0
         }
-
-        # Generate AI Summary based on the results
+        
         report["ai_summary"] = await self.ai_service.generate_audit_summary(report)
-        
-        # Calculate final duration
         report["metadata"]["duration"] = round((datetime.now(timezone.utc) - start_time).total_seconds(), 2)
-        
         return report
