@@ -1,12 +1,13 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from pydantic import EmailStr
 from sqlalchemy.orm import Session
-from ..db import get_db
-from ..models import User
-from .tokens import create_token, decode_token
-from .email import send_magic_link
+
+# FIXED: Converted from relative to absolute imports
+from app.db import get_db
+from app.models import User
+from app.auth.tokens import create_token, decode_token
+from app.auth.email import send_magic_link
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -34,5 +35,6 @@ def magic(token: str, response: Response, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     user.is_verified = True
     db.commit()
+    # Set secure cookie
     response.set_cookie(key="session", value=token, httponly=True, samesite='lax')
     return RedirectResponse(url='/dashboard', status_code=302)
