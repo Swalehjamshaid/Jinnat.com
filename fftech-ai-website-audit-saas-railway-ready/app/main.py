@@ -8,10 +8,11 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from contextlib import asynccontextmanager
 
+# Internal Imports
 from app.db import get_db, Base, engine
 from app.models import AuditLog
 from app.audit.grader import WebsiteGrader
-from app.services.pdf_service import PDFService
+from app.services.pdf_generator import PDFService # Matches your requested filename
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MainApp")
