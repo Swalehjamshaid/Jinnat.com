@@ -1,3 +1,4 @@
+pip install pydantic-settings
 # --- CORE WEB FRAMEWORK ---
 fastapi==0.128.0
 uvicorn[standard]==0.32.0
