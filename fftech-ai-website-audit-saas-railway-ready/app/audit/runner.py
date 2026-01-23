@@ -11,14 +11,12 @@ import requests
 from bs4 import BeautifulSoup
 
 from .crawler import crawl
-from .grader import compute_scores  # reuse your scoring logic
-
+from .grader import compute_scores  # reuse your current scoring bands/logic
 
 HEADERS = {"User-Agent": "FFTechAuditor/1.1 (+https://fftech.ai)"}
 
 
 def _normalize_url(url: str) -> str:
-    """Ensure the URL has a scheme."""
     parsed = urlparse(url)
     if not parsed.scheme:
         return f"https://{url}"
@@ -27,8 +25,8 @@ def _normalize_url(url: str) -> str:
 
 def measure_homepage_perf(url: str, attempts: int = 2, timeout: int = 10) -> Dict[str, float]:
     """
-    A lightweight performance proxy using requests timing.
-    NOTE: This is not a replacement for Lighthouse/PSI, but gives real, repeatable signals.
+    Lightweight performance proxy using requests timing.
+    Not Lighthouse, but gives real, repeatable signals for your score model.
     """
     timings_ms = []
     sizes_kb = []
@@ -43,27 +41,26 @@ def measure_homepage_perf(url: str, attempts: int = 2, timeout: int = 10) -> Dic
     p95_ms = max(timings_ms) if len(timings_ms) > 1 else timings_ms[0]
     avg_kb = statistics.mean(sizes_kb)
 
-    # Map to the scorer's expected fields (rough proxies to keep compute_scores compatible)
-    perf = {
+    # Map to scorer's expected fields (proxies keep your model compatible)
+    return {
         "response_ms": round(avg_ms, 1),
         "response_p95_ms": round(p95_ms, 1),
         "html_kb": round(avg_kb, 1),
-        "fcp_ms": round(avg_ms, 1),           # proxy
-        "lcp_ms": round(avg_ms * 1.6, 1),     # proxy
+        "fcp_ms": round(avg_ms, 1),          # proxy
+        "lcp_ms": round(avg_ms * 1.6, 1),    # proxy
     }
-    return perf
 
 
 def analyze_onpage(pages_html: Dict[str, str]) -> Tuple[Dict[str, int], Dict[str, Any]]:
     """
-    Parse crawled HTML pages to compute on-page metrics (+ a small details payload).
+    Parse crawled HTML pages to compute on-page metrics (+ small details payload).
     """
     missing_title = 0
     missing_meta_desc = 0
     multiple_h1 = 0
     images_missing_alt = 0
 
-    page_samples = []  # store per-page summary (limited for payload size)
+    page_samples = []  # limited sample to keep payload small
 
     for idx, (url, html) in enumerate(pages_html.items()):
         soup = BeautifulSoup(html, "html.parser")
@@ -94,7 +91,7 @@ def analyze_onpage(pages_html: Dict[str, str]) -> Tuple[Dict[str, int], Dict[str
             else:
                 images_missing_alt += 1
 
-        if idx < 8:  # keep payload small but insightful
+        if idx < 8:
             page_samples.append({
                 "url": url,
                 "title": title[:120],
@@ -125,7 +122,7 @@ def build_priorities(onpage: Dict[str, int], broken_links_total: int, perf: Dict
     if onpage.get("images_missing_alt", 0) > 0:
         prios.append("Add descriptive alt text to images for accessibility & SEO.")
     if perf.get("response_ms", 0) > 2200:
-        prios.append("Reduce server response time (cache, CDN, lighter HTML). Target < 1s.")
+        prios.append("Reduce server response time (cache/CDN/minify). Target < 1s.")
     if not prios:
         prios.append("Maintain current quality; consider performance budgets and structured data.")
     return prios
@@ -141,23 +138,23 @@ def build_executive_summary(grade: str, overall: float, crawl_pages: int, broken
     else:
         tone = "significant issues that warrant immediate attention"
 
+    broken_txt = "no broken links detected" if broken == 0 else f"{broken} broken links found"
     return (
         f"The automated audit scanned {crawl_pages} pages and produced an overall score of "
-        f"{overall:.0f} ({grade}). Results indicate {tone}. "
-        f"{'There are no broken links detected.' if broken == 0 else f'{broken} broken links were found.'} "
+        f"{overall:.0f} ({grade}). Results indicate {tone}. Additionally, {broken_txt}. "
         "Address the prioritized items to unlock quick wins over the next sprint."
     )
 
 
 def run_audit(url: str) -> Dict[str, Any]:
     """
-    REAL audit:
+    REAL audit flow:
       1) Normalize URL
-      2) Crawl site (HTML + links + broken checks)
+      2) Crawl (HTML + links + broken checks)
       3) Analyze on-page metrics from actual HTML
       4) Measure simple perf proxies
-      5) Score using your existing compute_scores()
-      6) Return a structured, chart-ready payload for API/UI/PDF
+      5) Score using compute_scores()
+      6) Return a structured, chart-ready payload (for API/UI/PDF)
     """
     target = _normalize_url(url)
 
@@ -167,7 +164,7 @@ def run_audit(url: str) -> Dict[str, Any]:
     # 3) On-page analysis
     onpage, onpage_details = analyze_onpage(cr.pages)
 
-    # 4) Simple performance proxy (homepage focus)
+    # 4) Simple performance proxy
     perf = measure_homepage_perf(target, attempts=2, timeout=10)
 
     # Link metrics
@@ -191,8 +188,8 @@ def run_audit(url: str) -> Dict[str, Any]:
         "url": target,
         "overall_score": round(overall, 1),
         "grade": grade,
-        "breakdown": breakdown,     # {onpage, performance, coverage} in 0..100
-        "performance": perf,        # response_ms, response_p95_ms, html_kb, fcp_ms, lcp_ms
+        "breakdown": breakdown,
+        "performance": perf,
         "issues_overview": {
             "pages_crawled": crawl_pages_count,
             "broken_internal_links": broken_internal,
@@ -201,15 +198,13 @@ def run_audit(url: str) -> Dict[str, Any]:
         },
         "onpage": onpage,
         "onpage_details": onpage_details,
+        "priorities": build_priorities(onpage, broken_total, perf),
+        "executive_summary": build_executive_summary(
+            grade=grade,
+            overall=overall,
+            crawl_pages=crawl_pages_count,
+            broken=broken_total,
+        ),
     }
-
-    # Priorities & exec summary
-    result["priorities"] = build_priorities(onpage, broken_total, perf)
-    result["executive_summary"] = build_executive_summary(
-        grade=grade,
-        overall=overall,
-        crawl_pages=crawl_pages_count,
-        broken=broken_total,
-    )
-
     return result
+``
