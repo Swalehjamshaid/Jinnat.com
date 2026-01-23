@@ -15,9 +15,8 @@ HEADERS = {
 }
 TIMEOUT = (10, 25)  # connect, read timeouts
 
-# Optional: Add your Google API key here for reliable PSI (strongly recommended)
-# Get free key: https://console.cloud.google.com/apis/credentials
-PSI_API_KEY: Optional[str] = None  # ← Set this to "your_key_here" if you have one
+# Optional: Add your Google API key here for reliable PSI
+PSI_API_KEY: Optional[str] = None  # ← strongly recommended
 
 
 def fetch_page(url: str) -> requests.Response:
@@ -26,7 +25,6 @@ def fetch_page(url: str) -> requests.Response:
     Returns full Response object (for headers + text).
     """
     try:
-        # First try with verification
         response = requests.get(
             url,
             headers=HEADERS,
@@ -35,21 +33,21 @@ def fetch_page(url: str) -> requests.Response:
         )
         response.raise_for_status()
         return response
+
     except requests.exceptions.SSLError as ssl_err:
-        logger.warning(f"SSL verification failed for {url}: {ssl_err}. Falling back to verify=False.")
-        try:
-            response = requests.get(
-                url,
-                headers=HEADERS,
-                timeout=TIMEOUT,
-                allow_redirects=True,
-                verify=False
-            )
-            response.raise_for_status()
-            return response
-        except Exception as e:
-            logger.error(f"Fetch failed even with verify=False for {url}: {e}")
-            raise
+        logger.warning(
+            f"SSL verification failed for {url}: {ssl_err}. Falling back to verify=False."
+        )
+        response = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=TIMEOUT,
+            allow_redirects=True,
+            verify=False
+        )
+        response.raise_for_status()
+        return response
+
     except requests.exceptions.RequestException as e:
         logger.error(f"Request failed for {url}: {e}")
         raise
@@ -64,11 +62,11 @@ def analyze_seo(html: str) -> Dict:
     metrics["title_present"] = bool(title)
     if not title:
         score -= 15
-    elif len(title) < 10 or len(title) > 70:  # Slightly updated 2026 best practice range
+    elif len(title) < 10 or len(title) > 70:
         score -= 5
 
     meta_desc_tag = soup.find("meta", attrs={"name": "description"})
-    meta_desc = meta_desc_tag["content"].strip() if meta_desc_tag and "content" in meta_desc_tag.attrs else None
+    meta_desc = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else None
     metrics["meta_description_present"] = bool(meta_desc)
     if not meta_desc:
         score -= 15
@@ -87,10 +85,12 @@ def analyze_seo(html: str) -> Dict:
 
     images = soup.find_all("img")
     if images:
-        missing_alt = sum(1 for img in images if not img.get("alt") or not img["alt"].strip())
+        missing_alt = sum(
+            1 for img in images if not img.get("alt") or not img["alt"].strip()
+        )
         metrics["images_missing_alt_count"] = missing_alt
         metrics["images_total"] = len(images)
-        if missing_alt / len(images) > 0.25:  # Slightly stricter
+        if missing_alt / len(images) > 0.25:
             score -= 10
     else:
         metrics["images_missing_alt_count"] = 0
@@ -105,24 +105,26 @@ def analyze_seo(html: str) -> Dict:
 def analyze_security(url: str, response: requests.Response) -> Dict:
     score = 100
     metrics = {}
-    parsed = urlparse(response.url)  # Use final URL after redirects
+
+    parsed = urlparse(response.url)
     metrics["https"] = parsed.scheme == "https"
     if not metrics["https"]:
         score -= 40
 
+    headers_lower = {k.lower() for k in response.headers}
     headers_to_check = [
-        "Content-Security-Policy",
-        "X-Frame-Options",
-        "Strict-Transport-Security",
-        "X-Content-Type-Options",
-        "Referrer-Policy",
-        "Permissions-Policy"  # Added modern header
+        "content-security-policy",
+        "x-frame-options",
+        "strict-transport-security",
+        "x-content-type-options",
+        "referrer-policy",
+        "permissions-policy",
     ]
-    missing = [h for h in headers_to_check if h.lower() not in {k.lower(): v for k, v in response.headers.items()}]
-    metrics["missing_security_headers"] = missing
-    score -= len(missing) * 7  # Slightly higher penalty
 
-    # Bonus: Check if final URL == original (no sneaky redirects)
+    missing = [h for h in headers_to_check if h not in headers_lower]
+    metrics["missing_security_headers"] = missing
+    score -= len(missing) * 7
+
     metrics["redirect_chain_length"] = len(response.history)
     if len(response.history) > 2:
         score -= 10
@@ -136,16 +138,23 @@ def analyze_security(url: str, response: requests.Response) -> Dict:
 
 def analyze_content(html: str) -> Dict:
     soup = BeautifulSoup(html, "html.parser")
+
+    for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
+        tag.decompose()
+
     text = soup.get_text(separator=" ", strip=True)
     words = len(text.split())
+
     score = 100
     metrics = {"word_count": words}
+
     if words < 300:
         score -= 50
     elif words < 600:
         score -= 30
     elif words < 1000:
         score -= 15
+
     return {
         "score": max(score, 0),
         "metrics": metrics,
@@ -157,19 +166,23 @@ def analyze_i18n(html: str) -> Dict:
     soup = BeautifulSoup(html, "html.parser")
     hreflang_tags = soup.find_all("link", rel="alternate", hreflang=True)
     x_default = any(link.get("hreflang") == "x-default" for link in hreflang_tags)
+
     count = len(hreflang_tags)
     score = 95 if count >= 2 and x_default else (80 if count >= 1 else 50)
+
     return {
         "score": score,
-        "metrics": {"hreflang_count": count, "has_x_default": x_default},
+        "metrics": {
+            "hreflang_count": count,
+            "has_x_default": x_default
+        },
         "color": "#6366F1" if score >= 80 else "#F97316"
     }
 
 
 def analyze_performance(url: str) -> Dict:
     """
-    Google PageSpeed Insights v5 – public access still possible (limited quota).
-    Strongly recommend setting PSI_API_KEY for production use.
+    Google PageSpeed Insights v5 with explicit 429 handling
     """
     try:
         psi_url = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
@@ -184,37 +197,43 @@ def analyze_performance(url: str) -> Dict:
         res.raise_for_status()
         data = res.json()
 
-        if "lighthouseResult" not in data:
-            raise ValueError("Missing lighthouseResult – possible quota/rate limit")
-
         lighthouse = data["lighthouseResult"]
-        perf_category = lighthouse["categories"]["performance"]
-        score = round(perf_category["score"] * 100)
+        perf = lighthouse["categories"]["performance"]
+        score = round(perf["score"] * 100)
 
         audits = lighthouse["audits"]
         metrics = {
             "lcp_ms": audits.get("largest-contentful-paint", {}).get("numericValue"),
             "cls": audits.get("cumulative-layout-shift", {}).get("numericValue"),
-            "inp_ms": audits.get("interaction-to-next-paint", {}).get("numericValue") or
-                      audits.get("max-potential-fid", {}).get("numericValue"),  # fallback
+            "inp_ms": audits.get("interaction-to-next-paint", {}).get("numericValue")
+                or audits.get("max-potential-fid", {}).get("numericValue"),
         }
+
         return {
             "score": score,
             "metrics": metrics,
             "color": "#3B82F6" if score >= 90 else "#10B981" if score >= 50 else "#EF4444"
         }
-    except Exception as e:
-        logger.warning(f"PSI failed for {url}: {str(e)}")
+
+    except requests.HTTPError as e:
+        note = (
+            "PageSpeed rate-limited (API key required)"
+            if e.response is not None and e.response.status_code == 429
+            else "PageSpeed unavailable"
+        )
+
+        logger.warning(f"PSI failed for {url}: {note}")
+
         return {
             "score": 60,
-            "metrics": {"note": "PageSpeed Insights unavailable (quota, network, or API change)"},
+            "metrics": {"note": note},
             "color": "#94A3B8"
         }
 
 
 def calculate_overall_score(cats: Dict) -> float:
     return round(
-        cats["Performance"]["score"] * 0.35 +      # Performance often most important
+        cats["Performance"]["score"] * 0.35 +
         cats["SEO"]["score"] * 0.25 +
         cats["Security"]["score"] * 0.20 +
         cats["Content Quality"]["score"] * 0.10 +
@@ -237,30 +256,24 @@ def run_audit(url: str) -> Dict:
         response = fetch_page(url)
         html = response.text
 
-        performance = analyze_performance(url)
-        seo = analyze_seo(html)
-        security = analyze_security(url, response)  # Use final response
-        i18n = analyze_i18n(html)
-        content = analyze_content(html)
-
         categories = {
-            "Performance": performance,
-            "SEO": seo,
-            "Security": security,
-            "Internationalization": i18n,
-            "Content Quality": content,
+            "Performance": analyze_performance(url),
+            "SEO": analyze_seo(html),
+            "Security": analyze_security(url, response),
+            "Internationalization": analyze_i18n(html),
+            "Content Quality": analyze_content(html),
         }
 
         overall = calculate_overall_score(categories)
-        grade = assign_grade(overall)
 
         return {
-            "url": response.url,  # Final URL after redirects
+            "url": response.url,
             "overall_score": overall,
-            "grade": grade,
+            "grade": assign_grade(overall),
             "categories": categories,
-            "competitors": []  # Placeholder – add logic if needed
+            "competitors": []
         }
+
     except Exception as e:
         logger.exception(f"AUDIT FAILED for {url}: {e}")
         return {
