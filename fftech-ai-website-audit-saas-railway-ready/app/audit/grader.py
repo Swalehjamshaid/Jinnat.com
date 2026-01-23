@@ -1,3 +1,4 @@
+import os
 import requests
 import logging
 from typing import Dict, Optional
@@ -5,7 +6,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import urllib3
 
-# Suppress only InsecureRequestWarning when verify=False
+# Suppress InsecureRequestWarning only when verify=False
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
@@ -15,39 +16,24 @@ HEADERS = {
 }
 TIMEOUT = (10, 25)  # connect, read timeouts
 
-# Optional: Add your Google API key here for reliable PSI
-PSI_API_KEY: Optional[str] = None  # ← strongly recommended
+# Load PSI API key from environment variable for better rate limits
+PSI_API_KEY: Optional[str] = os.getenv("PSI_API_KEY")
 
 
 def fetch_page(url: str) -> requests.Response:
     """
-    Unified fetch with SSL fallback and better error handling.
-    Returns full Response object (for headers + text).
+    Fetch a page with SSL verification fallback to verify=False.
+    Returns full requests.Response object.
     """
     try:
-        response = requests.get(
-            url,
-            headers=HEADERS,
-            timeout=TIMEOUT,
-            allow_redirects=True
-        )
-        response.raise_for_status()
-        return response
-
-    except requests.exceptions.SSLError as ssl_err:
-        logger.warning(
-            f"SSL verification failed for {url}: {ssl_err}. Falling back to verify=False."
-        )
-        response = requests.get(
-            url,
-            headers=HEADERS,
-            timeout=TIMEOUT,
-            allow_redirects=True,
-            verify=False
-        )
-        response.raise_for_status()
-        return response
-
+        resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True)
+        resp.raise_for_status()
+        return resp
+    except requests.exceptions.SSLError as e:
+        logger.warning(f"SSL error fetching {url}: {e}. Retrying with verify=False.")
+        resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True, verify=False)
+        resp.raise_for_status()
+        return resp
     except requests.exceptions.RequestException as e:
         logger.error(f"Request failed for {url}: {e}")
         raise
@@ -66,7 +52,7 @@ def analyze_seo(html: str) -> Dict:
         score -= 5
 
     meta_desc_tag = soup.find("meta", attrs={"name": "description"})
-    meta_desc = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else None
+    meta_desc = meta_desc_tag.get("content", "").strip() if meta_desc_tag else None
     metrics["meta_description_present"] = bool(meta_desc)
     if not meta_desc:
         score -= 15
@@ -85,9 +71,7 @@ def analyze_seo(html: str) -> Dict:
 
     images = soup.find_all("img")
     if images:
-        missing_alt = sum(
-            1 for img in images if not img.get("alt") or not img["alt"].strip()
-        )
+        missing_alt = sum(1 for img in images if not img.get("alt") or not img["alt"].strip())
         metrics["images_missing_alt_count"] = missing_alt
         metrics["images_total"] = len(images)
         if missing_alt / len(images) > 0.25:
@@ -106,13 +90,13 @@ def analyze_security(url: str, response: requests.Response) -> Dict:
     score = 100
     metrics = {}
 
-    parsed = urlparse(response.url)
-    metrics["https"] = parsed.scheme == "https"
+    parsed_url = urlparse(response.url)
+    metrics["https"] = parsed_url.scheme == "https"
     if not metrics["https"]:
         score -= 40
 
     headers_lower = {k.lower() for k in response.headers}
-    headers_to_check = [
+    security_headers = [
         "content-security-policy",
         "x-frame-options",
         "strict-transport-security",
@@ -120,8 +104,7 @@ def analyze_security(url: str, response: requests.Response) -> Dict:
         "referrer-policy",
         "permissions-policy",
     ]
-
-    missing = [h for h in headers_to_check if h not in headers_lower]
+    missing = [h for h in security_headers if h not in headers_lower]
     metrics["missing_security_headers"] = missing
     score -= len(missing) * 7
 
@@ -143,16 +126,16 @@ def analyze_content(html: str) -> Dict:
         tag.decompose()
 
     text = soup.get_text(separator=" ", strip=True)
-    words = len(text.split())
+    word_count = len(text.split())
 
     score = 100
-    metrics = {"word_count": words}
+    metrics = {"word_count": word_count}
 
-    if words < 300:
+    if word_count < 300:
         score -= 50
-    elif words < 600:
+    elif word_count < 600:
         score -= 30
-    elif words < 1000:
+    elif word_count < 1000:
         score -= 15
 
     return {
@@ -165,16 +148,16 @@ def analyze_content(html: str) -> Dict:
 def analyze_i18n(html: str) -> Dict:
     soup = BeautifulSoup(html, "html.parser")
     hreflang_tags = soup.find_all("link", rel="alternate", hreflang=True)
-    x_default = any(link.get("hreflang") == "x-default" for link in hreflang_tags)
+    has_x_default = any(link.get("hreflang") == "x-default" for link in hreflang_tags)
 
     count = len(hreflang_tags)
-    score = 95 if count >= 2 and x_default else (80 if count >= 1 else 50)
+    score = 95 if count >= 2 and has_x_default else 80 if count >= 1 else 50
 
     return {
         "score": score,
         "metrics": {
             "hreflang_count": count,
-            "has_x_default": x_default
+            "has_x_default": has_x_default
         },
         "color": "#6366F1" if score >= 80 else "#F97316"
     }
@@ -182,26 +165,27 @@ def analyze_i18n(html: str) -> Dict:
 
 def analyze_performance(url: str) -> Dict:
     """
-    Google PageSpeed Insights v5 with explicit 429 handling
+    Integrates Google PageSpeed Insights v5 API.
+    Handles rate-limiting (HTTP 429) gracefully.
     """
+    psi_api_url = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+    params = {
+        "url": url,
+        "strategy": "mobile",
+    }
+    if PSI_API_KEY:
+        params["key"] = PSI_API_KEY
+
     try:
-        psi_url = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
-        params = {
-            "url": url,
-            "strategy": "mobile",
-        }
-        if PSI_API_KEY:
-            params["key"] = PSI_API_KEY
+        response = requests.get(psi_api_url, params=params, timeout=TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
 
-        res = requests.get(psi_url, params=params, timeout=TIMEOUT)
-        res.raise_for_status()
-        data = res.json()
+        lighthouse = data.get("lighthouseResult", {})
+        perf = lighthouse.get("categories", {}).get("performance", {})
+        score = round(perf.get("score", 0) * 100)
 
-        lighthouse = data["lighthouseResult"]
-        perf = lighthouse["categories"]["performance"]
-        score = round(perf["score"] * 100)
-
-        audits = lighthouse["audits"]
+        audits = lighthouse.get("audits", {})
         metrics = {
             "lcp_ms": audits.get("largest-contentful-paint", {}).get("numericValue"),
             "cls": audits.get("cumulative-layout-shift", {}).get("numericValue"),
@@ -216,42 +200,58 @@ def analyze_performance(url: str) -> Dict:
         }
 
     except requests.HTTPError as e:
-        note = (
-            "PageSpeed rate-limited (API key required)"
-            if e.response is not None and e.response.status_code == 429
-            else "PageSpeed unavailable"
-        )
-
+        note = "PageSpeed rate-limited (API key required)" if e.response and e.response.status_code == 429 else "PageSpeed unavailable"
         logger.warning(f"PSI failed for {url}: {note}")
-
         return {
             "score": 60,
             "metrics": {"note": note},
             "color": "#94A3B8"
         }
+    except Exception as e:
+        logger.error(f"Unexpected error during PSI for {url}: {e}")
+        return {
+            "score": 60,
+            "metrics": {"note": "PageSpeed check failed"},
+            "color": "#94A3B8"
+        }
 
 
-def calculate_overall_score(cats: Dict) -> float:
+def calculate_overall_score(categories: Dict) -> float:
+    """
+    Weighted overall score calculation.
+    """
     return round(
-        cats["Performance"]["score"] * 0.35 +
-        cats["SEO"]["score"] * 0.25 +
-        cats["Security"]["score"] * 0.20 +
-        cats["Content Quality"]["score"] * 0.10 +
-        cats["Internationalization"]["score"] * 0.10,
+        categories["Performance"]["score"] * 0.35 +
+        categories["SEO"]["score"] * 0.25 +
+        categories["Security"]["score"] * 0.20 +
+        categories["Content Quality"]["score"] * 0.10 +
+        categories["Internationalization"]["score"] * 0.10,
         2
     )
 
 
 def assign_grade(score: float) -> str:
-    if score >= 90: return "A+"
-    if score >= 85: return "A"
-    if score >= 75: return "B+"
-    if score >= 65: return "B"
-    if score >= 50: return "C"
+    """
+    Converts numeric score to letter grade.
+    """
+    if score >= 90:
+        return "A+"
+    if score >= 85:
+        return "A"
+    if score >= 75:
+        return "B+"
+    if score >= 65:
+        return "B"
+    if score >= 50:
+        return "C"
     return "F"
 
 
 def run_audit(url: str) -> Dict:
+    """
+    Runs a full audit of the given URL.
+    Returns detailed category scores and overall grade.
+    """
     try:
         response = fetch_page(url)
         html = response.text
@@ -264,14 +264,15 @@ def run_audit(url: str) -> Dict:
             "Content Quality": analyze_content(html),
         }
 
-        overall = calculate_overall_score(categories)
+        overall_score = calculate_overall_score(categories)
+        grade = assign_grade(overall_score)
 
         return {
             "url": response.url,
-            "overall_score": overall,
-            "grade": assign_grade(overall),
+            "overall_score": overall_score,
+            "grade": grade,
             "categories": categories,
-            "competitors": []
+            "competitors": []  # Placeholder for future competitor analysis
         }
 
     except Exception as e:
