@@ -1,89 +1,75 @@
-
 # app/services/ai_service.py
+
+from typing import Any, Dict, List
+import requests
 import logging
-from typing import Dict, Any
 
-logger = logging.getLogger("AIService")
-
+logger = logging.getLogger(__name__)
 
 class AIService:
     """
-    Offline AI summary generator.
-
-    This class intentionally avoids any external API calls and produces a concise,
-    deterministic summary based solely on the provided audit_data.
-    The public interface is preserved to avoid changing existing call sites.
+    AIService handles communication with external AI or data analysis services.
     """
 
-    def __init__(self) -> None:
-        logger.info("AIService initialized in OFFLINE mode (no external APIs).")
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://api.exampleai.com/v1"  # replace with actual AI service URL
 
-    async def generate_audit_summary(self, audit_data: Dict[str, Any]) -> str:
+    def analyze_website(self, website_url: str) -> Dict[str, Any]:
         """
-        Produce a human-readable summary without external network calls.
-        Expects audit_data with keys:
-          - url: str
-          - score: float (0..100)
-          - performance: Optional[Dict[str, str]] with 'fcp', 'lcp', 'cls'
-          - connectivity: Dict[str, Any] with 'status' and 'detail'
+        Sends a website URL to the AI service and returns analysis results.
         """
         try:
-            url = audit_data.get("url", "N/A")
-            score = float(audit_data.get("score", 0.0))
-            perf = audit_data.get("performance") or {}
-            conn = audit_data.get("connectivity") or {}
+            response = requests.post(
+                f"{self.base_url}/analyze",
+                json={"url": website_url},
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data
+        except requests.RequestException as e:
+            logger.error(f"Website analysis failed: {e}")
+            return {"error": str(e)}
 
-            fcp = perf.get("fcp", "N/A")
-            lcp = perf.get("lcp", "N/A")
-            cls = perf.get("cls", "N/A")
-            c_status = conn.get("status", "UNKNOWN")
-            c_detail = conn.get("detail", "N/A")
+    def summarize_content(self, text: str) -> str:
+        """
+        Summarizes a large text using the AI service.
+        """
+        try:
+            response = requests.post(
+                f"{self.base_url}/summarize",
+                json={"text": text},
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            return response.json().get("summary", "")
+        except requests.RequestException as e:
+            logger.error(f"Text summarization failed: {e}")
+            return ""
 
-            # Simple rule-based insights (offline)
-            recs = []
-            if score < 60:
-                tier = "Poor"
-                recs += [
-                    "Reduce Time to First Byte (TTFB) by enabling caching/CDN and optimizing backend.",
-                    "Minimize render‑blocking resources: inline critical CSS and defer non‑critical JS.",
-                    "Compress and properly size images; adopt next‑gen formats (WebP/AVIF).",
-                    "Audit third‑party scripts; remove or lazy‑load nonessential tags.",
-                ]
-            elif score < 85:
-                tier = "Needs Improvement"
-                recs += [
-                    "Trim unused JavaScript and CSS; split bundles and enable HTTP/2.",
-                    "Improve image loading strategy (responsive sizes, lazy‑load offscreen media).",
-                    "Establish performance budgets and monitor in CI to prevent regressions.",
-                ]
-            else:
-                tier = "Good"
-                recs += [
-                    "Maintain current performance; lock budgets and track with automated checks.",
-                    "Periodically review third‑party scripts to keep payloads lean.",
-                ]
+    def evaluate_metrics(self, metrics: Dict[str, Any]) -> Dict[str, float]:
+        """
+        Evaluates website metrics using the AI service.
+        """
+        try:
+            response = requests.post(
+                f"{self.base_url}/evaluate",
+                json={"metrics": metrics},
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Metrics evaluation failed: {e}")
+            return {}
 
-            # Connectivity awareness
-            if c_status == "WARNING":
-                recs.append("Resolve SSL configuration issues; currently bypassed SSL was required.")
-            elif c_status == "FAILURE":
-                recs.append("Site reachability failed. Verify DNS, firewall, or uptime before retesting.")
-
-            lines = [
-                f"Audit Summary (Offline) for {url}",
-                f"Overall Score: {score:.2f} / 100 ({tier})",
-                f"Connectivity: {c_status} ({c_detail})",
-                "Key Metrics (estimated):",
-                f"- FCP: {fcp}",
-                f"- LCP: {lcp}",
-                f"- CLS: {cls}",
-                "Recommendations:",
-            ]
-            lines += [f"• {r}" for r in recs]
-
-            return "\n".join(lines)
-        except Exception as e:
-            logger.exception("Offline AI summary failed: %s", e)
-            # Always return a safe string (never raise up the stack)
-            return "Summary unavailable due to an internal error. Please re-run the audit."
-``
+    def batch_process(self, urls: List[str]) -> List[Dict[str, Any]]:
+        """
+        Processes a batch of website URLs.
+        """
+        results = []
+        for url in urls:
+            analysis = self.analyze_website(url)
+            results.append({"url": url, "analysis": analysis})
+        return results
