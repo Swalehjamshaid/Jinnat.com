@@ -1,54 +1,95 @@
 
-from pathlib import Path
+# app/audit/record.py
+from __future__ import annotations
+
+import os
+import uuid
+from typing import Dict, Any
+
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use("Agg")  # headless
 import matplotlib.pyplot as plt
-import pandas as pd
-from pptx import Presentation
-from pptx.util import Inches
 
-ASSETS_DIR = Path('generated_assets')
-ASSETS_DIR.mkdir(exist_ok=True)
 
-def generate_charts(audit_result: dict) -> str:
-    fig, ax = plt.subplots(figsize=(6,3))
-    cats = list(audit_result.get('breakdown', {}).keys())
-    vals = [audit_result['breakdown'][k] for k in cats]
-    ax.bar(cats, vals, color=['#2E86DE','#58D68D','#F5B041'])
-    ax.set_title('Category Scores')
+def _ensure_tmp_dir() -> str:
+    out_dir = "/tmp"
+    if not os.path.isdir(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+    return out_dir
+
+
+def _plot_overall(ax, score: float):
+    # Donut chart showing overall score
+    score = max(0, min(100, float(score)))
+    remaining = 100 - score
+    colors = ["#2ecc71", "#eeeeee"] if score >= 60 else ["#e67e22", "#eeeeee"]
+    wedges, _ = ax.pie(
+        [score, remaining],
+        startangle=90,
+        colors=colors,
+        wedgeprops=dict(width=0.36, edgecolor="white"),
+    )
+    ax.set_title(f"Overall Score: {score:.0f}", fontsize=13, pad=10)
+    ax.axis("equal")
+
+
+def _plot_breakdown(ax, breakdown: Dict[str, float]):
+    labels = []
+    values = []
+    for k in ("onpage", "performance", "coverage"):
+        if k in breakdown:
+            labels.append(k.capitalize())
+            values.append(breakdown[k])
+    if not labels:
+        labels, values = ["Onpage", "Performance", "Coverage"], [0, 0, 0]
+
+    bars = ax.bar(labels, values, color=["#3498db", "#9b59b6", "#f1c40f"])
+    ax.bar_label(bars, fmt="%.0f", label_type="edge", padding=3, fontsize=9)
     ax.set_ylim(0, 100)
-    chart_path = ASSETS_DIR / 'category_scores.png'
-    fig.tight_layout()
-    fig.savefig(chart_path, dpi=150)
+    ax.set_title("Category Breakdown (0–100)", fontsize=12)
+    ax.grid(axis="y", linestyle=":", alpha=0.4)
+
+
+def _plot_status(ax, status_dist: Dict[str, int]):
+    # Convert keys to strings for safety
+    items = sorted(((str(k), v) for k, v in (status_dist or {}).items()), key=lambda x: int(x[0]) if x[0].isdigit() else 0)
+    labels = [k for k, _ in items][:8]
+    values = [v for _, v in items][:8]
+
+    if not labels:
+        labels, values = ["200", "404"], [0, 0]
+
+    bars = ax.bar(labels, values, color="#95a5a6")
+    ax.bar_label(bars, fmt="%d", label_type="edge", padding=3, fontsize=9)
+    ax.set_title("HTTP Status Distribution", fontsize=12)
+    ax.grid(axis="y", linestyle=":", alpha=0.4)
+    ax.set_ylim(0, max(values + [1]))
+
+
+def generate_charts(audit_result: Dict[str, Any]) -> str:
+    """
+    Builds a 3-panel figure:
+      - Overall score donut
+      - Breakdown bar
+      - Status code distribution bar
+    Returns the absolute path to the saved PNG.
+    """
+    overall = float(audit_result.get("overall_score", 0.0))
+    breakdown = audit_result.get("breakdown") or {}
+    status_dist = (audit_result.get("issues_overview") or {}).get("http_status_distribution") or {}
+
+    out_dir = _ensure_tmp_dir()
+    out_path = os.path.join(out_dir, f"audit_chart_{uuid.uuid4().hex}.png")
+
+    plt.style.use("seaborn-v0_8")
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4.2), constrained_layout=True)
+
+    _plot_overall(axes[0], overall)
+    _plot_breakdown(axes[1], breakdown)
+    _plot_status(axes[2], status_dist)
+
+    fig.suptitle("FF Tech AI Website Audit — Visual Summary", fontsize=14, fontweight="bold")
+    fig.savefig(out_path, dpi=160)
     plt.close(fig)
-    return str(chart_path)
 
-def generate_bar(labels, values, title, filename):
-    fig, ax = plt.subplots(figsize=(6,3))
-    ax.bar(labels, values, color=['#2E86DE'] + ['#58D68D']*(len(labels)-1))
-    ax.set_title(title)
-    upper = max([v for v in values if isinstance(v,(int,float))] + [0])
-    ax.set_ylim(0, max(100, upper))
-    fig.tight_layout()
-    out = ASSETS_DIR / filename
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    return str(out)
-
-def export_xlsx(audit_result: dict) -> str:
-    df = pd.json_normalize(audit_result)
-    path = ASSETS_DIR / 'audit_summary.xlsx'
-    with pd.ExcelWriter(path, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Summary')
-    return str(path)
-
-def export_pptx(audit_result: dict, chart_path: str) -> str:
-    prs = Presentation()
-    slide = prs.slides.add_slide(prs.slide_layouts[0])
-    slide.shapes.title.text = 'FF Tech - Website Audit Summary'
-    slide.placeholders[1].text = f"Overall Score: {audit_result.get('overall_score', 0)} - Grade {audit_result.get('grade')}"
-    s2 = prs.slides.add_slide(prs.slide_layouts[6])
-    s2.shapes.add_picture(chart_path, Inches(1), Inches(1), height=Inches(4))
-    path = ASSETS_DIR / 'audit_deck.pptx'
-    prs.save(path)
-    return str(path)
+    return out_path
