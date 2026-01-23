@@ -8,19 +8,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-# Internal imports
+# Internal Imports
 from app.db import Base, engine, get_db
-from app.models import User
+from app.models import User, AuditLog
 from app.auth.router import router as auth_router
 from app.api.router import router as api_router
 from app.services.resend_admin import ensure_resend_ready
 from app.settings import get_settings
+from app.audit.grader import WebsiteGrader  # Ensure this import is correct
 
-# Import WebsiteGrader correctly
-from app.audit import grader  # import the module
-WebsiteGrader = grader  # use module directly if class is not defined
-
-# Logging
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -28,83 +25,74 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup & shutdown logic"""
+    """Handles startup and shutdown logic."""
     logger.info("--- FASTAPI STARTUP: Initializing Services ---")
-    # Create database tables
     Base.metadata.create_all(bind=engine)
-    # Check email service
     try:
         logger.info("Checking Email Service configuration...")
         ensure_resend_ready()
     except Exception as e:
         logger.warning(f"Email service not ready: {e}")
     yield
-    logger.info("--- FASTAPI SHUTDOWN: Cleaning up ---")
+    logger.info("--- FASTAPI SHUTDOWN ---")
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
-# Global exception handler
+# Global Exception Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"GLOBAL ERROR CAUGHT: {exc}", exc_info=True)
+    logger.error(f"GLOBAL ERROR: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"message": f"Server Audit Error: {str(exc)}"},
+        content={"message": "Internal Server Error"},
     )
 
-# Routers
 app.include_router(auth_router)
 app.include_router(api_router)
 
-# Static & templates
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+app.mount('/static', StaticFiles(directory='app/static'), name='static')
+templates = Jinja2Templates(directory='app/templates')
 
-# --- Routes ---
-@app.get("/", response_class=HTMLResponse)
+@app.get('/', response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "settings": settings})
+    return templates.TemplateResponse('index.html', {"request": request, "settings": settings})
 
-@app.post("/api/open-audit")
-async def open_audit(payload: dict = Body(...)):
+@app.post('/api/open-audit')
+async def open_audit(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    FIXED: Properly initializes WebsiteGrader and calls run_full_audit.
+    """
     target_url = payload.get("url")
     if not target_url:
-        return JSONResponse(status_code=400, content={"message": "URL is required"})
+        return JSONResponse(status_code=400, content={"message": "URL required"})
+    
     try:
-        # Use WebsiteGrader module directly
-        report = grader.run_audit(target_url)  # Assuming run_audit(url) exists in grader.py
+        # 1. Initialize the Class
+        grader = WebsiteGrader()
+        
+        # 2. Call the correct async method
+        report = await grader.run_full_audit(target_url)
+        
+        # 3. Save to AuditLog (ISO Standard Tracking)
+        new_log = AuditLog(
+            url=target_url,
+            status=report["connectivity"]["status"],
+            error_code=report["connectivity"]["error_code"],
+            performance_score=report["score"],
+            execution_time=report["metadata"]["duration"],
+            raw_data=report
+        )
+        db.add(new_log)
+        db.commit()
+        
         return report
     except Exception as e:
         logger.error(f"Audit processing failed: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"message": "Failed to analyze site."})
+        return JSONResponse(status_code=500, content={"message": str(e)})
 
-@app.get("/favicon.ico", include_in_schema=False)
+@app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
-    favicon_path = "app/static/favicon.ico"
-    if os.path.exists(favicon_path):
-        return FileResponse(favicon_path)
-    return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    return FileResponse('app/static/favicon.ico')
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db)):
-    token = request.cookies.get("session")
-    user = None
-    if token:
-        from app.auth.tokens import decode_token
-        payload = decode_token(token)
-        if payload:
-            email = payload.get("sub")
-            user = db.query(User).filter(User.email == email).first()
-    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "settings": settings})
-
-@app.post("/request-login", response_class=RedirectResponse)
-async def request_login(email: str = Form(...)):
-    from app.auth.router import request_link
-    try:
-        request_link(email)
-    except Exception as e:
-        logger.error(f"Login Request Failed: {e}", exc_info=True)
-    return RedirectResponse(url="/", status_code=302)
-
-if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8080, reload=True)
+if __name__ == '__main__':
+    uvicorn.run('app.main:app', host='0.0.0.0', port=8080, reload=True)
