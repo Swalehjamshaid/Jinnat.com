@@ -15,9 +15,9 @@ from app.auth.router import router as auth_router
 from app.api.router import router as api_router
 from app.services.resend_admin import ensure_resend_ready
 from app.settings import get_settings
-from app.audit.grader import WebsiteGrader  # Ensure this import exists
+from app.audit.grader import WebsiteGrader  # Updated grader with SSL + PSI fixes
 
-# Configure world-class logging
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,9 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handles startup and shutdown logic (Replaces on_event)."""
+    """Startup and shutdown logic."""
     logger.info("--- FASTAPI STARTUP: Initializing Services ---")
+    # Create DB tables
     Base.metadata.create_all(bind=engine)
     try:
         logger.info("Checking Email Service configuration...")
@@ -47,11 +48,11 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"message": f"Server Audit Error: {str(exc)}"},
     )
 
-# Route Registration
+# Register routers
 app.include_router(auth_router)
 app.include_router(api_router)
 
-# Static files and Templates
+# Static files & templates
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 
@@ -61,29 +62,39 @@ templates = Jinja2Templates(directory='app/templates')
 async def home(request: Request):
     return templates.TemplateResponse('index.html', {"request": request, "settings": settings})
 
+
 @app.post('/api/open-audit')
 async def open_audit(payload: dict = Body(...)):
     """
-    Direct endpoint for the Open Access Audit on the home page.
-    Matches the logic in your updated index.html.
+    Endpoint for Open Access Audit.
+    Handles SSL, PSI, and calculates overall score properly.
     """
     target_url = payload.get("url")
     if not target_url:
         return JSONResponse(status_code=400, content={"message": "URL is required"})
-    
+
     try:
         grader = WebsiteGrader()
-        # run_full_audit now returns performance data compatible with Chart.js
+        # Run the full audit (handles SSL fallback & PSI API)
         report = await grader.run_full_audit(target_url)
-        
-        # Calculate a mock overall score based on the performance score for the health bar
-        perf_score = report.get("performance", {}).get("score", 0)
-        report["overall_score"] = perf_score * 100
-        
+
+        # Ensure overall score is calculated correctly from all categories
+        overall_score = report.get("overall_score")
+        if overall_score is None:
+            # Fallback to Performance score if grader did not calculate overall
+            perf_score = report.get("Performance", {}).get("score", 0)
+            overall_score = perf_score
+        report["overall_score"] = overall_score
+
         return report
+
     except Exception as e:
-        logger.error(f"Audit processing failed: {e}")
-        return JSONResponse(status_code=500, content={"message": "Failed to analyze site."})
+        logger.error(f"Audit processing failed for {target_url}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Failed to analyze site.", "error": str(e)}
+        )
+
 
 # --- SYSTEM ROUTES ---
 
@@ -93,6 +104,7 @@ async def favicon():
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path)
     return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
 
 @app.get('/dashboard', response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)):
@@ -106,6 +118,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             user = db.query(User).filter(User.email == email).first()
     return templates.TemplateResponse('dashboard.html', {"request": request, "user": user, "settings": settings})
 
+
 @app.post('/request-login', response_class=RedirectResponse)
 async def request_login(email: str = Form(...)):
     from app.auth.router import request_link
@@ -115,6 +128,11 @@ async def request_login(email: str = Form(...)):
         logger.error(f"Login Request Failed: {e}")
     return RedirectResponse(url='/', status_code=302)
 
+
 if __name__ == '__main__':
-    # Using port 8080 as requested by common Railway configurations
-    uvicorn.run('app.main:app', host='0.0.0.0', port=8080, reload=True)
+    uvicorn.run(
+        'app.main:app',
+        host='0.0.0.0',
+        port=int(os.environ.get('PORT', 8080)),
+        reload=True
+    )
