@@ -1,59 +1,45 @@
 import uvicorn
-import logging
 import os
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, Request, Form, Body, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
+import logging
+from fastapi import FastAPI, Request, Body, Depends, HTTPException
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from contextlib import asynccontextmanager
 
-# Internal Imports
-from app.db import Base, engine, get_db
-from app.models import User, AuditLog
-from app.auth.router import router as auth_router
-from app.api.router import router as api_router
-from app.settings import get_settings
+from app.db import get_db, Base, engine
+from app.models import AuditLog
 from app.audit.grader import WebsiteGrader
+from app.services.pdf_service import PDFService
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-settings = get_settings()
+logger = logging.getLogger("MainApp")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("--- FASTAPI STARTUP: Initializing Services ---")
     Base.metadata.create_all(bind=engine)
     yield
-    logger.info("--- FASTAPI SHUTDOWN ---")
 
-app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
+app = FastAPI(lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
 
-app.include_router(auth_router)
-app.include_router(api_router)
-
-app.mount('/static', StaticFiles(directory='app/static'), name='static')
-templates = Jinja2Templates(directory='app/templates')
-
-@app.get('/', response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse('index.html', {"request": request, "settings": settings})
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.post('/api/open-audit')
+@app.post("/api/open-audit")
 async def open_audit(payload: dict = Body(...), db: Session = Depends(get_db)):
-    target_url = payload.get("url")
-    if not target_url:
-        return JSONResponse(status_code=400, content={"message": "URL required"})
-    
-    # Initialize Grader - It will pull GOOGLE_API_KEY from os.environ
+    url = payload.get("url")
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+
     grader = WebsiteGrader()
-    
     try:
-        report = await grader.run_full_audit(target_url)
-        
-        # Save to Database
+        report = await grader.run_full_audit(url)
         new_log = AuditLog(
-            url=target_url,
+            url=url,
             status=report["connectivity"]["status"],
             error_code=report["connectivity"]["error_code"],
             performance_score=report["score"],
@@ -62,23 +48,26 @@ async def open_audit(payload: dict = Body(...), db: Session = Depends(get_db)):
         )
         db.add(new_log)
         db.commit()
-        
         return report
     except Exception as e:
-        logger.error(f"Audit failed: {e}")
-        return JSONResponse(status_code=500, content={"message": "Audit failed. Check API Key quotas."})
+        logger.error(f"Audit processing failed: {e}")
+        return JSONResponse(status_code=500, content={"message": str(e)})
 
-@app.get('/api/download-full-audit')
+@app.get("/api/download-full-audit")
 async def download_audit(url: str, db: Session = Depends(get_db)):
-    """
-    FIXED: This resolves the 404 error in your logs.
-    For now, it returns the JSON data. (We can integrate PDF generation next).
-    """
     audit = db.query(AuditLog).filter(AuditLog.url == url).order_by(AuditLog.created_at.desc()).first()
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found. Please run a scan first.")
+        raise HTTPException(status_code=404, detail="Audit not found")
     
-    return JSONResponse(content=audit.raw_data)
+    pdf_service = PDFService()
+    pdf_buffer = pdf_service.generate_audit_pdf(audit.raw_data)
+    filename = f"Audit_{url.replace('https://', '').replace('/', '_')}.pdf"
+    
+    return StreamingResponse(
+        pdf_buffer, 
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
-if __name__ == '__main__':
-    uvicorn.run('app.main:app', host='0.0.0.0', port=8080, reload=True)
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8080)
