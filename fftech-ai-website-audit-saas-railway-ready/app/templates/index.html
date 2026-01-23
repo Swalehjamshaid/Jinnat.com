@@ -175,9 +175,9 @@
   function renderMainChart(data) {
     const ctx = document.getElementById('breakdownChart').getContext('2d');
     if (chartInstance) chartInstance.destroy();
-    const seoScore = data.categories?.['D. On-Page SEO']?.score || 0;
-    const perfScore = data.categories?.['E. Performance']?.score || 0;
-    const linkScore = data.categories?.['H. Broken Links Intelligence']?.score || 100;
+    const seoScore = data.categories?.['SEO']?.score || 0;
+    const perfScore = data.categories?.['Performance']?.score || 0;
+    const linkScore = data.categories?.['Links']?.score || 100;
 
     chartInstance = new Chart(ctx, {
       type: 'bar',
@@ -199,25 +199,26 @@
     container.innerHTML = '';
     console.log("Categories:", categories); // Debug
 
-    const defaultCategories = {
-      "E. Performance": {score: 0, color: "#3b82f6"},
-      "D. On-Page SEO": {score: 0, color: "#10b981"},
-      "F. Security": {score: 0, color: "#f87171"},
-      "G. Internationalization": {score: 0, color: "#fbbf24"},
-      "H. Content Quality": {score: 0, color: "#8b5cf6"}
+    const categoryConfig = {
+      "Performance": { color: "#3b82f6", displayName: "Performance" },
+      "SEO": { color: "#10b981", displayName: "SEO" },
+      "Security": { color: "#f87171", displayName: "Security" },
+      "Internationalization": { color: "#fbbf24", displayName: "Internationalization" },
+      "Content Quality": { color: "#8b5cf6", displayName: "Content Quality" }
     };
 
-    const allCategories = {...defaultCategories, ...(categories || {})};
+    const allCategories = categories || {};
 
-    Object.entries(allCategories).forEach(([name, info], i) => {
+    Object.entries(categoryConfig).forEach(([key, config], i) => {
+      const score = allCategories[key]?.score ?? 0;
       const id = `catChart-${i}`;
       container.innerHTML += `
         <div class="cat-card">
           <div class="donut-box">
             <canvas id="${id}"></canvas>
-            <div class="donut-val" style="color:${info.color || '#000'}">${Math.round(info.score || 0)}%</div>
+            <div class="donut-val" style="color:${config.color}">${Math.round(score)}%</div>
           </div>
-          <div class="small fw-bold text-uppercase text-muted">${name.split('. ')[1] || name}</div>
+          <div class="small fw-bold text-uppercase text-muted">${config.displayName}</div>
         </div>
       `;
       setTimeout(() => {
@@ -226,7 +227,7 @@
           new Chart(ctx, {
             type: 'doughnut',
             data: {
-              datasets: [{ data: [info.score || 0, 100 - (info.score || 0)], backgroundColor: [info.color || '#000', '#f1f5f9'], borderWidth: 0 }]
+              datasets: [{ data: [score, 100 - score], backgroundColor: [config.color, '#f1f5f9'], borderWidth: 0 }]
             },
             options: { cutout: '80%', plugins: { legend: { display: false } }, events: [] }
           });
