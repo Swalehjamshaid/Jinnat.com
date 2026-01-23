@@ -1,29 +1,32 @@
+from pydantic import BaseModel, HttpUrl, ConfigDict
+from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, HttpUrl
-from typing import Optional, Dict, Any
-from datetime import datetime
-
-class UserOut(BaseModel):
-    id: int
-    email: EmailStr
-    plan: str
-    audit_count: int
-    is_verified: bool
-    created_at: datetime
-    class Config:
-        orm_mode = True
-
-class AuditCreate(BaseModel):
+class AuditBase(BaseModel):
     url: HttpUrl
-    competitors: Optional[list[HttpUrl]] = None
 
-class AuditOut(BaseModel):
-    id: int
-    url: HttpUrl
-    created_at: datetime
-    result_json: Dict[str, Any]
-    class Config:
-        orm_mode = True
+class AuditCreate(AuditBase):
+    competitors: Optional[List[HttpUrl]] = None
 
 class OpenAuditRequest(BaseModel):
     url: HttpUrl
+    
+    # V2 Config: Removes UserWarning
+    model_config = ConfigDict(from_attributes=True)
+
+class AuditOut(AuditBase):
+    id: int
+    result_json: Optional[dict] = None
+    
+    # V2 Config: Removes UserWarning
+    model_config = ConfigDict(from_attributes=True)
+
+class UserBase(BaseModel):
+    email: str
+
+class UserOut(UserBase):
+    id: int
+    is_verified: bool
+    audit_count: int
+    plan: str
+    
+    model_config = ConfigDict(from_attributes=True)
