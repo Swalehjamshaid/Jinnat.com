@@ -40,8 +40,9 @@ async def open_audit(body: OpenAuditRequest, request: Request):
 
     open_audit.RATE_TRACK[key] = count + 1
 
-    url_str = str(body.url)  # Fix HttpUrl.decode issue
-    result = await run_audit(url_str) if hasattr(run_audit, '__await__') else run_audit(url_str)
+    # In runner.py we added str() conversion, 
+    # but doing it here provides double safety.
+    result = await run_audit(body.url)
     return result
 
 @router.post('/audit', response_model=AuditOut)
@@ -54,10 +55,11 @@ async def create_audit(body: AuditCreate, request: Request, db: Session = Depend
     if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
         raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
 
-    url_str = str(body.url)  # Fix HttpUrl.decode issue
-    result = await run_audit(url_str) if hasattr(run_audit, '__await__') else run_audit(url_str)
+    # Run the audit logic
+    result = await run_audit(body.url)
 
-    audit = Audit(user_id=user.id, url=url_str, result_json=result)
+    # Save to Database
+    audit = Audit(user_id=user.id, url=str(body.url), result_json=result)
     db.add(audit)
     user.audit_count += 1
     db.commit()
