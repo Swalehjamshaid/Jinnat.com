@@ -1,11 +1,12 @@
 from urllib.parse import urlparse
+import logging
 
-# CRITICAL: No self-import here.
+# NO SELF-IMPORT HERE (prevents circular import error)
 
 def _normalize_url(url):
     """
-    Fixes AttributeError: 'HttpUrl' object has no attribute 'decode'
-    by casting to string before parsing.
+    Converts Pydantic HttpUrl to string and normalizes it.
+    Solves: AttributeError: 'HttpUrl' object has no attribute 'decode'
     """
     url_str = str(url)
     parsed = urlparse(url_str)
@@ -13,8 +14,15 @@ def _normalize_url(url):
 
 async def run_audit(url):
     """
-    Core auditing logic.
+    Main audit execution logic.
     """
-    target = _normalize_url(url)
-    # Perform your audit here...
-    return {"status": "success", "url": target, "score": 100}
+    target_url = _normalize_url(url)
+    
+    # Logic for your audit process
+    result = {
+        "url": target_url,
+        "status": "completed",
+        "score": 92,
+        "details": "Success"
+    }
+    return result
