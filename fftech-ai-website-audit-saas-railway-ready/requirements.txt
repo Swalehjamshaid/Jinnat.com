@@ -1,45 +1,27 @@
-google-genai==1.60.0
-# Add this if you're using Pydantic BaseSettings (as previously discussed)
-pydantic-settings==2.12.0              # Was >=2.0.0 → now latest stable (Nov 2025)
-
 # --- CORE WEB FRAMEWORK ---
-fastapi==0.128.0                       # Still latest (Dec 27, 2025 release)
-uvicorn[standard]==0.32.0              # Still current stable
-jinja2==3.1.5                          # Still latest
-python-multipart==0.0.20               # Still latest
+fastapi==0.115.0
+uvicorn[standard]==0.31.0
+python-multipart==0.0.12
+jinja2==3.1.4
 
-# --- DATABASE & MODELS ---
-sqlalchemy==2.0.46                     # Still latest stable (Jan 21, 2026)
-psycopg2-binary==2.9.10                # Still latest
-pydantic==2.12.5                       # Update from 2.10.0 → latest (Nov 26, 2025)
+# --- DATABASE & ORM ---
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
 
-# --- AUDIT ENGINE (Scraping & Analysis) ---
-httpx==0.28.1                          # Still latest
-requests==2.32.3                       # Still latest
-urllib3==2.3.0                         # Still latest
-aiohttp==3.10.10                       # Still latest
-beautifulsoup4==4.13.0                 # Still latest
-lxml==5.3.0                            # Still latest
+# --- API & AI SERVICES ---
+# Migration from google-generativeai to modern 2026 SDK
+google-genai==1.60.0
+httpx==0.28.1
+resend==2.4.0
 
-# --- AI & SECURITY ---
-google-generativeai==0.8.6             # Update from 0.8.4 → minor bump (Dec 16, 2025)
-# Important note: This package is now legacy / end-of-life (support ended Nov 30, 2025)
-# Strongly consider migrating to the new official package:
-# google-genai==1.60.0                # Recommended replacement (Jan 2026 latest)
-itsdangerous==2.2.0                    # Still latest
-PyJWT==2.10.1                          # Still latest
-email-validator==2.2.0                 # Still latest
+# --- DATA VALIDATION & SECURITY ---
+# Updated to V2 to resolve "orm_mode" warnings
+pydantic==2.12.5
+pydantic-settings==2.5.2
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
 
-# --- REPORTING (PDF/XLSX/PPTX) ---
-reportlab==4.4.9                       # Update from 4.2.5 → latest (Jan 15, 2026)
-fpdf2==2.8.1                           # Still latest
-python-pptx==1.0.0                     # Still latest
-openpyxl==3.1.5                        # Still latest
-
-# --- DATA & ROI ---
-matplotlib==3.9.3                      # Still compatible/latest in your range
-pandas==3.0.0                          # Major update from 2.2.3 → released Jan 21, 2026
-numpy==2.4.1                           # Update from 2.1.2 → latest (Jan 10, 2026)
-
-# --- AUTOMATION ---
-APScheduler==3.10.4                    # Still latest stable
+# --- SYSTEM & UTILS ---
+# Required for fixing "Local Issuer Certificate" errors
+certifi==2024.8.30
+python-dotenv==1.0.1
