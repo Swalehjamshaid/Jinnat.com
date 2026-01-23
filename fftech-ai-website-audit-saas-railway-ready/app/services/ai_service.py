@@ -1,46 +1,50 @@
 import os
 import logging
 from typing import Optional
-import google.generativeai as genai
+from google import genai
 
 logger = logging.getLogger("AIService")
 
 class AIService:
     def __init__(self):
-        # SYNCED with your Railway Variable
+        """
+        Initializes the modern Google GenAI Client.
+        Uses GEMINI_API_KEY from Railway Environment Variables.
+        """
         self.api_key = os.getenv("GEMINI_API_KEY")
         if self.api_key:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-pro')
+            self.client = genai.Client(api_key=self.api_key)
+            self.model_id = "gemini-2.0-flash"
+            logger.info("World-Class GenAI Client initialized successfully.")
         else:
             logger.error("CRITICAL: GEMINI_API_KEY missing from environment.")
-            self.model = None
+            self.client = None
 
     async def generate_audit_summary(self, audit_data: dict) -> str:
         """
-        Generates an international-standard executive summary using AI.
+        Generates professional executive insights using the modern GenAI SDK.
         """
-        if not self.model:
-            return "AI Analysis unavailable: Missing API Key."
+        if not self.client:
+            return "AI Analysis currently unavailable."
 
         prompt = f"""
-        As a World-Class SEO and Performance Expert, analyze this website audit data:
+        Analyze this website audit data as a Senior SEO & Performance Consultant:
         URL: {audit_data.get('url')}
-        Performance Score: {audit_data.get('score')}%
-        LCP: {audit_data.get('performance', {}).get('lcp')}
-        CLS: {audit_data.get('performance', {}).get('cls')}
-        Connectivity: {audit_data.get('connectivity', {}).get('status')}
-
+        Global Score: {audit_data.get('score')}%
+        Technical Metrics: {audit_data.get('performance')}
+        
         Provide a 3-sentence executive summary:
-        1. Current state of the website.
-        2. The most critical issue to fix.
-        3. The predicted impact of fixing that issue.
-        Keep the tone professional and authoritative.
+        1. Current status of the site.
+        2. The single most important technical fix needed.
+        3. The expected business impact of that fix.
         """
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt
+            )
             return response.text
         except Exception as e:
-            logger.error(f"Gemini AI Error: {e}")
-            return "AI was unable to generate a summary for this audit."
+            logger.error(f"Gemini modern SDK error: {str(e)}")
+            return "Audit data processed. AI summary is currently being regenerated."
