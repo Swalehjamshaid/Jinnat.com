@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-# ABSOLUTE IMPORTS: Starting from 'app' root
+# ABSOLUTE IMPORTS: These ensure the 'app' package is found correctly
 from app.db import get_db
 from app.models import User, Audit, Schedule
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
@@ -38,10 +38,11 @@ async def open_audit(body: OpenAuditRequest, request: Request):
     
     count = open_audit.RATE_TRACK.get(key, 0)
     if count >= settings.RATE_LIMIT_OPEN_PER_HOUR:
-        raise HTTPException(429, 'Rate limit exceeded for open audits.')
+        raise HTTPException(429, 'Rate limit exceeded for open audits. Please try later.')
     
     open_audit.RATE_TRACK[key] = count + 1
-    # run_audit handles the HttpUrl to string conversion internally
+    
+    # run_audit is an async function in app/audit/runner.py
     return await run_audit(body.url)
 
 @router.post('/audit', response_model=AuditOut)
@@ -54,9 +55,10 @@ async def create_audit(body: AuditCreate, request: Request, db: Session = Depend
     if user.plan == 'free' and user.audit_count >= settings.FREE_AUDIT_LIMIT:
         raise HTTPException(403, f'Free plan limit reached ({settings.FREE_AUDIT_LIMIT} audits)')
     
+    # Execute audit
     result = await run_audit(body.url)
     
-    # Explicitly cast body.url to str for database storage
+    # Save to DB - ensure body.url is cast to string
     audit = Audit(user_id=user.id, url=str(body.url), result_json=result)
     db.add(audit)
     user.audit_count += 1
