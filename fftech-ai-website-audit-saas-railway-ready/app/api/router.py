@@ -9,6 +9,7 @@ import uuid
 import logging
 import asyncio
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import FileResponse
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import User, Audit
 from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
-from app.audit.grader import run_audit, AuditError
+from app.audit.grader import run_audit, AuditError, PSIRequestError
 from app.services.pdf_generator import generate_full_audit_pdf
 from app.auth.tokens import decode_token
 
@@ -39,27 +40,62 @@ def get_current_user(request: Request, db: Session) -> Optional[User]:
     return db.query(User).filter(User.email == payload.get("sub")).first()
 
 
+def _normalize_and_validate_url(url: str) -> str:
+    """
+    Ensure URL has scheme and is parseable. PSI needs a valid, public URL.
+    Raises HTTPException 400 for invalid input.
+    """
+    if not isinstance(url, str) or not url.strip():
+        raise HTTPException(status_code=400, detail="URL is required")
+
+    url = url.strip()
+
+    # Auto-prepend https:// if missing (optional but user-friendly)
+    if not (url.startswith("http://") or url.startswith("https://")):
+        url = "https://" + url
+
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Invalid URL. Include a valid domain with http(s) scheme.")
+    return url
+
+
+def _compact_psi_detail(e: PSIRequestError) -> dict:
+    """
+    Provide a compact, user-friendly detail payload for PSI 400 errors.
+    """
+    body = getattr(e, "body", {}) or {}
+    # Extract common fields from PSI error payload if present
+    err = body.get("error", {}) if isinstance(body, dict) else {}
+    message = err.get("message") or str(e)
+    reason = (err.get("errors") or [{}])[0].get("reason")
+    return {"message": message, "reason": reason, "psi_body": body}
+
+
 @router.post("/open-audit")
 async def open_audit(body: OpenAuditRequest):
     """
     Run a full async Google PSI audit (mobile + desktop) and return JSON.
-    Ensures the result is awaited and JSON-serializable to avoid FastAPI
-    serialization errors like `'coroutine' object is not iterable`.
+    - Validates URL before calling PSI (prevents many 400s).
+    - Maps PSI 400 to HTTP 400 with body details; other PSI errors to 502.
     """
-    url_string = str(body.url or "").strip()
-    if not url_string:
-        raise HTTPException(status_code=400, detail="URL is required")
-
+    url_string = _normalize_and_validate_url(str(body.url or ""))
     try:
-        # ✅ Await the async audit (prevents returning a coroutine)
-        audit_result = await run_audit(url_string, locale=getattr(body, "locale", None))
-        return audit_result
+        result = await run_audit(url_string, locale=getattr(body, "locale", None))
+        return result
+    except PSIRequestError as e:
+        # PSI 400 → return 400 with PSI body so client can act
+        if getattr(e, "status", None) == 400:
+            detail = _compact_psi_detail(e)
+            logger.warning("PSI 400 for %s: %s", url_string, detail)
+            raise HTTPException(status_code=400, detail=detail) from e
+        # Other PSI errors (429/5xx/timeouts after retries) → 502
+        logger.exception("PSI error for %s", url_string)
+        raise HTTPException(status_code=502, detail=str(e)) from e
     except AuditError as e:
-        # Known audit error (network, PSI, parse) → 502 Bad Gateway
-        logger.exception("AuditError during /open-audit for %s", url_string)
+        logger.exception("Audit module error for %s", url_string)
         raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception as e:
-        # Unknown error → 500
         logger.exception("Unhandled error during /open-audit for %s", url_string)
         raise HTTPException(status_code=500, detail="Internal Server Error") from e
 
@@ -68,43 +104,42 @@ async def open_audit(body: OpenAuditRequest):
 async def download_report(url: str = Query(..., description="Website URL to audit")):
     """
     Runs the audit, generates a full PDF report, and returns it as a file download.
-    - The audit call is awaited (async).
-    - PDF generation (likely CPU/IO-bound and synchronous) is offloaded to a thread
-      so the event loop remains responsive.
+    - Audit call is awaited (async).
+    - PDF generation is offloaded to a thread (non-blocking for event loop).
+    - PSI 400 is surfaced to client as 400 with details.
     """
-    url_string = str(url or "").strip()
-    if not url_string:
-        raise HTTPException(status_code=400, detail="URL is required")
-
+    url_string = _normalize_and_validate_url(url)
     try:
-        # 1) Run the async audit
         report_data = await run_audit(url_string)
 
-        # 2) Ensure reports directory exists
         os.makedirs("reports", exist_ok=True)
-
-        # 3) Build a unique filename to avoid collisions
         unique = uuid.uuid4().hex
         file_path = os.path.join("reports", f"Audit_{int(time.time())}_{unique}.pdf")
 
-        # 4) Offload synchronous PDF generation to a worker thread
+        # Offload sync PDF generation to a worker thread
         await asyncio.to_thread(generate_full_audit_pdf, report_data, file_path)
 
-        # 5) Return the PDF file
         return FileResponse(
             path=file_path,
             filename="FFTech_Certified_Audit.pdf",
             media_type="application/pdf",
         )
-    except AuditError as e:
-        logger.exception("AuditError during /download-full-audit for %s", url_string)
+    except PSIRequestError as e:
+        if getattr(e, "status", None) == 400:
+            detail = _compact_psi_detail(e)
+            logger.warning("PSI 400 during PDF for %s: %s", url_string, detail)
+            raise HTTPException(status_code=400, detail=detail) from e
+        logger.exception("PSI error during PDF for %s", url_string)
         raise HTTPException(status_code=502, detail=str(e)) from e
-    except FileNotFoundError as e:
+    except AuditError as e:
+        logger.exception("Audit module error during PDF for %s", url_string)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except FileNotFoundError:
         logger.exception("PDF generation failed: file not found for %s", url_string)
-        raise HTTPException(status_code=500, detail="Report generation failed") from e
-    except Exception as e:
+        raise HTTPException(status_code=500, detail="Report generation failed")
+    except Exception:
         logger.exception("Unhandled error during /download-full-audit for %s", url_string)
-        raise HTTPException(status_code=500, detail="Internal Server Error") from e
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @router.post("/audit", response_model=AuditOut)
@@ -114,45 +149,43 @@ async def create_audit(
     db: Session = Depends(get_db),
 ):
     """
-    Authenticated endpoint that runs an audit, stores the result in DB,
-    increments user's audit_count, and returns the stored audit row.
-
-    IMPORTANT:
-    - `run_audit` is awaited to avoid returning coroutines.
-    - SQLAlchemy session work is synchronous; FastAPI runs sync dependencies
-      in a threadpool, so this is safe here.
+    Authenticated endpoint: runs an audit, persists it, increments user's audit_count,
+    and returns the saved row.
+    - PSI 400 is returned as 400 to the client.
     """
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    url_string = str(body.url or "").strip()
-    if not url_string:
-        raise HTTPException(status_code=400, detail="URL is required")
+    url_string = _normalize_and_validate_url(str(body.url or ""))
 
     try:
-        # Run the async audit
         result = await run_audit(url_string)
 
-        # Persist audit
         audit = Audit(
             user_id=user.id,
             url=url_string,
-            result_json=result,  # ensure this column is JSON/JSONB compatible
+            result_json=result,  # ensure JSON/JSONB column type
         )
 
         db.add(audit)
-        # Keep audit count accurate
         user.audit_count = (user.audit_count or 0) + 1
         db.commit()
         db.refresh(audit)
 
         return audit
-    except AuditError as e:
-        logger.exception("AuditError during /audit for %s", url_string)
+    except PSIRequestError as e:
+        if getattr(e, "status", None) == 400:
+            detail = _compact_psi_detail(e)
+            logger.warning("PSI 400 during /audit for %s: %s", url_string, detail)
+            raise HTTPException(status_code=400, detail=detail) from e
+        logger.exception("PSI error during /audit for %s", url_string)
         raise HTTPException(status_code=502, detail=str(e)) from e
-    except Exception as e:
-        # Rollback DB on unexpected errors
-        logger.exception("Unhandled error during /audit for %s", url_string)
+    except AuditError as e:
+        logger.exception("Audit module error during /audit for %s", url_string)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal Server Error") from e
+        logger.exception("Unhandled error during /audit for %s", url_string)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+``
