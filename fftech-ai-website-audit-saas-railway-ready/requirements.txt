@@ -1,4 +1,3 @@
-pip install pydantic-settings
 # --- CORE WEB FRAMEWORK ---
 fastapi==0.128.0
 uvicorn[standard]==0.32.0
@@ -8,6 +7,7 @@ python-multipart==0.0.20
 # --- DATA VALIDATION & SETTINGS ---
 pydantic==2.12.5
 pydantic-settings==2.12.0
+email-validator==2.2.0
 
 # --- DATABASE & ORM ---
 sqlalchemy==2.0.46
@@ -28,7 +28,6 @@ google-genai==1.60.0
 # --- SECURITY & AUTHENTICATION ---
 itsdangerous==2.2.0
 PyJWT==2.10.1
-email-validator==2.2.0
 passlib[bcrypt]==1.7.4
 
 # --- REPORTING (PDF/XLSX/PPTX) ---
