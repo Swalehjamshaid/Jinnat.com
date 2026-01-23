@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-# Relative imports to resolve pathing issues on Railway/Docker
-from ..db import get_db
-from ..models import User, Audit, Schedule
-from ..schemas import AuditCreate, OpenAuditRequest, AuditOut
-from ..audit.runner import run_audit
-from ..audit.report import build_pdf
-from ..auth.tokens import decode_token
-from ..settings import get_settings
+# Absolute imports for stable Docker/Railway deployment
+from app.db import get_db
+from app.models import User, Audit, Schedule
+from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
+from app.audit.runner import run_audit
+from app.audit.report import build_pdf
+from app.auth.tokens import decode_token
+from app.settings import get_settings
 
 router = APIRouter(prefix='/api', tags=['api'])
 
