@@ -19,11 +19,10 @@ def _ensure_tmp_dir() -> str:
 
 
 def _plot_overall(ax, score: float):
-    # Donut chart showing overall score
     score = max(0, min(100, float(score)))
     remaining = 100 - score
     colors = ["#2ecc71", "#eeeeee"] if score >= 60 else ["#e67e22", "#eeeeee"]
-    wedges, _ = ax.pie(
+    ax.pie(
         [score, remaining],
         startangle=90,
         colors=colors,
@@ -51,8 +50,8 @@ def _plot_breakdown(ax, breakdown: Dict[str, float]):
 
 
 def _plot_status(ax, status_dist: Dict[str, int]):
-    # Convert keys to strings for safety
-    items = sorted(((str(k), v) for k, v in (status_dist or {}).items()), key=lambda x: int(x[0]) if x[0].isdigit() else 0)
+    items = sorted(((str(k), v) for k, v in (status_dist or {}).items()),
+                   key=lambda x: int(x[0]) if x[0].isdigit() else 0)
     labels = [k for k, _ in items][:8]
     values = [v for _, v in items][:8]
 
@@ -67,13 +66,6 @@ def _plot_status(ax, status_dist: Dict[str, int]):
 
 
 def generate_charts(audit_result: Dict[str, Any]) -> str:
-    """
-    Builds a 3-panel figure:
-      - Overall score donut
-      - Breakdown bar
-      - Status code distribution bar
-    Returns the absolute path to the saved PNG.
-    """
     overall = float(audit_result.get("overall_score", 0.0))
     breakdown = audit_result.get("breakdown") or {}
     status_dist = (audit_result.get("issues_overview") or {}).get("http_status_distribution") or {}
@@ -91,5 +83,4 @@ def generate_charts(audit_result: Dict[str, Any]) -> str:
     fig.suptitle("FF Tech AI Website Audit — Visual Summary", fontsize=14, fontweight="bold")
     fig.savefig(out_path, dpi=160)
     plt.close(fig)
-
     return out_path
