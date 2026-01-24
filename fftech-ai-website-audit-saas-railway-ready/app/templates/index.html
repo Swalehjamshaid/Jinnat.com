@@ -103,149 +103,104 @@
 
 </div>
 
-<!-- CHART.JS -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 let breakdownChartInstance = null;
 let currentEventSource = null;
 
-function updateProgress(percent, msg="Auditing...") {
-  const bar = document.getElementById('crawlProgressBar');
-  const label = document.getElementById('progressLabel');
-  const statusLabel = document.getElementById('statusLabel');
-  const overlayStatus = document.getElementById('overlayStatus');
-
-  const safe = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
-  bar.style.width = safe + '%';
-  label.textContent = safe + '%';
-  if (statusLabel) statusLabel.textContent = msg;
-  if (overlayStatus) overlayStatus.textContent = msg;
+function normalizeUrl(u) {
+    if (!u) return "";
+    const t = u.trim();
+    return /^https?:\/\//i.test(t) ? t : "https://" + t.replace(/^\/+/, '');
 }
 
-function normalizeUrl(u) {
-  if (!u) return "";
-  const t = u.trim();
-  return /^https?:\/\//i.test(t) ? t : "https://" + t.replace(/^\/+/, '');
+function updateProgress(percent, msg="Auditing...") {
+    document.getElementById('crawlProgressBar').style.width = percent + '%';
+    document.getElementById('progressLabel').textContent = percent + '%';
+    document.getElementById('statusLabel').textContent = msg;
+    document.getElementById('overlayStatus').textContent = msg;
 }
 
 function resetUI() {
-  const ui = {
-    btn: document.getElementById('btnOpenAudit'),
-    btnText: document.getElementById('btnText'),
-    btnSpinner: document.getElementById('btnSpinner'),
-    overlay: document.getElementById('loadingOverlay'),
-    progress: document.getElementById('crawlProgressContainer'),
-  };
-  ui.btn.disabled = false;
-  ui.btnText.textContent = "Audit";
-  ui.btnSpinner.classList.add("d-none");
-  ui.overlay.style.display = "none";
-  ui.progress.style.display = "none";
+    document.getElementById('btnOpenAudit').disabled = false;
+    document.getElementById('btnText').textContent = "Audit";
+    document.getElementById('btnSpinner').classList.add("d-none");
+    document.getElementById('loadingOverlay').style.display = "none";
+    document.getElementById('crawlProgressContainer').style.display = "none";
 }
 
-// -----------------------------
-// Run Audit via SSE
-// -----------------------------
 async function runAudit(url) {
-  const ui = {
-    results: document.getElementById('openResults'),
-    ovScore: document.getElementById('ovScore'),
-    grade: document.getElementById('grade'),
-    onpage: document.getElementById('onpageScore'),
-    perf: document.getElementById('perfScore'),
-    coverage: document.getElementById('coverageScore'),
-    conf: document.getElementById('confidence'),
-    json: document.getElementById('openJson'),
-  };
+    try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
 
-  try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
-
-  // UI Reset
-  document.getElementById('btnOpenAudit').disabled = true;
-  document.getElementById('btnText').textContent = "Processing...";
-  document.getElementById('btnSpinner').classList.remove("d-none");
-  document.getElementById('loadingOverlay').style.display = "flex";
-  document.getElementById('crawlProgressContainer').style.display = "block";
-  ui.results.classList.add("d-none");
-  updateProgress(5, "Preparing audit…");
-
-  // SSE
-  const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
-  currentEventSource = evtSource;
-
-  evtSource.onmessage = (e) => {
-    let data;
-    try { data = JSON.parse(e.data); } catch { return; }
-
-    const crawlP = Math.round((data.crawl_progress ?? 0) * 100);
-    const psiP   = Math.round((data.psi_progress ?? 0) * 100);
-    const combined = Math.round((crawlP + psiP) / 2);
-    updateProgress(combined, combined < 50 ? "Crawling website…" : "Analyzing performance…");
-
-    if (data.finished) {
-      evtSource.close();
-      document.getElementById('openResults').classList.remove("d-none");
-      ui.ovScore.textContent = data.overall_score ?? "-";
-      ui.grade.textContent   = data.grade ?? "-";
-      ui.onpage.textContent  = data.breakdown?.onpage ?? "-";
-      ui.perf.textContent    = data.breakdown?.performance ?? "-";
-      ui.coverage.textContent= data.breakdown?.coverage ?? "-";
-      ui.conf.textContent    = (data.breakdown?.confidence ?? "-") + "%";
-      ui.json.textContent = JSON.stringify(data, null, 2);
-      ui.json.classList.remove("d-none");
-
-      // Chart
-      const chartData = [
-        Number(data.breakdown?.onpage ?? 0),
-        Number(data.breakdown?.performance ?? 0),
-        Number(data.breakdown?.coverage ?? 0),
-        Number(data.breakdown?.confidence ?? 0)
-      ].map(v => Math.max(0, Math.min(100, v)));
-
-      const ctx = document.getElementById('breakdownChart').getContext('2d');
-      if (breakdownChartInstance) breakdownChartInstance.destroy();
-      breakdownChartInstance = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels: ["SEO", "Speed", "Links", "AI Confidence"],
-          datasets: [{
-            label: "Audit Metrics",
-            data: chartData,
-            backgroundColor: ["#0d6efd","#20c997","#ffc107","#dc3545"],
-            borderRadius: 8
-          }]
-        },
-        options: {
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, max: 100 } }
-        }
-      });
-
-      resetUI();
-    }
-  };
-
-  evtSource.onerror = () => {
-    evtSource.close();
+    // UI reset
     resetUI();
-    alert("Audit failed: Unable to reach server.");
-  };
+    document.getElementById('btnOpenAudit').disabled = true;
+    document.getElementById('btnText').textContent = "Processing...";
+    document.getElementById('btnSpinner').classList.remove("d-none");
+    document.getElementById('loadingOverlay').style.display = "flex";
+    document.getElementById('crawlProgressContainer').style.display = "block";
+    document.getElementById('openResults').classList.add("d-none");
+
+    updateProgress(5, "Preparing audit…");
+
+    // SSE from Python
+    const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
+    currentEventSource = evtSource;
+
+    evtSource.onmessage = (e) => {
+        const data = JSON.parse(e.data || "{}");
+        const percent = Math.round(((data.crawl_progress ?? 0) + (data.psi_progress ?? 0)) / 2 * 100);
+        updateProgress(percent, percent < 50 ? "Crawling..." : "Analyzing...");
+
+        if (!data.finished) return;
+
+        evtSource.close();
+        document.getElementById('openResults').classList.remove("d-none");
+
+        // Populate Python data
+        document.getElementById('ovScore').textContent = data.overall_score ?? "-";
+        document.getElementById('grade').textContent   = data.grade ?? "-";
+        document.getElementById('onpageScore').textContent = data.breakdown?.onpage ?? "-";
+        document.getElementById('perfScore').textContent = data.breakdown?.performance ?? "-";
+        document.getElementById('coverageScore').textContent = data.breakdown?.coverage ?? "-";
+        document.getElementById('confidence').textContent = (data.breakdown?.confidence ?? "-") + "%";
+        document.getElementById('openJson').textContent = JSON.stringify(data, null, 2);
+        document.getElementById('openJson').classList.remove("d-none");
+
+        // Chart
+        const chartData = [
+            Number(data.breakdown?.onpage ?? 0),
+            Number(data.breakdown?.performance ?? 0),
+            Number(data.breakdown?.coverage ?? 0),
+            Number(data.breakdown?.confidence ?? 0)
+        ];
+
+        const ctx = document.getElementById('breakdownChart').getContext('2d');
+        if (breakdownChartInstance) breakdownChartInstance.destroy();
+        breakdownChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['SEO','Speed','Links','AI Confidence'],
+                datasets: [{ data: chartData, backgroundColor: ["#0d6efd","#20c997","#ffc107","#dc3545"], borderRadius: 6 }]
+            },
+            options: { maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, max:100 } }, plugins:{ legend:{ display:false } } }
+        });
+
+        resetUI();
+    };
+
+    evtSource.onerror = () => { evtSource.close(); resetUI(); alert("Audit failed. Could not reach server."); };
 }
 
-// -----------------------------
-// Button click handler
-// -----------------------------
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
-  const input = document.getElementById('openUrl');
-  const url = normalizeUrl(input.value);
-  if (!/^https?:\/\/.+\..+/.test(url)) { alert("Enter valid URL."); return; }
-  runAudit(url);
+    const input = document.getElementById('openUrl');
+    const url = normalizeUrl(input.value);
+    if (!/^https?:\/\/.+\..+/.test(url)) { alert("Enter valid URL."); return; }
+    runAudit(url);
 });
 
-// Close SSE if navigating away
 window.addEventListener('beforeunload', () => {
-  try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
+    try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
 });
 </script>
 
