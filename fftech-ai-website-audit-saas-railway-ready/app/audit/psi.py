@@ -1,91 +1,54 @@
-
 # app/audit/psi.py
-import os
-import json
-import asyncio
-import httpx
-from typing import Any, Dict, Optional
+import requests
+from typing import Dict
 
-PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+PAGESPEED_API = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
 
-def _make_timeout(total_read_s: float) -> httpx.Timeout:
-    # Tuned, sane defaults to avoid hangs
-    return httpx.Timeout(connect=5.0, read=total_read_s, write=5.0, pool=5.0)
-
-async def _async_fetch_with_retries(
-    params: Dict[str, Any],
-    retries: int = 2,
-    backoff_base_s: float = 1.0,
-    timeout_read_s: float = 15.0,
-) -> Dict[str, Any]:
+def fetch_lighthouse(url: str, api_key: str, strategy: str = "mobile") -> Dict[str, float]:
     """
-    Fetch PSI JSON with retries & exponential backoff.
-    """
-    last_err: Optional[Exception] = None
-    timeout = _make_timeout(timeout_read_s)
+    Fetches Lighthouse/PageSpeed Insights data from Google API.
 
-    for attempt in range(retries + 1):
-        try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-                resp = await client.get(PSI_ENDPOINT, params=params)
-                resp.raise_for_status()
-                return resp.json()
-        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.HTTPError) as e:
-            last_err = e
-            if attempt >= retries:
-                raise
-            # ✅ Correct async sleep
-            await asyncio.sleep(backoff_base_s * (2 ** attempt))
-
-    # Should not reach here
-    if last_err:
-        raise last_err
-    raise RuntimeError("Unknown PSI fetch failure")
-
-async def async_fetch_psi(
-    url: str,
-    strategy: str = "mobile",
-    api_key: Optional[str] = None,
-    timeout_read_s: float = 15.0,
-    retries: int = 2,
-) -> Dict[str, Any]:
+    Returns:
+        Dict with keys:
+        - performance, seo, accessibility, best_practices: 0-100 score
+        - lcp: Largest Contentful Paint in seconds
+        - cls: Cumulative Layout Shift
     """
-    Async PSI call. Use this in your async pipeline (recommended).
-    """
-    params: Dict[str, Any] = {
-        "url": url,
-        "strategy": strategy,
-        # OPTIONAL: add categories if you want fuller payload
-        # "category": ["performance", "seo", "accessibility", "best-practices"]
+    try:
+        params = {
+            "url": url,
+            "category": ["performance", "seo", "accessibility", "best-practices"],
+            "key": api_key,
+            "strategy": strategy,  # 'mobile' or 'desktop'
+        }
+
+        r = requests.get(PAGESPEED_API, params=params, timeout=20)
+        r.raise_for_status()
+        result = r.json()
+
+        categories = result["lighthouseResult"]["categories"]
+        audits = result["lighthouseResult"]["audits"]
+
+        return {
+            "performance": categories.get("performance", {}).get("score", 0) * 100,
+            "seo": categories.get("seo", {}).get("score", 0) * 100,
+            "accessibility": categories.get("accessibility", {}).get("score", 0) * 100,
+            "best_practices": categories.get("best-practices", {}).get("score", 0) * 100,
+            "lcp": audits.get("largest-contentful-paint", {}).get("numericValue", 0) / 1000,
+            "cls": audits.get("cumulative-layout-shift", {}).get("numericValue", 0),
+        }
+
+    except requests.RequestException as e:
+        print(f"[PSI] Request Error: {e}")
+    except KeyError as e:
+        print(f"[PSI] Key Error: {e}")
+
+    # Return defaults if API fails
+    return {
+        "performance": 0,
+        "seo": 0,
+        "accessibility": 0,
+        "best_practices": 0,
+        "lcp": 0,
+        "cls": 0,
     }
-    if api_key:
-        params["key"] = api_key
-
-    return await _async_fetch_with_retries(
-        params=params,
-        retries=retries,
-        backoff_base_s=1.0,
-        timeout_read_s=timeout_read_s,
-    )
-
-def fetch_psi(
-    url: str,
-    strategy: str = "mobile",
-    api_key: Optional[str] = None,
-    timeout_read_s: float = 15.0,
-    retries: int = 2,
-) -> Dict[str, Any]:
-    """
-    Synchronous wrapper for environments *without* an event loop.
-    Do NOT call this from inside an async function or a running loop.
-    Prefer async_fetch_psi in the audit pipeline.
-    """
-    return asyncio.run(
-        async_fetch_psi(
-            url=url,
-            strategy=strategy,
-            api_key=api_key,
-            timeout_read_s=timeout_read_s,
-            retries=retries,
-        )
-    )
