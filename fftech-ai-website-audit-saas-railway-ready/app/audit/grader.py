@@ -1,5 +1,7 @@
 # app/audit/grader.py
 from typing import Dict, Tuple, Optional
+from urllib.parse import urlparse
+import re
 
 GRADE_BANDS = (
     (90, "A+"),
@@ -20,10 +22,8 @@ WEIGHTS = {
 
 MAX_PAGES = 20  # used for coverage percentage
 
-
 def clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, v))
-
 
 def grade(score: float) -> str:
     for cutoff, letter in GRADE_BANDS:
@@ -31,85 +31,79 @@ def grade(score: float) -> str:
             return letter
     return "D"
 
-
 def _safe_clamp(v: Optional[float]) -> Optional[float]:
     return None if v is None else clamp(v)
 
-
+# -----------------------------
+# Python-only score estimation
+# -----------------------------
 def compute_scores(
-    lighthouse: Dict[str, Optional[float]],
+    lighthouse: Optional[Dict[str, Optional[float]]],  # will be None in Python-only
     crawl: Dict[str, int],
 ) -> Tuple[float, str, Dict[str, Optional[float]]]:
     """
-    Computes a world-class website audit score.
+    Compute website audit using Python heuristics only.
     Inputs:
-      - lighthouse: Lighthouse/PageSpeed Insights metrics (performance, seo, accessibility, best_practices, lcp, cls)
-      - crawl: { pages, broken_links, errors }
+      - crawl: { pages, broken_links, errors, internal_links, external_links, html_content }
     Returns:
       - overall (0..100)
       - letter grade
       - detailed breakdown for dashboards
     """
 
-    # --- Extract & clamp Lighthouse metrics ---
-    perf = _safe_clamp(lighthouse.get("performance"))
-    seo  = _safe_clamp(lighthouse.get("seo"))
-    acc  = _safe_clamp(lighthouse.get("accessibility"))
-    bp   = _safe_clamp(lighthouse.get("best_practices"))
-    lcp  = lighthouse.get("lcp")  # seconds
-    cls  = lighthouse.get("cls")  # unitless
+    # --- Estimate SEO score ---
+    # Heuristic: ratio of pages with <title> and <meta description>
+    seo_score = 0
+    pages = crawl.get("pages", {})
+    total_pages = len(pages) or 1
+    title_count, desc_count = 0, 0
+    for html in pages.values():
+        if re.search(r"<title>.*</title>", html, re.IGNORECASE):
+            title_count += 1
+        if re.search(r"<meta\s+name=['\"]description['\"].*?>", html, re.IGNORECASE):
+            desc_count += 1
+    seo_score = ((title_count / total_pages) * 50 + (desc_count / total_pages) * 50)
+    seo_score = clamp(seo_score)
+
+    # --- Estimate Performance score ---
+    # Heuristic: fewer broken links => higher score
+    broken_links = crawl.get("broken_links", 0)
+    perf_score = clamp(100 - broken_links * 5)
 
     # --- Coverage ---
-    pages = max(0, crawl.get("pages", 0))
-    coverage = clamp((pages / MAX_PAGES) * 100)
+    coverage = clamp((total_pages / MAX_PAGES) * 100)
 
-    # --- Technical Health ---
-    tech_vals = [v for v in (acc, bp) if v is not None]
-    tech = sum(tech_vals) / len(tech_vals) if tech_vals else 0.0
+    # --- Technical health ---
+    # Heuristic: ratio of internal links per page
+    internal_links = crawl.get("internal_links", {})
+    internal_link_ratio = sum(len(v) for v in internal_links.values()) / (total_pages * 10)  # 10 links/page ideal
+    technical = clamp(internal_link_ratio * 100)
 
-    # --- Stability (penalties for LCP and CLS) ---
-    lcp_penalty = 0 if (lcp is None or lcp <= 2.5) else min(20, lcp * 3)
-    cls_penalty = 0 if (cls is None or cls <= 0.1) else min(20, cls * 100)
-    stability = clamp(100 - lcp_penalty - cls_penalty)
+    # --- Stability ---
+    # Heuristic: fewer crawl errors => higher stability
+    errors = crawl.get("errors", 0)
+    stability = clamp(100 - errors * 5)
 
-    # --- Weighted Score (ignore missing components proportionally) ---
-    components, weights = [], []
-
-    if perf is not None:
-        components.append(perf); weights.append(WEIGHTS["performance"])
-    if seo is not None:
-        components.append(seo); weights.append(WEIGHTS["seo"])
-
-    # Coverage, Technical, Stability are always included
-    components.extend([coverage, tech, stability])
-    weights.extend([WEIGHTS["coverage"], WEIGHTS["technical"], WEIGHTS["stability"]])
-
+    # --- Weighted overall score ---
+    components = [perf_score, seo_score, coverage, technical, stability]
+    weights = [WEIGHTS["performance"], WEIGHTS["seo"], WEIGHTS["coverage"], WEIGHTS["technical"], WEIGHTS["stability"]]
     weighted_sum = sum(c * w for c, w in zip(components, weights))
-    wsum = sum(weights) if weights else 1.0
-    overall = clamp(weighted_sum / wsum)
+    overall = clamp(weighted_sum / sum(weights))
 
-    # --- Penalties from crawl ---
-    broken_penalty = min(15, max(0, crawl.get("broken_links", 0)) * 2)
-    error_penalty  = min(20, max(0, crawl.get("errors", 0)) * 5)
+    # --- Apply penalties for broken links and errors ---
+    broken_penalty = min(15, broken_links * 2)
+    error_penalty  = min(20, errors * 5)
     overall = clamp(round(overall - broken_penalty - error_penalty, 1))
 
-    # --- Detailed breakdown ---
     breakdown: Dict[str, Optional[float]] = {
-        "performance": round(perf, 1) if perf is not None else None,
-        "seo": round(seo, 1) if seo is not None else None,
+        "performance": round(perf_score, 1),
+        "seo": round(seo_score, 1),
         "coverage": round(coverage, 1),
-        "technical": round(tech, 1),
+        "technical": round(technical, 1),
         "stability": round(stability, 1),
-        "broken_links": max(0, crawl.get("broken_links", 0)),
-        "errors": max(0, crawl.get("errors", 0)),
-        "missing": {
-            "performance": perf is None,
-            "seo": seo is None,
-            "accessibility": acc is None,
-            "best_practices": bp is None,
-            "lcp": lcp is None,
-            "cls": cls is None,
-        }
+        "broken_links": broken_links,
+        "errors": errors,
+        "missing": { "performance": False, "seo": False, "coverage": False, "technical": False, "stability": False }
     }
 
     return overall, grade(overall), breakdown
