@@ -1,3 +1,4 @@
+# app/audit/crawler.py
 import asyncio
 import aiohttp
 from bs4 import BeautifulSoup
@@ -15,7 +16,6 @@ HEADERS = {
 
 JUNK_EXTENSIONS = ('.pdf', '.jpg', '.png', '.zip', '.docx', '.jpeg', '.gif')
 
-
 class CrawlResult:
     def __init__(self):
         self.pages = {}  
@@ -26,23 +26,21 @@ class CrawlResult:
         self.broken_external = []
         self.total_crawl_time = 0
 
-
 def is_same_host(start_url: str, link: str) -> bool:
     try:
         return urlparse(start_url).netloc == urlparse(link).netloc
     except:
         return False
 
-
 async def fetch_page(session: aiohttp.ClientSession, url: str, timeout: int = 7):
-    """Fetch a page content async"""
+    """Fetch page content async (Python-only)"""
     try:
         async with session.get(url, timeout=timeout) as resp:
             text = await resp.text()
             return url, resp.status, resp.headers.get("Content-Type", ""), text
-    except:
+    except Exception as e:
+        logger.warning(f"Failed fetching {url}: {e}")
         return url, 0, "", ""
-
 
 async def check_link(session: aiohttp.ClientSession, link: str):
     """Check if a link is broken using HEAD (fast)"""
@@ -52,13 +50,12 @@ async def check_link(session: aiohttp.ClientSession, link: str):
     except:
         return link, 0
 
-
 async def crawl(start_url: str, max_pages: int = 15, timeout: int = 7) -> CrawlResult:
     """
-    Async world-class crawler:
+    100% Python-based async crawler:
     - Async requests for parallelism
-    - Skip junk extensions and non-HTML pages
-    - Limit broken link checks for speed
+    - Skips non-HTML pages & junk extensions
+    - Limited broken link checks
     """
     start_time = time.time()
     result = CrawlResult()
@@ -100,17 +97,15 @@ async def crawl(start_url: str, max_pages: int = 15, timeout: int = 7) -> CrawlR
                     else:
                         result.external_links[url].append(abs_url)
 
-        # --- Broken Link Check ---
+        # --- Broken Link Check (Python-only) ---
         all_internal = [link for links in result.internal_links.values() for link in links]
         all_internal = list(set(all_internal))[:50]  # Limit to 50 links
         tasks = [check_link(session, l) for l in all_internal]
         check_results = await asyncio.gather(*tasks)
         for link, status in check_results:
             if status >= 400 or status == 0:
-                # Find source page
                 src = next((k for k, v in result.internal_links.items() if link in v), None)
                 result.broken_internal.append((src, link, status))
 
     result.total_crawl_time = round(time.time() - start_time, 2)
     return result
-
