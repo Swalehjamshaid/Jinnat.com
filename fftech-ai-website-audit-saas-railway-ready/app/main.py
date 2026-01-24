@@ -23,21 +23,25 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 def run_self_healing_migration():
-    """Fixes 'NotNullViolation' by dropping mandatory constraints"""
+    """Fixes 'NotNullViolation' by dropping mandatory constraints and setting defaults"""
     with engine.connect() as conn:
         logger.info("Running deep schema repair...")
         try:
-            # Add missing column
+            # 1. Add missing JSON column
             conn.execute(text("ALTER TABLE audits ADD COLUMN IF NOT EXISTS result_json JSONB;"))
             
-            # Relax all columns that caused crashes
+            # 2. THE CRITICAL FIX: Set the default time for created_at
+            # This stops the 'null value in column created_at' error permanently
+            conn.execute(text("ALTER TABLE audits ALTER COLUMN created_at SET DEFAULT now();"))
+            
+            # 3. Relax all columns that caused crashes
             conn.execute(text("ALTER TABLE audits ALTER COLUMN coverage DROP NOT NULL;"))
             conn.execute(text("ALTER TABLE audits ALTER COLUMN grade DROP NOT NULL;"))
             conn.execute(text("ALTER TABLE audits ALTER COLUMN score DROP NOT NULL;"))
             conn.execute(text("ALTER TABLE audits ALTER COLUMN status DROP NOT NULL;"))
             
             conn.commit()
-            logger.info("SCHEMA REPAIR: Success. All columns are now optional.")
+            logger.info("SCHEMA REPAIR: Success. All columns are now optional and created_at is handled.")
         except Exception as e:
             conn.rollback()
             logger.error(f"SCHEMA REPAIR FAILED: {e}")
@@ -60,6 +64,7 @@ async def api_open_audit(request: Request, db: Session = Depends(get_db)):
         # Runs audit with the verified AIza... key
         result = await run_audit(url)
 
+        # We don't pass created_at here; the DB handles it automatically now
         new_audit = Audit(
             url=url,
             status="completed",
