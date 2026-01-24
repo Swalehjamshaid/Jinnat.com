@@ -1,338 +1,158 @@
-
-{% extends 'base.html' %}
-{% block content %}
-
-<div class="row">
-
-  <!-- AUDIT CARD -->
-  <div class="col-lg-7">
-    <div class="card bg-body-tertiary mb-4 position-relative" id="auditCard">
-
-      <!-- LOADING OVERLAY -->
-      <div id="loadingOverlay"
-           style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.6); z-index:10; border-radius:0.5rem; display:flex; align-items:center; justify-content:center; flex-direction:column;">
-        <div class="text-center text-white">
-          <div class="spinner-border text-primary" style="width:3rem; height:3rem;" role="status"></div>
-          <div class="mt-3 fw-bold h5" id="overlayStatus">Initializing Audit...</div>
-          <div class="small text-white-50" id="overlayHint">This may take a few seconds</div>
-        </div>
-      </div>
-
-      <div class="card-body">
-        <h4 class="card-title fw-bold">Open Access Audit</h4>
-        <p class="text-secondary">Quickly audit any URL — no sign-in required.</p>
-
-        <!-- URL INPUT -->
-        <div class="input-group mb-3">
-          <input id="openUrl" type="url" class="form-control" placeholder="https://example.com" value="https://">
-          <button id="btnOpenAudit" class="btn btn-primary px-4">
-            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none"></span>
-            <span id="btnText">Audit</span>
-          </button>
-        </div>
-
-        <!-- PROGRESS BAR -->
-        <div id="crawlProgressContainer" class="mb-4" style="display:none;">
-          <div class="d-flex justify-content-between mb-1">
-            <span class="text-primary small fw-bold" id="statusLabel">Initializing...</span>
-            <span id="progressLabel" class="text-secondary small">0%</span>
-          </div>
-          <div class="progress" style="height:12px; border-radius:10px;">
-            <div id="crawlProgressBar"
-                 class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
-                 role="progressbar" style="width:0%"></div>
-          </div>
-        </div>
-
-        <!-- RESULTS CARD -->
-        <div id="openResults" class="mt-3 d-none">
-          <h5 class="mb-3">Audit Results</h5>
-          <div class="row g-3">
-
-            <!-- OVERALL SCORE -->
-            <div class="col-md-4">
-              <div class="p-4 rounded bg-dark-subtle text-center h-100 border">
-                <b class="text-uppercase small ls-widest text-secondary">Overall Score</b>
-                <div id="ovScore" class="display-5 fw-bold text-primary mt-2">-</div>
-                <div id="grade" class="h4 fw-bold mt-1">-</div>
-              </div>
-            </div>
-
-            <!-- BREAKDOWN CHART -->
-            <div class="col-md-8">
-              <div class="p-2 border rounded h-100">
-                <canvas id="breakdownChart" height="160"></canvas>
-              </div>
-            </div>
-
-          </div>
-
-          <!-- METRIC DETAILS -->
-          <div class="mt-4">
-            <h6 class="fw-bold">Metric Details</h6>
-            <div class="row g-2">
-              <div class="col-6"><div class="p-2 border rounded small bg-light">SEO: <span id="onpageScore" class="fw-bold float-end">-</span></div></div>
-              <div class="col-6"><div class="p-2 border rounded small bg-light">Speed: <span id="perfScore" class="fw-bold float-end">-</span></div></div>
-              <div class="col-6"><div class="p-2 border rounded small bg-light">Links: <span id="coverageScore" class="fw-bold float-end">-</span></div></div>
-              <div class="col-6"><div class="p-2 border rounded small bg-light">AI Confidence: <span id="confidence" class="fw-bold float-end">-</span></div></div>
-            </div>
-          </div>
-
-          <!-- RAW JSON DATA -->
-          <pre id="openJson" class="small mt-4 bg-dark text-info p-3 rounded d-none" style="max-height:200px; overflow:auto;"></pre>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PASSWORDLESS SIGN-IN -->
-  <div class="col-lg-5">
-    <div class="card bg-body-tertiary mb-4 border-0 shadow-sm">
-      <div class="card-body p-4">
-        <h4 class="card-title fw-bold">Passwordless Sign-in</h4>
-        <form method="post" action="/request-login">
-          <div class="mb-3">
-            <label class="form-label text-secondary small">Email</label>
-            <input type="email" name="email" class="form-control" required>
-          </div>
-          <button class="btn btn-success w-100 fw-bold">Send Magic Link</button>
-        </form>
-        <p class="small text-secondary mt-3">Free users can run up to 10 audits; subscribe to unlock scheduling &amp; history.</p>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<!-- CHART.JS -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-let breakdownChartInstance = null;
-let currentEventSource = null;
-
-// -----------------------------
-// Helpers: progress & overlay
-// -----------------------------
-function updateProgress(percent, msg = "Auditing...") {
-  const bar = document.getElementById('crawlProgressBar');
-  const label = document.getElementById('progressLabel');
-  const statusLabel = document.getElementById('statusLabel');
-  const overlayStatus = document.getElementById('overlayStatus');
-
-  const safe = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
-  bar.style.width = safe + '%';
-  label.textContent = safe + '%';
-  if (statusLabel) statusLabel.textContent = msg;
-  if (overlayStatus) overlayStatus.textContent = msg;
-}
-
-function normalizeUrl(u) {
-  if (!u) return "";
-  const t = u.trim();
-  if (/^https?:\/\//i.test(t)) return t;
-  // default to https
-  return "https://" + t.replace(/^\/+/, '');
-}
-
-async function pingHealth(timeoutMs = 3000) {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    const res = await fetch('/health', { signal: ac.signal, cache: 'no-store' });
-    return res.ok;
-  } catch (_) {
-    return false;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-function resetUI() {
-  const ui = {
-    btn: document.getElementById('btnOpenAudit'),
-    btnText: document.getElementById('btnText'),
-    btnSpinner: document.getElementById('btnSpinner'),
-    overlay: document.getElementById('loadingOverlay'),
-    progress: document.getElementById('crawlProgressContainer'),
-  };
-  ui.btn.disabled = false;
-  ui.btnText.textContent = "Audit";
-  ui.btnSpinner.classList.add("d-none");
-  ui.overlay.style.display = "none";
-  ui.progress.style.display = "none";
-}
-
-// -----------------------------
-// Run Audit using SSE with seatbelts
-// -----------------------------
-async function runAudit(url) {
-  const ui = {
-    results: document.getElementById('openResults'),
-    btn: document.getElementById('btnOpenAudit'),
-    btnText: document.getElementById('btnText'),
-    btnSpinner: document.getElementById('btnSpinner'),
-    progress: document.getElementById('crawlProgressContainer'),
-    overlay: document.getElementById('loadingOverlay'),
-    overlayHint: document.getElementById('overlayHint'),
-    ovScore: document.getElementById('ovScore'),
-    grade: document.getElementById('grade'),
-    onpage: document.getElementById('onpageScore'),
-    perf: document.getElementById('perfScore'),
-    coverage: document.getElementById('coverageScore'),
-    conf: document.getElementById('confidence'),
-    json: document.getElementById('openJson')
-  };
-
-  // Cancel any previous SSE if user clicks twice
-  try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
-
-  // UI Reset
-  ui.btn.disabled = true;
-  ui.btnText.textContent = "Processing...";
-  ui.btnSpinner.classList.remove("d-none");
-  ui.overlay.style.display = "flex";
-  ui.progress.style.display = "block";
-  ui.results.classList.add("d-none");
-  updateProgress(3, "Preparing audit…");
-
-  // Quick health ping (helps during cold starts)
-  const healthy = await pingHealth(3000);
-  if (!healthy) {
-    document.getElementById('overlayStatus').textContent = "Warming up server…";
-    ui.overlayHint.textContent = "If this takes long, please retry.";
-  }
-
-  // Initialize seatbelts
-  const WATCHDOG_MS = 20000;    // hard cap: 20s
-  const HEARTBEAT_WARN_MS = 10000; // if no message in 10s, show warmup msg
-  let finished = false;
-  let lastMsgAt = Date.now();
-
-  const onTimeout = () => {
-    if (finished) return;
-    try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
-    resetUI();
-    alert("Audit timed out. Please try again.");
-  };
-
-  const watchdog = setTimeout(onTimeout, WATCHDOG_MS);
-  const heartbeat = setInterval(() => {
-    const idle = Date.now() - lastMsgAt;
-    if (idle > HEARTBEAT_WARN_MS) {
-      updateProgress(10, "Still initializing… (network or rate limit)");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FF Tech Audit - Python Native</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f9;
+      margin: 0;
+      padding: 0;
     }
-  }, 1000);
-
-  // Start SSE
-  const endpoint = `/api/open-audit-progress?url=${encodeURIComponent(url)}`;
-  const evtSource = new EventSource(endpoint);
-  currentEventSource = evtSource;
-
-  evtSource.onmessage = (e) => {
-    lastMsgAt = Date.now();
-
-    let data;
-    try { data = JSON.parse(e.data || "{}"); }
-    catch (_) { return; }
-
-    const crawlP = Math.round(((data.crawl_progress ?? 0) * 100));
-    const psiP   = Math.round(((data.psi_progress ?? 0) * 100));
-    const combined = Math.max(0, Math.min(100, Math.round((crawlP + psiP) / 2)));
-
-    updateProgress(combined, combined < 50 ? "Crawling website…" : "Analyzing performance…");
-
-    if (!data.finished) return;
-    finished = true;
-
-    // Clean up timers/SSE
-    clearTimeout(watchdog);
-    clearInterval(heartbeat);
-    try { evtSource.close(); } catch (_) {}
-
-    if (data.error) {
-      resetUI();
-      alert("Audit failed: " + data.error);
-      return;
+    header {
+      background: #1e3a8a;
+      color: white;
+      padding: 15px 20px;
+      text-align: center;
     }
+    main {
+      padding: 20px;
+      max-width: 900px;
+      margin: auto;
+    }
+    input[type="url"] {
+      width: 60%;
+      padding: 10px;
+      font-size: 1rem;
+    }
+    button {
+      padding: 10px 15px;
+      font-size: 1rem;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    #log {
+      margin-top: 20px;
+      background: #1f2937;
+      color: #10b981;
+      font-family: 'Courier New', monospace;
+      padding: 15px;
+      border-radius: 8px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    #summary {
+      margin-top: 20px;
+      padding: 15px;
+      background: #e0f2fe;
+      border-radius: 8px;
+    }
+    .progress-bar {
+      height: 20px;
+      background: #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #3b82f6, #10b981);
+      transition: width 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>FF Tech Audit (Python Native)</h1>
+  </header>
+  <main>
+    <div>
+      <input type="url" id="urlInput" placeholder="Enter website URL (https://example.com)">
+      <button id="startBtn">Start Audit</button>
+    </div>
 
-    // Populate results safely
-    const bd = data.breakdown || {};
-    ui.ovScore.textContent = data.overall_score ?? "-";
-    ui.grade.textContent   = data.grade ?? "-";
-    ui.onpage.textContent  = bd.onpage ?? "-";
-    ui.perf.textContent    = bd.performance ?? "-";
-    ui.coverage.textContent= bd.coverage ?? "-";
-    ui.conf.textContent    = (bd.confidence ?? "-") + (bd.confidence != null ? "%" : "");
+    <div class="progress-bar">
+      <div class="progress-fill" id="crawlProgress"></div>
+    </div>
 
-    ui.json.textContent = JSON.stringify(data, null, 2);
-    ui.json.classList.remove("d-none");
+    <div id="log">Audit logs will appear here...</div>
 
-    // Chart (defensive values)
-    const chartData = [
-      Number(bd.onpage ?? 0),
-      Number(bd.performance ?? 0),
-      Number(bd.coverage ?? 0),
-      Number(bd.confidence ?? 0),
-    ].map(v => (Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0));
+    <div id="summary" style="display:none;">
+      <h2>Audit Summary</h2>
+      <p><b>Overall Score:</b> <span id="overallScore">0</span></p>
+      <p><b>Grade:</b> <span id="grade">N/A</span></p>
+      <h3>Breakdown:</h3>
+      <pre id="breakdown"></pre>
+    </div>
+  </main>
 
-    const ctx = document.getElementById('breakdownChart').getContext('2d');
-    if (breakdownChartInstance) breakdownChartInstance.destroy();
-    breakdownChartInstance = new Chart(ctx, {
-      type: "bar",
-      data: {
-        labels: ["SEO", "Speed", "Links", "AI Confidence"],
-        datasets: [{
-          data: chartData,
-          backgroundColor: "#0d6efd",
-          borderRadius: 6
-        }]
-      },
-      options: {
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, max: 100 } }
-      }
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const urlInput = document.getElementById('urlInput');
+    const logDiv = document.getElementById('log');
+    const crawlFill = document.getElementById('crawlProgress');
+    const summaryDiv = document.getElementById('summary');
+    const overallScoreEl = document.getElementById('overallScore');
+    const gradeEl = document.getElementById('grade');
+    const breakdownEl = document.getElementById('breakdown');
+
+    startBtn.addEventListener('click', () => {
+      const url = urlInput.value.trim();
+      if (!url) return alert("Please enter a URL");
+
+      // Clear previous logs
+      logDiv.textContent = '';
+      summaryDiv.style.display = 'none';
+      crawlFill.style.width = '0%';
+
+      startBtn.disabled = true;
+
+      const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
+
+      evtSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+
+        // Log messages
+        if (data.status) {
+          logDiv.textContent += `\n${data.status}`;
+          logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Update crawl progress
+        if (data.crawl_progress !== undefined) {
+          crawlFill.style.width = `${data.crawl_progress}%`;
+        }
+
+        // Display summary if finished
+        if (data.finished) {
+          startBtn.disabled = false;
+          if (!data.error) {
+            summaryDiv.style.display = 'block';
+            overallScoreEl.textContent = data.overall_score;
+            gradeEl.textContent = data.grade;
+            breakdownEl.textContent = JSON.stringify(data.breakdown, null, 2);
+          } else {
+            logDiv.textContent += `\nError: ${data.error}`;
+          }
+          evtSource.close();
+        }
+      };
+
+      evtSource.onerror = function() {
+        logDiv.textContent += '\nConnection error. Please try again.';
+        startBtn.disabled = false;
+        evtSource.close();
+      };
     });
-
-    // If everything is zero, inform user (likely rate limit)
-    const allZero = chartData.every(v => v === 0);
-    if (allZero) {
-      document.getElementById('overlayHint').textContent =
-        "PSI or external services are unavailable/rate-limited. Showing defaults.";
-    }
-
-    // Show results and release UI
-    document.getElementById('openResults').classList.remove("d-none");
-    resetUI();
-  };
-
-  evtSource.onerror = () => {
-    // Network/SSE error: close & stop spinner
-    clearTimeout(watchdog);
-    clearInterval(heartbeat);
-    try { evtSource.close(); } catch (_) {}
-    resetUI();
-    alert("Audit failed: Unable to reach server.");
-  };
-}
-
-// -----------------------------
-// Button Click triggers audit
-// -----------------------------
-document.getElementById('btnOpenAudit').addEventListenertElementById('openUrl');
-  let url = normalizeUrl(input.value);
-  if (!/^https?:\/\/.+\..+/.test(url)) {
-    alert("Please enter a valid URL (e.g., https://example.com)");
-    return;
-  }
-  input.value = url; // echo normalized
-  runAudit(url);
-});
-
-// Close SSE if user navigates away
-window.addEventListener('beforeunload', () => {
-  try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
-});
-</script>
-
-{% endblock %}
+  </script>
+</body>
+</html>
