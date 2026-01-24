@@ -9,8 +9,9 @@ from sqlalchemy import text
 import logging
 
 # Internal Imports
-from .db import engine, Base, get_db, SessionLocal
+from .db import engine, Base, get_db
 from .models import Audit, User
+from .settings import get_settings  # FIX: Correctly import settings
 from .audit.runner import run_audit
 
 # Setup Logging
@@ -25,37 +26,41 @@ templates = Jinja2Templates(directory="app/templates")
 def run_self_healing_migration():
     """
     Checks the PostgreSQL system catalog to safely add missing columns 
-    without crashing the startup transaction.
+    and repair constraints without crashing the startup transaction.
     """
     with engine.connect() as conn:
         logger.info("Checking database schema integrity...")
-        # Querying information_schema is safe and won't abort the transaction
-        query = text("""
-            SELECT column_name 
-            FROM information_schema.columns 
+        
+        # 1. Check for 'result_json' column
+        query_json = text("""
+            SELECT column_name FROM information_schema.columns 
             WHERE table_name='audits' AND column_name='result_json';
         """)
-        
-        column_exists = conn.execute(query).fetchone()
+        column_exists = conn.execute(query_json).fetchone()
         
         if not column_exists:
-            logger.warning("MIGRATION: Column 'result_json' missing. Repairing table...")
+            logger.warning("MIGRATION: Column 'result_json' missing. Repairing...")
             try:
-                # Use a separate commit for the ALTER command
                 conn.execute(text("ALTER TABLE audits ADD COLUMN result_json JSONB;"))
                 conn.commit()
-                logger.info("MIGRATION: Table 'audits' repaired successfully.")
             except Exception as e:
-                logger.error(f"MIGRATION FAILED: {e}")
+                logger.error(f"MIGRATION FAILED (result_json): {e}")
                 conn.rollback()
-        else:
-            logger.info("SCHEMA CHECK: All columns present.")
+
+        # 2. FIX: Check if 'status' column is blocking saves (the NotNullViolation fix)
+        try:
+            # This makes the status column optional so null values don't crash the app
+            conn.execute(text("ALTER TABLE audits ALTER COLUMN status DROP NOT NULL;"))
+            conn.commit()
+            logger.info("MIGRATION: 'status' column constraint relaxed.")
+        except Exception:
+            conn.rollback()
 
 @app.on_event("startup")
 def startup_event():
-    # 1. Create tables if missing
+    # Create tables if missing
     Base.metadata.create_all(bind=engine)
-    # 2. Repair schema if necessary (fixes the result_json error)
+    # Perform self-healing schema updates
     run_self_healing_migration()
 
 @app.get("/", response_class=HTMLResponse)
@@ -70,12 +75,13 @@ async def api_open_audit(request: Request, db: Session = Depends(get_db)):
         if not url:
             return JSONResponse({"detail": "URL is required"}, status_code=400)
 
-        # Run the comprehensive runner (handles SSL/PSI failures internally)
+        # Run the comprehensive runner
         result = await run_audit(url)
 
-        # Persistence: Save the dictionary to our new JSONB column
+        # Persistence: Fix the NotNullViolation by explicitly setting status
         new_audit = Audit(
             url=url,
+            status="completed",  # FIX: Ensures the DB is happy with this record
             result_json=result
         )
         db.add(new_audit)
@@ -86,7 +92,9 @@ async def api_open_audit(request: Request, db: Session = Depends(get_db)):
 
     except Exception as e:
         logger.error(f"API Error: {e}")
-        return JSONResponse({"detail": "Internal Server Error during audit processing."}, status_code=500)
+        # Rollback the DB session on error to prevent transaction hanging
+        db.rollback()
+        return JSONResponse({"detail": f"Audit failed: {str(e)}"}, status_code=500)
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8080)
