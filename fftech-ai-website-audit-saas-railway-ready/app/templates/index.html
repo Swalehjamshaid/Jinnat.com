@@ -11,7 +11,7 @@
       <div id="loadingOverlay" style="display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6); z-index: 10; border-radius: 0.5rem; display:flex; align-items:center; justify-content:center; flex-direction: column;">
         <div class="text-center text-white">
           <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
-          <div class="mt-3 fw-bold h5" id="overlayStatus">Initializing AI Audit...</div>
+          <div class="mt-3 fw-bold h5" id="overlayStatus">Initializing Audit...</div>
           <div class="small text-white-50">This may take a few seconds</div>
         </div>
       </div>
@@ -147,15 +147,15 @@ async function runAudit(url) {
     ui.overlay.style.display = "flex";
     ui.progress.style.display = "block";
     ui.results.classList.add("d-none");
-    updateProgress(10, "Connecting to AI Audit Engine...");
+    updateProgress(5, "Preparing audit...");
 
     try {
+        // Start EventSource only on button click
         const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
         
         evtSource.onmessage = e => {
             const data = JSON.parse(e.data);
 
-            // Incremental progress
             const crawlP = Math.round((data.crawl_progress ?? 0) * 100);
             const psiP = Math.round((data.psi_progress ?? 0) * 100);
             const combined = Math.round((crawlP + psiP) / 2);
@@ -206,7 +206,6 @@ async function runAudit(url) {
                 }
             });
 
-            // UI reset
             ui.results.classList.remove("d-none");
             ui.btn.disabled = false;
             ui.btnText.textContent = "Audit";
@@ -235,11 +234,16 @@ async function runAudit(url) {
     }
 }
 
-// Event Listener
+// -----------------------------
+// Button Click triggers audit
+// -----------------------------
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
     const url = document.getElementById('openUrl').value.trim();
-    if (url.startsWith('http')) runAudit(url);
-    else alert("Please enter a valid URL (https://...)");
+    if (!url.startsWith('http')) {
+        alert("Please enter a valid URL (https://...)");
+        return;
+    }
+    runAudit(url);
 });
 </script>
 
