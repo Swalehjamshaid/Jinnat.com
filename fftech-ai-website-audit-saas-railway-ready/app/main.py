@@ -1,4 +1,5 @@
 # app/main.py
+
 import uvicorn
 from fastapi import FastAPI, Depends, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -40,11 +41,12 @@ async def home(request: Request):
 
 @app.get('/request-login', response_class=HTMLResponse)
 async def show_login(request: Request):
-    """Serve the login page (Fixes the 404 in logs)"""
+    """Serving index.html for login view to fix 404 logs."""
     return templates.TemplateResponse('index.html', {"request": request})
 
 @app.post('/request-login')
 async def handle_login(email: str = Form(...)):
+    """Handles magic link submission."""
     return JSONResponse({"message": "Magic link sent successfully."})
 
 @app.get('/dashboard', response_class=HTMLResponse)
@@ -63,41 +65,43 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 @app.post('/api/open-audit')
 async def open_audit(request: Request):
     try:
+        # 1. Parse Input
         body = await request.json()
         url = body.get('url')
         if not url:
             return JSONResponse({"detail": "URL is required"}, status_code=400)
 
-        # Mock Data (In a real app, you would crawl the URL here)
+        # 2. Mock Data Preparation
         onpage = {"missing_title_tags": 1, "missing_meta_descriptions": 2, "multiple_h1": 1}
         perf = {"lcp_ms": 2800, "fcp_ms": 1500, "mobile_score": 85, "desktop_score": 92}
         links = {"total_broken_links": 3}
         crawl_pages_count = 25
 
-        # Compute Scores
+        # 3. Compute via Grader
         overall, grade, breakdown = compute_scores(onpage, perf, links, crawl_pages_count)
 
-        # Final check to ensure 'breakdown' is a dict so JS Chart doesn't crash
-        if not isinstance(breakdown, dict):
-            breakdown = {"Performance": 0, "SEO": 0}
-
-        # Add extra fields the frontend expects
-        breakdown.update({
-            "performance_mobile": perf.get('mobile_score', 0),
-            "performance_desktop": perf.get('desktop_score', 0),
-            "benchmark": 88
-        })
-
-        return JSONResponse({
+        # 4. Map Final Dictionary for Frontend
+        # This mapping ensures your audit_detail_open.html finds every key it needs
+        final_response = {
             "overall_score": overall,
             "grade": grade,
-            "breakdown": breakdown
-        })
+            "breakdown": {
+                "onpage": breakdown.get('onpage', 0),
+                "performance": breakdown.get('performance', 0),
+                "coverage": breakdown.get('coverage', 0),
+                "confidence": breakdown.get('confidence', 0),
+                "performance_mobile": perf.get('mobile_score', 0),
+                "performance_desktop": perf.get('desktop_score', 0),
+                "benchmark": 88
+            }
+        }
+
+        return JSONResponse(final_response)
 
     except Exception as e:
-        print(f"System Error: {e}")
-        return JSONResponse({"detail": f"Internal Server Error: {str(e)}"}, status_code=500)
+        print(f"Internal Server Error: {e}")
+        return JSONResponse({"detail": f"System error: {str(e)}"}, status_code=500)
 
 if __name__ == '__main__':
-    # Running on 8080 as seen in your Railway logs
+    # Running on 8080 to match your Railway environment
     uvicorn.run('app.main:app', host='0.0.0.0', port=8080, reload=True)
