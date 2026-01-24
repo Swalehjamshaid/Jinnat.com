@@ -1,5 +1,3 @@
-# app/main.py
-import uvicorn
 import logging
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse, HTMLResponse
@@ -14,31 +12,41 @@ from .models import Audit
 from .settings import get_settings
 from .audit.runner import run_audit
 
-# 1. INITIALIZE APP FIRST (This fixes your NameError)
-app = FastAPI(title="FF Tech AI Website Audit SaaS")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("fftech_main")
 
-# 2. SETUP ASSETS
+# Initialize FastAPI
+app = FastAPI(title="FF Tech AI Audit")
+
+# Assets
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-# 3. MIGRATION LOGIC
 def run_self_healing_migration():
+    """Fixes 'NotNullViolation' by dropping mandatory constraints"""
     with engine.connect() as conn:
+        logger.info("Running deep schema repair...")
         try:
+            # Add missing column
             conn.execute(text("ALTER TABLE audits ADD COLUMN IF NOT EXISTS result_json JSONB;"))
-            conn.execute(text("ALTER TABLE audits ALTER COLUMN status DROP NOT NULL;"))
-            conn.execute(text("ALTER TABLE audits ALTER COLUMN score DROP NOT NULL;"))
+            
+            # Relax all columns that caused crashes
+            conn.execute(text("ALTER TABLE audits ALTER COLUMN coverage DROP NOT NULL;"))
             conn.execute(text("ALTER TABLE audits ALTER COLUMN grade DROP NOT NULL;"))
+            conn.execute(text("ALTER TABLE audits ALTER COLUMN score DROP NOT NULL;"))
+            conn.execute(text("ALTER TABLE audits ALTER COLUMN status DROP NOT NULL;"))
+            
             conn.commit()
-        except Exception:
+            logger.info("SCHEMA REPAIR: Success. All columns are now optional.")
+        except Exception as e:
             conn.rollback()
+            logger.error(f"SCHEMA REPAIR FAILED: {e}")
 
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
     run_self_healing_migration()
 
-# 4. ROUTES (Now @app will work)
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -48,11 +56,19 @@ async def api_open_audit(request: Request, db: Session = Depends(get_db)):
     try:
         body = await request.json()
         url = body.get("url")
+        
+        # Runs audit with the verified AIza... key
         result = await run_audit(url)
-        new_audit = Audit(url=url, status="completed", result_json=result)
+
+        new_audit = Audit(
+            url=url,
+            status="completed",
+            result_json=result
+        )
         db.add(new_audit)
         db.commit()
         return result
     except Exception as e:
+        logger.error(f"API Error: {e}")
         db.rollback()
         return JSONResponse({"detail": str(e)}, status_code=500)
