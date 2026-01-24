@@ -1,5 +1,4 @@
 # app/main.py
-
 import uvicorn
 from fastapi import FastAPI, Depends, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -8,9 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import Optional
 
-# -------------------------
 # ABSOLUTE IMPORTS
-# -------------------------
 from app.db import Base, engine, get_db
 from app.models import User
 from app.auth.router import router as auth_router
@@ -18,12 +15,9 @@ from app.api.router import router as api_router
 from app.services.resend_admin import ensure_resend_ready
 from app.audit.grader import compute_scores
 
-# -------------------------
-# INIT APP
-# -------------------------
 app = FastAPI(title='FF Tech AI Website Audit SaaS')
 
-# Include external routers
+# Include Routers
 app.include_router(auth_router)
 app.include_router(api_router)
 
@@ -39,22 +33,19 @@ def on_startup():
     except Exception:
         pass
 
-# -------------------------
-# Page Routes
-# -------------------------
+# --- PAGE ROUTES ---
 @app.get('/', response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse('index.html', {"request": request})
 
 @app.get('/request-login', response_class=HTMLResponse)
 async def show_login(request: Request):
-    """Fixes the 404 error from your logs by serving the login view."""
+    """Serve the login page (Fixes the 404 in logs)"""
     return templates.TemplateResponse('index.html', {"request": request})
 
 @app.post('/request-login')
 async def handle_login(email: str = Form(...)):
-    """Handles the login form submission."""
-    return JSONResponse({"message": "If registered, a magic link has been sent."})
+    return JSONResponse({"message": "Magic link sent successfully."})
 
 @app.get('/dashboard', response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)):
@@ -68,32 +59,29 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             user = db.query(User).filter(User.email == email).first()
     return templates.TemplateResponse('dashboard.html', {"request": request, "user": user})
 
-# -------------------------
-# API: Audit Implementation
-# -------------------------
+# --- API AUDIT ROUTE ---
 @app.post('/api/open-audit')
 async def open_audit(request: Request):
     try:
         body = await request.json()
         url = body.get('url')
-        
         if not url:
-            return JSONResponse({"detail": "Please provide a valid URL"}, status_code=400)
+            return JSONResponse({"detail": "URL is required"}, status_code=400)
 
-        # Simulated Audit Inputs
+        # Mock Data (In a real app, you would crawl the URL here)
         onpage = {"missing_title_tags": 1, "missing_meta_descriptions": 2, "multiple_h1": 1}
         perf = {"lcp_ms": 2800, "fcp_ms": 1500, "mobile_score": 85, "desktop_score": 92}
         links = {"total_broken_links": 3}
         crawl_pages_count = 25
 
-        # Call Grader
+        # Compute Scores
         overall, grade, breakdown = compute_scores(onpage, perf, links, crawl_pages_count)
 
-        # Ensure breakdown exists for JavaScript
+        # Final check to ensure 'breakdown' is a dict so JS Chart doesn't crash
         if not isinstance(breakdown, dict):
-            breakdown = {}
+            breakdown = {"Performance": 0, "SEO": 0}
 
-        # Update breakdown with extra info for the frontend charts
+        # Add extra fields the frontend expects
         breakdown.update({
             "performance_mobile": perf.get('mobile_score', 0),
             "performance_desktop": perf.get('desktop_score', 0),
@@ -107,12 +95,9 @@ async def open_audit(request: Request):
         })
 
     except Exception as e:
-        print(f"CRITICAL ERROR: {str(e)}")
-        return JSONResponse({"detail": f"Server processing error: {str(e)}"}, status_code=500)
+        print(f"System Error: {e}")
+        return JSONResponse({"detail": f"Internal Server Error: {str(e)}"}, status_code=500)
 
-# -------------------------
-# Local Execution
-# -------------------------
 if __name__ == '__main__':
-    # Running on 8080 to match your Railway environment
+    # Running on 8080 as seen in your Railway logs
     uvicorn.run('app.main:app', host='0.0.0.0', port=8080, reload=True)
