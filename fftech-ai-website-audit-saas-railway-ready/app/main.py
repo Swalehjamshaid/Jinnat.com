@@ -4,44 +4,50 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from typing import Optional
 
+# -------------------------
 # ABSOLUTE IMPORTS
+# -------------------------
 from app.db import Base, engine, get_db
 from app.models import User
 from app.auth.router import router as auth_router
 from app.api.router import router as api_router
 from app.services.resend_admin import ensure_resend_ready
+from app.audit.grader import compute_scores  # ✅ Fixed import
 
-# ✅ FIXED IMPORT: grader.py location
-from app.audit.grader import compute_scores
-
+# -------------------------
+# INIT APP
+# -------------------------
 app = FastAPI(title='FF Tech AI Website Audit SaaS')
 
 # -------------------------
-# Include Routers (SAFE)
+# Include Routers
 # -------------------------
 app.include_router(auth_router)
 app.include_router(api_router)
 
 # -------------------------
-# Static & Templates (SAFE)
+# Static & Templates
 # -------------------------
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 
 # -------------------------
-# Startup (SAFE)
+# Startup Event
 # -------------------------
 @app.on_event('startup')
 def on_startup():
+    # Create tables
     Base.metadata.create_all(bind=engine)
     try:
         ensure_resend_ready()
     except Exception:
+        # Ignore failures here to avoid blocking startup
         pass
 
 # -------------------------
-# Pages (SAFE)
+# Pages
 # -------------------------
 @app.get('/', response_class=HTMLResponse)
 async def home(request: Request):
@@ -55,8 +61,8 @@ async def dashboard(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    token = request.cookies.get('session')
-    user = None
+    token: Optional[str] = request.cookies.get('session')
+    user: Optional[User] = None
 
     if token:
         from app.auth.tokens import decode_token
@@ -77,12 +83,12 @@ async def dashboard(
 async def open_audit(request: Request):
     try:
         body = await request.json()
-        url = body.get('url')
+        url: Optional[str] = body.get('url')
         if not url:
             return JSONResponse({"detail": "URL is required"}, status_code=400)
 
         # -------------------------
-        # Fetch audit data (simulate real audit)
+        # Simulated audit data (replace with real crawler/fetch logic)
         # -------------------------
         onpage = {"missing_title_tags": 1, "missing_meta_descriptions": 2, "multiple_h1": 1}
         perf = {"lcp_ms": 2800, "fcp_ms": 1500, "mobile_score": 85, "desktop_score": 92}
@@ -94,26 +100,28 @@ async def open_audit(request: Request):
         # -------------------------
         overall, grade, breakdown = compute_scores(onpage, perf, links, crawl_pages_count)
 
-        # Add extended fields for world-class audit
-        breakdown['performance_mobile'] = perf.get('mobile_score', 0)
-        breakdown['performance_desktop'] = perf.get('desktop_score', 0)
-        breakdown['benchmark'] = 88  # Example: industry benchmark
-        breakdown['confidence'] = 95  # Example: audit confidence %
-        breakdown['competitor_score'] = 80  # Example: competitor simulation
+        # -------------------------
+        # Extended world-class audit fields
+        # -------------------------
+        breakdown.update({
+            "performance_mobile": perf.get('mobile_score', 0),
+            "performance_desktop": perf.get('desktop_score', 0),
+            "benchmark": 88,  # Industry benchmark
+            "confidence": 95,  # Confidence %
+            "competitor_score": 80,  # Simulated competitor score
+        })
 
-        result = {
+        return JSONResponse({
             "overall_score": overall,
             "grade": grade,
             "breakdown": breakdown
-        }
-
-        return JSONResponse(result)
+        })
 
     except Exception as e:
         return JSONResponse({"detail": f"Audit failed: {str(e)}"}, status_code=500)
 
 # -------------------------
-# Local run (SAFE)
+# Local Run
 # -------------------------
 if __name__ == '__main__':
     uvicorn.run(
