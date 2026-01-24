@@ -1,13 +1,14 @@
+
 # app/audit/grader.py
 
 from typing import Dict, Tuple
 import random
-import time
-from fastapi import FastAPI, Request
+import asyncio
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 import json
 
-app = FastAPI()
+router = APIRouter()  # <-- Use a router; do NOT create a FastAPI() app here
 
 # Grade bands for score cutoffs
 GRADE_BANDS = [
@@ -19,7 +20,7 @@ GRADE_BANDS = [
 ]
 
 # ======================================
-# 1️⃣ Core Grader Function (unchanged)
+# 1️⃣ Core Grader Function (unchanged logic)
 # ======================================
 def compute_scores(
     onpage: Dict[str, float],
@@ -73,44 +74,70 @@ def compute_scores(
         }
 
 # ======================================
-# 2️⃣ SSE Endpoint for Live Progress
+# 2️⃣ SSE Endpoint for Live Progress (non-blocking + robust)
 # ======================================
-@app.get("/api/open-audit-progress")
-async def open_audit_progress(url: str):
+@router.get("/api/open-audit-progress")
+async def open_audit_progress(request: Request, url: str):
     """
     Streams live audit progress for frontend integration.
     Preserves input/output structure for HTML JS.
     """
+
     async def event_stream():
-        total_pages = random.randint(10, 50)  # simulate crawling pages
-        onpage_metrics = {
-            "missing_title_tags": random.randint(0, 5),
-            "multiple_h1": random.randint(0, 3)
-        }
-        perf_metrics = {"lcp_ms": random.randint(1200, 5000)}
-        link_metrics = {"total_broken_links": random.randint(0, 10)}
+        try:
+            # Initial heartbeat so the UI shows immediate activity
+            yield "data: " + json.dumps({"crawl_progress": 0.0, "finished": False, "status": "Queued"}) + "\n\n"
 
-        for i in range(1, total_pages + 1):
-            progress = i / total_pages
-            # SSE requires "data: <json>\n\n"
-            yield f"data: {json.dumps({'crawl_progress': progress, 'finished': False})}\n\n"
-            time.sleep(0.1)  # simulate crawl delay per page
+            # Simulate crawl characteristics (replace with your real crawl)
+            total_pages = random.randint(10, 50)
+            onpage_metrics = {
+                "missing_title_tags": random.randint(0, 5),
+                "multiple_h1": random.randint(0, 3)
+            }
+            perf_metrics = {"lcp_ms": random.randint(1200, 5000)}
+            link_metrics = {"total_broken_links": random.randint(0, 10)}
 
-        # After crawl finished, compute final scores
-        overall_score, grade, breakdown = compute_scores(
-            onpage=onpage_metrics,
-            perf=perf_metrics,
-            links=link_metrics,
-            crawl_pages_count=total_pages
-        )
+            # Emit steady progress without blocking the event loop
+            for i in range(1, total_pages + 1):
+                # Respect client disconnects to avoid work after SSE closes
+                if await request.is_disconnected():
+                    break
 
-        final_data = {
-            "finished": True,
-            "overall_score": overall_score,
-            "grade": grade,
-            "breakdown": breakdown
-        }
+                progress = i / total_pages
+                payload = {
+                    "crawl_progress": progress,
+                    "finished": False,
+                    # Optional status for nicer UI; your frontend can ignore it
+                    "status": "Crawling Website..."
+                }
+                yield "data: " + json.dumps(payload) + "\n\n"
 
-        yield f"data: {json.dumps(final_data)}\n\n"
+                # Non-blocking delay
+                await asyncio.sleep(0.08)  # tune as needed
+
+            # If client disconnected mid-stream, stop
+            if await request.is_disconnected():
+                return
+
+            # Compute final scores
+            overall_score, grade, breakdown = compute_scores(
+                onpage=onpage_metrics,
+                perf=perf_metrics,
+                links=link_metrics,
+                crawl_pages_count=total_pages
+            )
+
+            final_data = {
+                "finished": True,
+                "overall_score": overall_score,
+                "grade": grade,
+                "breakdown": breakdown
+            }
+            yield "data: " + json.dumps(final_data) + "\n\n"
+
+        except Exception as exc:
+            # Send a terminal error event so the UI can react
+            err_payload = {"finished": True, "error": str(exc), "crawl_progress": 1.0}
+            yield "data: " + json.dumps(err_payload) + "\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
