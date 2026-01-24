@@ -1,20 +1,140 @@
 
-(function(){
-  const themeBtn=document.getElementById('toggleTheme');
-  if(themeBtn){ themeBtn.addEventListener('click',()=>{ const html=document.documentElement; html.setAttribute('data-bs-theme', html.getAttribute('data-bs-theme')==='dark'?'light':'dark'); }); }
-  const btnOpen=document.getElementById('btnOpenAudit');
-  if(btnOpen){ btnOpen.addEventListener('click', async ()=>{ const url=document.getElementById('openUrl').value; const res=await fetch('/api/open-audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})}); const data=await res.json(); document.getElementById('ovScore').innerText=data.overall_score; new Chart(document.getElementById('breakdownChart'),{type:'bar', data:{labels:Object.keys(data.breakdown), datasets:[{label:'Score', data:Object.values(data.breakdown)}]}}); document.getElementById('openJson').innerText=JSON.stringify(data,null,2); document.getElementById('openResults').classList.remove('d-none'); }); }
-  const btnAuth=document.getElementById('btnAuthAudit');
-  if(btnAuth){ btnAuth.addEventListener('click', async ()=>{ const url=document.getElementById('authUrl').value; const res=await fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})}); const data=await res.json(); if(data.detail){ alert(data.detail); return; } document.getElementById('authOvScore').innerText=data.result_json.overall_score; document.getElementById('authGrade').innerText=data.result_json.grade; new Chart(document.getElementById('authBreakdownChart'),{type:'bar',data:{labels:Object.keys(data.result_json.breakdown),datasets:[{label:'Score',data:Object.values(data.result_json.breakdown)}]}}); document.getElementById('authJson').innerText=JSON.stringify(data.result_json,null,2); document.getElementById('authResults').classList.remove('d-none'); document.getElementById('pdfLink').href=`/api/audit/${data.id}/report.pdf`; }); }
-  const btnCompare=document.getElementById('btnCompare');
-  if(btnCompare){ btnCompare.addEventListener('click', async ()=>{ const baseUrl=document.getElementById('baseUrl').value.trim(); const comps=document.getElementById('competitors').value.split(',').map(s=>s.trim()).filter(Boolean); const res=await fetch('/api/competitor-audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:baseUrl,competitors:comps})}); const data=await res.json(); if(data.detail){ alert(data.detail); return; } const labels=[data.base.url, ...data.competitors.map(c=>c.url)]; const scores=[data.base.result.overall_score, ...data.competitors.map(c=>c.result.overall_score)]; new Chart(document.getElementById('cmpOverall'),{type:'bar',data:{labels,datasets:[{label:'Overall Score',data:scores}]}}); function pickMetric(perf,key){ if(!perf) return null; const psi=perf.psi||{}; const mobile=psi.mobile||{}; const desktop=psi.desktop||{}; function val(scope,side){ const src=(side==='mobile'?mobile:desktop); const obj=src[scope]||{}; return obj[key]; } const order=[["field","mobile"],["lab","mobile"],["field","desktop"],["lab","desktop"]]; for(const [scope,side] of order){ const v=val(scope, side); if(v!==undefined&&v!==null) return v; } return perf[key]; }
-      const lcpVals=[pickMetric(data.base.result.performance,'lcp_ms'), ...data.competitors.map(c=>pickMetric(c.result.performance,'lcp_ms'))];
-      const clsVals=[pickMetric(data.base.result.performance,'cls'), ...data.competitors.map(c=>pickMetric(c.result.performance,'cls'))];
-      const inpVals=[pickMetric(data.base.result.performance,'inp_ms'), ...data.competitors.map(c=>pickMetric(c.result.performance,'inp_ms'))];
-      new Chart(document.getElementById('cmpLCP'),{type:'bar',data:{labels,datasets:[{label:'LCP (ms)',data:lcpVals}]}});
-      new Chart(document.getElementById('cmpCLS'),{type:'bar',data:{labels,datasets:[{label:'CLS (score)',data:clsVals}]}});
-      new Chart(document.getElementById('cmpINP'),{type:'bar',data:{labels,datasets:[{label:'INP (ms)',data:inpVals}]}});
-      document.getElementById('cmpResults').classList.remove('d-none');
-      const btn=document.getElementById('btnCmpPdf'); if(btn){ btn.onclick=async ()=>{ const payload={ url:data.base.url, competitors:data.competitors.map(x=>x.url)}; const r=await fetch('/api/competitor-report.pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const blob=await r.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='competitor_report.pdf'; a.click(); URL.revokeObjectURL(a.href); }; }
-    }); }
+// app/static/js/app.js
+
+// Keep a persistent chart instance if you draw it here (index.html draws it already)
+let breakdownChartInstance = null;
+
+function updateProgress(percent) {
+  const bar = document.getElementById('crawlProgressBar');
+  if (!bar) return;
+  bar.style.width = percent + '%';
+  bar.textContent = percent + '%';
+  bar.setAttribute('aria-valuenow', percent);
+}
+
+function setLoading(loading) {
+  const btn = document.getElementById('btnOpenAudit');
+  const btnText = document.getElementById('btnText');
+  const btnSpinner = document.getElementById('btnSpinner');
+  const progressContainer = document.getElementById('crawlProgressContainer');
+  const overlay = document.getElementById('loadingOverlay');
+
+  if (loading) {
+    btn.disabled = true;
+    btnText.textContent = 'Auditing...';
+    btnSpinner.classList.remove('d-none');
+    progressContainer?.classList.remove('d-none');
+    overlay?.classList.add('active');
+    updateProgress(0);
+  } else {
+    btn.disabled = false;
+    btnText.textContent = 'Audit';
+    btnSpinner.classList.add('d-none');
+    progressContainer?.classList.add('d-none');
+    overlay?.classList.remove('active');
+  }
+}
+
+function resetResults() {
+  const resultsDiv = document.getElementById('openResults');
+  const ovScore = document.getElementById('ovScore');
+  const gradeEl = document.getElementById('grade');
+  const onpageEl = document.getElementById('onpageScore');
+  const perfEl = document.getElementById('perfScore');
+  const coverageEl = document.getElementById('coverageScore');
+  const confEl = document.getElementById('confidence');
+  const jsonPre = document.getElementById('openJson');
+
+  resultsDiv?.classList.add('d-none');
+  if (ovScore) ovScore.textContent = '-';
+  if (gradeEl) gradeEl.textContent = '-';
+  if (onpageEl) onpageEl.textContent = '-';
+  if (perfEl) perfEl.textContent = '-';
+  if (coverageEl) coverageEl.textContent = '-';
+  if (confEl) confEl.textContent = '-';
+  jsonPre?.classList.add('d-none');
+  if (jsonPre) jsonPre.textContent = '';
+}
+
+function renderResults(data) {
+  const resultsDiv = document.getElementById('openResults');
+  const ovScore = document.getElementById('ovScore');
+  const gradeEl = document.getElementById('grade');
+  const onpageEl = document.getElementById('onpageScore');
+  const perfEl = document.getElementById('perfScore');
+  const coverageEl = document.getElementById('coverageScore');
+  const confEl = document.getElementById('confidence');
+  const jsonPre = document.getElementById('openJson');
+
+  if (ovScore) ovScore.textContent = data.overall_score ?? '-';
+  if (gradeEl) gradeEl.textContent = data.grade ?? '-';
+  if (onpageEl) onpageEl.textContent = data.breakdown?.onpage ?? '-';
+  if (perfEl) perfEl.textContent = data.breakdown?.performance ?? '-';
+  if (coverageEl) coverageEl.textContent = data.breakdown?.coverage ?? '-';
+  if (confEl) confEl.textContent = (data.breakdown?.confidence ?? '-') + '%';
+
+  if (jsonPre) {
+    jsonPre.textContent = JSON.stringify(data, null, 2);
+    jsonPre.classList.remove('d-none');
+  }
+  resultsDiv?.classList.remove('d-none');
+}
+
+function runAudit(url) {
+  setLoading(true);
+  resetResults();
+
+  const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
+
+  evtSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+
+      if (typeof data.crawl_progress === 'number') {
+        const pct = Math.round(data.crawl_progress * 100);
+        updateProgress(pct);
+      }
+      if (data.status) {
+        // Optional: show status in the button for better UX
+        const btnText = document.getElementById('btnText');
+        if (btnText && document.getElementById('btnOpenAudit').disabled) {
+          btnText.textContent = data.status;
+        }
+      }
+      if (data.finished) {
+        evtSource.close();
+        setLoading(false);
+        renderResults(data);
+      }
+      if (data.error) {
+        console.error('Audit error:', data.error);
+      }
+    } catch (err) {
+      console.error('SSE parse error', err);
+    }
+  };
+
+  evtSource.onerror = (err) => {
+    console.error('SSE connection error', err);
+    evtSource.close();
+    setLoading(false);
+    alert('Error during live audit.');
+  };
+}
+
+(function init() {
+  const btn = document.getElementById('btnOpenAudit');
+  if (!btn) return;
+  // Avoid duplicate listeners if index.html already binds one:
+  btn.replaceWith(btn.cloneNode(true));
+  const newBtn = document.getElementById('btnOpenAudit');
+
+  newBtn.addEventListener('click', () => {
+    const urlInput = document.getElementById('openUrl');
+    const url = urlInput?.value?.trim();
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return alert('Please enter a valid URL (http/https)');
+    }
+    runAudit(url);
+  });
 })();
