@@ -67,6 +67,7 @@
 let breakdownChartInstance = null;
 
 async function runAudit(url) {
+    // Exact attribute matching for all your elements
     const resultsDiv = document.getElementById('openResults');
     const btn = document.getElementById('btnOpenAudit');
     const btnText = document.getElementById('btnText');
@@ -80,7 +81,7 @@ async function runAudit(url) {
     const confEl = document.getElementById('confidence');
     const jsonPre = document.getElementById('openJson');
 
-    // 1. Loading State: Reset UI and show spinner
+    // 1. Loading State
     btn.disabled = true;
     btnText.textContent = 'Auditing...';
     btnSpinner.classList.remove('d-none');
@@ -104,21 +105,21 @@ async function runAudit(url) {
 
         const data = await response.json();
 
-        // 2. Populate text fields from Python response
+        // 2. Populate text fields (Mapping JSON results from runner.py)
         ovScore.textContent = data.overall_score ?? '-';
         gradeEl.textContent = data.grade ?? '-';
         onpageEl.textContent = data.breakdown.onpage ?? '-';
         perfEl.textContent = data.breakdown.performance ?? '-';
         coverageEl.textContent = data.breakdown.coverage ?? '-';
-        confEl.textContent = data.breakdown.confidence ?? '-';
+        confEl.textContent = (data.breakdown.confidence ?? '-') + '%';
 
         jsonPre.textContent = JSON.stringify(data, null, 2);
         jsonPre.classList.remove('d-none');
 
-        // 3. THE FIX: Handle the Chart.js instance correctly
+        // 3. Integrated Chart Logic
         const ctx = document.getElementById('breakdownChart').getContext('2d');
         
-        // If a chart already exists, destroy it before creating a new one
+        // Destroys previous instance to allow second/third audits without refresh
         if (breakdownChartInstance) {
             breakdownChartInstance.destroy();
         }
@@ -149,18 +150,19 @@ async function runAudit(url) {
         });
 
         resultsDiv.classList.remove('d-none');
+
     } catch (e) {
-        console.error("Client Error:", e);
-        alert(e.message || 'Error running audit. Check console for details.');
+        console.error("Audit Error:", e);
+        alert(e.message || 'Error running audit.');
     } finally {
-        // 4. Reset Button State
+        // Reset Button
         btn.disabled = false;
         btnText.textContent = 'Audit';
         btnSpinner.classList.add('d-none');
     }
 }
 
-// Event Listeners
+// Logic flow starts here
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
     const urlInput = document.getElementById('openUrl');
     const url = urlInput.value.trim();
