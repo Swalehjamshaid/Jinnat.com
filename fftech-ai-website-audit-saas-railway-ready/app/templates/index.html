@@ -67,7 +67,6 @@
 let breakdownChartInstance = null;
 
 async function runAudit(url) {
-    // Exact attribute matching for all your elements
     const resultsDiv = document.getElementById('openResults');
     const btn = document.getElementById('btnOpenAudit');
     const btnText = document.getElementById('btnText');
@@ -118,11 +117,7 @@ async function runAudit(url) {
 
         // 3. Integrated Chart Logic
         const ctx = document.getElementById('breakdownChart').getContext('2d');
-        
-        // Destroys previous instance to allow second/third audits without refresh
-        if (breakdownChartInstance) {
-            breakdownChartInstance.destroy();
-        }
+        if (breakdownChartInstance) breakdownChartInstance.destroy();
 
         breakdownChartInstance = new Chart(ctx, {
             type: 'bar',
