@@ -1,65 +1,58 @@
+
 {% extends 'base.html' %}
 {% block content %}
 
 <div class="row">
+
   <!-- Audit Section -->
   <div class="col-lg-7">
     <div class="card bg-body-tertiary mb-4 position-relative" id="auditCard">
-      
-      <!-- Overlay (hidden by default) -->
-      <div id="loadingOverlay" style="
-           display:none;
-           position:absolute;
-           top:0; left:0;
-           width:100%; height:100%;
-           background: rgba(0,0,0,0.4);
-           z-index: 10;
-           border-radius: 0.5rem;
-           display:flex;
-           align-items:center;
-           justify-content:center;">
+
+      <!-- Loading Overlay -->
+      <div id="loadingOverlay" class="loading-overlay d-flex">
         <div class="text-center text-white">
-          <div class="spinner-border text-light" role="status"></div>
+          <div class="spinner-border text-light"></div>
           <div class="mt-2">Processing...</div>
         </div>
       </div>
 
       <div class="card-body">
         <h4 class="card-title">Open Access Audit</h4>
-        <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
+        <p class="text-secondary">Quickly audit any URL — no sign-in required.</p>
 
         <div class="input-group mb-3">
           <input id="openUrl" type="url" class="form-control" placeholder="https://example.com">
           <button id="btnOpenAudit" class="btn btn-primary">
-            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none"></span>
             <span id="btnText">Audit</span>
           </button>
         </div>
 
-        <!-- Live Progress Bar -->
-        <div class="progress mb-3" style="height: 20px; display:none;" id="crawlProgressContainer">
+        <!-- Progress Bar -->
+        <div id="crawlProgressContainer" class="progress mb-3 d-none" style="height:20px;">
           <div id="crawlProgressBar"
                class="progress-bar progress-bar-striped progress-bar-animated bg-info"
                role="progressbar"
-               style="width: 0%"
-               aria-valuenow="0"
+               style="width:0%;"
                aria-valuemin="0"
-               aria-valuemax="100">
-            0%
+               aria-valuemax="100"
+               aria-valuenow="0">0%
           </div>
         </div>
 
-        <!-- Audit Results -->
+        <!-- Results -->
         <div id="openResults" class="mt-3 d-none">
           <h6>Results</h6>
+
           <div class="row">
             <div class="col-md-4">
               <div class="p-3 rounded bg-dark-subtle">
-                <b>Overall Score</b>
+                <strong>Overall Score</strong>
                 <div id="ovScore" class="fs-3">-</div>
                 <div id="grade" class="fs-4 fw-bold">-</div>
               </div>
             </div>
+
             <div class="col-md-8">
               <canvas id="breakdownChart" height="140"></canvas>
             </div>
@@ -87,151 +80,175 @@
     <div class="card bg-body-tertiary mb-4">
       <div class="card-body">
         <h4 class="card-title">Passwordless Sign-in</h4>
+
         <form method="post" action="/request-login">
           <div class="mb-3">
             <label class="form-label">Email</label>
             <input type="email" name="email" class="form-control" required>
           </div>
+
           <button class="btn btn-success w-100">Send Magic Link</button>
         </form>
+
         <p class="small text-secondary mt-2">
           Free users can run up to 10 audits; subscribe to unlock scheduling & history.
         </p>
       </div>
     </div>
   </div>
+
 </div>
 
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
-// Persistent chart instance
+// Chart instance
 let breakdownChartInstance = null;
 
-// Update the progress bar
+// Update progress bar
 function updateProgress(percent) {
     const bar = document.getElementById('crawlProgressBar');
     bar.style.width = percent + '%';
-    bar.setAttribute('aria-valuenow', percent);
     bar.textContent = percent + '%';
+    bar.setAttribute('aria-valuenow', percent);
 }
 
 async function runAudit(url) {
-    const resultsDiv = document.getElementById('openResults');
-    const btn = document.getElementById('btnOpenAudit');
-    const btnText = document.getElementById('btnText');
-    const btnSpinner = document.getElementById('btnSpinner');
-    const progressContainer = document.getElementById('crawlProgressContainer');
-    const overlay = document.getElementById('loadingOverlay');
+    const ui = {
+        results: document.getElementById('openResults'),
+        btn: document.getElementById('btnOpenAudit'),
+        btnText: document.getElementById('btnText'),
+        btnSpinner: document.getElementById('btnSpinner'),
+        progress: document.getElementById('crawlProgressContainer'),
+        overlay: document.getElementById('loadingOverlay'),
+        ovScore: document.getElementById('ovScore'),
+        grade: document.getElementById('grade'),
+        onpage: document.getElementById('onpageScore'),
+        perf: document.getElementById('perfScore'),
+        coverage: document.getElementById('coverageScore'),
+        conf: document.getElementById('confidence'),
+        json: document.getElementById('openJson')
+    };
 
-    const ovScore = document.getElementById('ovScore');
-    const gradeEl = document.getElementById('grade');
-    const onpageEl = document.getElementById('onpageScore');
-    const perfEl = document.getElementById('perfScore');
-    const coverageEl = document.getElementById('coverageScore');
-    const confEl = document.getElementById('confidence');
-    const jsonPre = document.getElementById('openJson');
-
-    // Loading state
-    btn.disabled = true;
-    btnText.textContent = 'Auditing...';
-    btnSpinner.classList.remove('d-none');
-    progressContainer.style.display = 'block';
-    overlay.style.display = 'flex';
+    // Reset UI state
+    ui.btn.disabled = true;
+    ui.btnText.textContent = "Auditing...";
+    ui.btnSpinner.classList.remove("d-none");
+    ui.overlay.classList.add("active");
+    ui.progress.classList.remove("d-none");
     updateProgress(0);
 
-    resultsDiv.classList.add('d-none');
-    ovScore.textContent = gradeEl.textContent = onpageEl.textContent = perfEl.textContent =
-    coverageEl.textContent = confEl.textContent = '-';
-    jsonPre.classList.add('d-none');
+    ui.results.classList.add("d-none");
+    [ui.ovScore, ui.grade, ui.onpage, ui.perf, ui.coverage, ui.conf].forEach(el => el.textContent = "-");
+    ui.json.classList.add("d-none");
 
     try {
         const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
 
-        evtSource.onmessage = (e) => {
+        evtSource.onmessage = e => {
             const data = JSON.parse(e.data);
 
-            if (data.crawl_progress !== undefined) {
-                updateProgress(Math.round(data.crawl_progress * 100));
-            }
+            if (data.crawl_progress !== undefined) updateProgress(Math.round(data.crawl_progress * 100));
 
-            if (data.finished) {
-                evtSource.close();
+            if (!data.finished) return;
 
-                ovScore.textContent = data.overall_score ?? '-';
-                gradeEl.textContent = data.grade ?? '-';
-                onpageEl.textContent = data.breakdown.onpage ?? '-';
-                perfEl.textContent = data.breakdown.performance ?? '-';
-                coverageEl.textContent = data.breakdown.coverage ?? '-';
-                confEl.textContent = (data.breakdown.confidence ?? '-') + '%';
-
-                jsonPre.textContent = JSON.stringify(data, null, 2);
-                jsonPre.classList.remove('d-none');
-
-                const ctx = document.getElementById('breakdownChart').getContext('2d');
-                if (breakdownChartInstance) breakdownChartInstance.destroy();
-                breakdownChartInstance = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: ['On-page', 'Performance', 'Coverage', 'Confidence'],
-                        datasets: [{
-                            label: 'Score',
-                            data: [
-                                data.breakdown.onpage || 0,
-                                data.breakdown.performance || 0,
-                                data.breakdown.coverage || 0,
-                                data.breakdown.confidence || 0
-                            ],
-                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
-                            borderColor: 'rgba(59, 130, 246, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: { y: { beginAtZero: true, max: 100 } },
-                        plugins: { legend: { display: false } }
-                    }
-                });
-
-                resultsDiv.classList.remove('d-none');
-                btn.disabled = false;
-                btnText.textContent = 'Audit';
-                btnSpinner.classList.add('d-none');
-                progressContainer.style.display = 'none';
-                overlay.style.display = 'none';
-            }
-        };
-
-        evtSource.onerror = (e) => {
-            console.error('SSE error', e);
             evtSource.close();
-            alert('Error during live audit.');
-            btn.disabled = false;
-            btnText.textContent = 'Audit';
-            btnSpinner.classList.add('d-none');
-            progressContainer.style.display = 'none';
-            overlay.style.display = 'none';
+
+            ui.ovScore.textContent = data.overall_score ?? "-";
+            ui.grade.textContent = data.grade ?? "-";
+            ui.onpage.textContent = data.breakdown.onpage ?? "-";
+            ui.perf.textContent = data.breakdown.performance ?? "-";
+            ui.coverage.textContent = data.breakdown.coverage ?? "-";
+            ui.conf.textContent = (data.breakdown.confidence ?? "-") + "%";
+
+            ui.json.textContent = JSON.stringify(data, null, 2);
+            ui.json.classList.remove("d-none");
+
+            // Render chart
+            const ctx = document.getElementById('breakdownChart').getContext('2d');
+            if (breakdownChartInstance) breakdownChartInstance.destroy();
+
+            breakdownChartInstance = new Chart(ctx, {
+                type: "bar",
+                data: {
+                    labels: ["On-page", "Performance", "Coverage", "Confidence"],
+                    datasets: [{
+                        label: "Score",
+                        data: [
+                            data.breakdown.onpage || 0,
+                            data.breakdown.performance || 0,
+                            data.breakdown.coverage || 0,
+                            data.breakdown.confidence || 0
+                        ],
+                        backgroundColor: "rgba(59,130,246,0.6)",
+                        borderColor: "rgba(59,130,246,1)",
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, max: 100 }},
+                    plugins: { legend: { display: false }}
+                }
+            });
+
+            // Restore UI
+            ui.results.classList.remove("d-none");
+            ui.btn.disabled = false;
+            ui.btnSpinner.classList.add("d-none");
+            ui.btnText.textContent = "Audit";
+            ui.progress.classList.add("d-none");
+            ui.overlay.classList.remove("active");
         };
 
-    } catch (e) {
-        console.error("Audit Error:", e);
-        alert(e.message || 'Error running audit.');
-        btn.disabled = false;
-        btnText.textContent = 'Audit';
-        btnSpinner.classList.add('d-none');
-        progressContainer.style.display = 'none';
-        overlay.style.display = 'none';
+        evtSource.onerror = () => {
+            evtSource.close();
+            alert("Error during live audit.");
+            ui.btn.disabled = false;
+            ui.btnSpinner.classList.add("d-none");
+            ui.btnText.textContent = "Audit";
+            ui.progress.classList.add("d-none");
+            ui.overlay.classList.remove("active");
+        };
+
+    } catch (error) {
+        console.error(error);
+        alert("Audit error occurred.");
+        ui.btn.disabled = false;
+        ui.btnSpinner.classList.add("d-none");
+        ui.btnText.textContent = "Audit";
+        ui.progress.classList.add("d-none");
+        ui.overlay.classList.remove("active");
     }
 }
 
-// Trigger only when button is clicked
+// Button handler
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
-    const urlInput = document.getElementById('openUrl');
-    const url = urlInput.value.trim();
-    if (!url || !url.startsWith('http')) return alert('Please enter a valid URL (http/https)');
+    const url = document.getElementById('openUrl').value.trim();
+    if (!url || !/^https?:\/\//i.test(url)) return alert("Please enter a valid URL (http/https)");
     runAudit(url);
 });
 </script>
+
+<style>
+/* Clean centralized overlay CSS */
+#loadingOverlay {
+  display: none;
+  position: absolute;
+  top:0; left:0;
+  width:100%; height:100%;
+  background: rgba(0,0,0,0.4);
+  border-radius: .5rem;
+  z-index:10;
+  align-items:center;
+  justify-content:center;
+}
+
+#loadingOverlay.active {
+  display: flex;
+}
+</style>
 
 {% endblock %}
