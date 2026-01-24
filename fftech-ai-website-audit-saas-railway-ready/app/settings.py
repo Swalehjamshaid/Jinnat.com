@@ -6,14 +6,14 @@ from functools import lru_cache
 from typing import Optional
 
 from pydantic import BaseSettings, Field, validator
-from google.oauth2 import service_account
 
 logger = logging.getLogger(__name__)
+
 
 class Settings(BaseSettings):
     """
     Application settings for FF Tech AI Website Audit SaaS.
-    Automatically loaded from environment variables.
+    Fully Python-based, no Google dependencies.
     """
 
     APP_NAME: str = "FF Tech AI Website Audit"
@@ -21,12 +21,12 @@ class Settings(BaseSettings):
     # Database URL: Railway or local fallback
     DATABASE_URL: str = Field(default="sqlite:///./test.db", env="DATABASE_URL")
 
-    # API Keys
+    # API Keys (optional, fully Python)
     PSI_API_KEY: str = Field(default="", env="PSI_API_KEY")
     GEMINI_API_KEY: str = Field(default="", env="GEMINI_API_KEY")
 
-    # Google Cloud Credentials JSON
-    GOOGLE_APPLICATION_CREDENTIALS_JSON: Optional[str] = Field(default=None, env="GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    # Optional JSON credentials (now just stored as dict for Python use)
+    CREDENTIALS_JSON: Optional[str] = Field(default=None, env="CREDENTIALS_JSON")
 
     class Config:
         env_file = ".env"
@@ -42,26 +42,26 @@ class Settings(BaseSettings):
         return v
 
     @property
-    def gcp_credentials(self) -> Optional[service_account.Credentials]:
+    def credentials(self) -> Optional[dict]:
         """
-        Returns Google Cloud credentials object from JSON environment variable.
-        Handles double-backslash issues in private_key.
+        Returns credentials JSON as a Python dictionary (if provided).
         """
-        creds_json = self.GOOGLE_APPLICATION_CREDENTIALS_JSON
+        creds_json = self.CREDENTIALS_JSON
         if not creds_json:
-            logger.warning("Google Application Credentials JSON not provided.")
+            logger.info("No credentials JSON provided.")
             return None
 
         try:
             creds_dict = json.loads(creds_json)
-            if "private_key" in creds_dict:
-                # Fix formatting issues with the private key
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\\\n", "\n").replace("\\n", "\n")
-            return service_account.Credentials.from_service_account_info(creds_dict)
+            # Fix common escaped newlines in keys
+            for key in ["private_key", "client_email"]:
+                if key in creds_dict and isinstance(creds_dict[key], str):
+                    creds_dict[key] = creds_dict[key].replace("\\\\n", "\n").replace("\\n", "\n")
+            return creds_dict
         except json.JSONDecodeError:
-            logger.error("Failed to decode GOOGLE_APPLICATION_CREDENTIALS_JSON")
+            logger.error("Failed to decode CREDENTIALS_JSON")
         except Exception as e:
-            logger.error(f"Error initializing GCP credentials: {e}")
+            logger.error(f"Error parsing credentials JSON: {e}")
         return None
 
 
