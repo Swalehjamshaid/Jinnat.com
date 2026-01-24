@@ -2,10 +2,6 @@
 
 from typing import Dict, Tuple
 import random
-import logging
-
-logger = logging.getLogger("grader")
-logger.setLevel(logging.INFO)
 
 GRADE_BANDS = [
     (90, 'A+'),
@@ -21,39 +17,31 @@ def compute_scores(
     links: Dict[str, float],
     crawl_pages_count: int
 ) -> Tuple[float, str, Dict[str, float]]:
+    """
+    Compute website audit score with breakdown for UI
+    """
     try:
-        # SEO penalties
         penalties = 0
         penalties += onpage.get('missing_title_tags', 0) * 2
         penalties += onpage.get('multiple_h1', 0) * 1
-        onpage_score = max(0, 100 - penalties)
 
-        # Performance score
         lcp = perf.get('lcp_ms', 4000) or 4000
         perf_score = max(0, 100 - (lcp / 40))
 
-        # Coverage score
-        coverage = min(100, crawl_pages_count * 2)
+        coverage = min(100, (crawl_pages_count or 0) * 2)
 
-        # Broken links penalty
-        broken_links = links.get('broken_internal', 0) + links.get('broken_external', 0)
-        link_penalty = min(20, broken_links * 2)
+        overall = max(0, min(100, (perf_score * 0.4 + coverage * 0.6) - penalties))
 
-        # Overall weighted score
-        overall = max(0, min(100, (perf_score * 0.4 + coverage * 0.4 + onpage_score * 0.2) - link_penalty))
-
-        # Letter grade
         grade = 'D'
         for cutoff, letter in GRADE_BANDS:
             if overall >= cutoff:
                 grade = letter
                 break
 
-        # Confidence
         confidence = random.uniform(85, 99)
 
         breakdown = {
-            'onpage': round(onpage_score, 2),
+            'onpage': round(max(0, 100 - penalties), 2),
             'performance': round(perf_score, 2),
             'coverage': round(coverage, 2),
             'confidence': round(confidence, 2)
@@ -62,5 +50,5 @@ def compute_scores(
         return round(overall, 2), grade, breakdown
 
     except Exception as e:
-        logger.error(f"Grader error: {e}", exc_info=True)
+        print(f"Grader error: {e}")
         return 0.0, "D", {"onpage": 0, "performance": 0, "coverage": 0, "confidence": 0}
