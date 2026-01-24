@@ -1,6 +1,6 @@
+
 # app/audit/grader.py
-from typing import Dict, Tuple
-import random
+from typing import Dict, Tuple, Optional
 
 GRADE_BANDS = (
     (90, "A+"),
@@ -21,7 +21,7 @@ WEIGHTS = {
 MAX_PAGES = 20  # used for coverage percentage
 
 
-def clamp(v: float, lo=0.0, hi=100.0) -> float:
+def clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, v))
 
 
@@ -32,64 +32,87 @@ def grade(score: float) -> str:
     return "D"
 
 
+def _opt_clamp(v: Optional[float]) -> Optional[float]:
+    return None if v is None else clamp(v)
+
+
 def compute_scores(
-    lighthouse: Dict[str, float],
+    lighthouse: Dict[str, Optional[float]],
     crawl: Dict[str, int],
 ) -> Tuple[float, str, Dict[str, float]]:
     """
-    Computes world-class website audit score.
-    Inputs:
-        - lighthouse: dict from psi.py
-        - crawl: dict with keys: pages, broken_links, errors
-    Outputs:
-        - overall_score: float 0-100
-        - letter grade
-        - detailed breakdown for charts
+    Computes the audit score from Lighthouse (may be partial) and crawl stats.
+      lighthouse: {
+        performance?, seo?, accessibility?, best_practices?,
+        lcp?, cls?
+      }
+      crawl: { pages, broken_links, errors }
+    Returns:
+      overall (0..100), letter grade, breakdown dict
     """
 
-    # --- Lighthouse Scores ---
-    perf = clamp(lighthouse.get("performance", 0))
-    seo = clamp(lighthouse.get("seo", 0))
-    acc = clamp(lighthouse.get("accessibility", 0))
-    bp = clamp(lighthouse.get("best_practices", 0))
+    # --- Lighthouse Scores (allow None) ---
+    perf = _opt_clamp(lighthouse.get("performance"))
+    seo  = _opt_clamp(lighthouse.get("seo"))
+    acc  = _opt_clamp(lighthouse.get("accessibility"))
+    bp   = _opt_clamp(lighthouse.get("best_practices"))
 
     # --- Coverage ---
-    coverage = clamp((crawl.get("pages", 0) / MAX_PAGES) * 100)
+    pages = max(0, crawl.get("pages", 0))
+    coverage = clamp((pages / MAX_PAGES) * 100)
 
     # --- Technical Health ---
-    tech = (acc + bp) / 2
+    tech_vals = [v for v in (acc, bp) if v is not None]
+    tech = sum(tech_vals) / len(tech_vals) if tech_vals else 0.0
 
     # --- Stability (CLS + LCP penalties) ---
-    lcp_penalty = 0 if lighthouse.get("lcp", 0) <= 2.5 else min(20, lighthouse["lcp"] * 3)
-    cls_penalty = 0 if lighthouse.get("cls", 0) <= 0.1 else min(20, lighthouse["cls"] * 100)
+    lcp = lighthouse.get("lcp")  # seconds
+    cls = lighthouse.get("cls")  # unitless
+    lcp_penalty = 0 if (lcp is None or lcp <= 2.5) else min(20, lcp * 3)
+    cls_penalty = 0 if (cls is None or cls <= 0.1) else min(20, cls * 100)
     stability = clamp(100 - lcp_penalty - cls_penalty)
 
-    # --- Broken links & Errors Penalties ---
-    broken_penalty = min(15, crawl.get("broken_links", 0) * 2)
-    error_penalty = min(20, crawl.get("errors", 0) * 5)
+    # --- Weighted Score (ignore missing components proportionally) ---
+    components = []
+    weights = []
 
-    # --- Final Weighted Score ---
-    overall = (
-        perf * WEIGHTS["performance"]
-        + seo * WEIGHTS["seo"]
-        + coverage * WEIGHTS["coverage"]
-        + tech * WEIGHTS["technical"]
-        + stability * WEIGHTS["stability"]
-    )
+    if perf is not None:
+        components.append(perf); weights.append(WEIGHTS["performance"])
+    if seo is not None:
+        components.append(seo); weights.append(WEIGHTS["seo"])
 
-    overall = clamp(overall - broken_penalty - error_penalty)
-    overall = round(overall, 1)
+    components.append(coverage); weights.append(WEIGHTS["coverage"])
+    components.append(tech);     weights.append(WEIGHTS["technical"])
+    components.append(stability);weights.append(WEIGHTS["stability"])
+
+    wsum = sum(weights) if weights else 1.0
+    weighted = sum(c * w for c, w in zip(components, weights)) / wsum
+    overall = clamp(weighted)
+
+    # --- Penalties from crawl ---
+    broken_penalty = min(15, max(0, crawl.get("broken_links", 0)) * 2)
+    error_penalty  = min(20, max(0, crawl.get("errors", 0)) * 5)
+
+    overall = clamp(round(overall - broken_penalty - error_penalty, 1))
 
     # --- Breakdown for dashboard/chart ---
     breakdown = {
-        "performance": round(perf, 1),
-        "seo": round(seo, 1),
+        "performance": round(perf, 1) if perf is not None else None,
+        "seo": round(seo, 1) if seo is not None else None,
         "coverage": round(coverage, 1),
         "technical": round(tech, 1),
         "stability": round(stability, 1),
-        "broken_links": crawl.get("broken_links", 0),
-        "errors": crawl.get("errors", 0),
-        "confidence": round(random.uniform(96, 99.8), 1),
+        "broken_links": max(0, crawl.get("broken_links", 0)),
+        "errors": max(0, crawl.get("errors", 0)),
+        "missing": {
+            "performance": perf is None,
+            "seo": seo is None,
+            "accessibility": acc is None,
+            "best_practices": bp is None,
+            "lcp": lcp is None,
+            "cls": cls is None,
+        },
+        # Removed pseudo-random "confidence" — makes results deterministic and honest.
     }
 
     return overall, grade(overall), breakdown
