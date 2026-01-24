@@ -13,6 +13,15 @@
             <span id="btnText">Audit</span>
           </button>
         </div>
+
+        <!-- New Live Progress Bar -->
+        <div class="progress mb-3" style="height: 20px; display:none;" id="crawlProgressContainer">
+          <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+               style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+            0%
+          </div>
+        </div>
+
         <div id="openResults" class="mt-3 d-none">
           <h6>Results</h6>
           <div class="row">
@@ -66,11 +75,20 @@
 // Persistent variable to track the chart across multiple runs
 let breakdownChartInstance = null;
 
+// Update the progress bar
+function updateProgress(percent) {
+    const bar = document.getElementById('crawlProgressBar');
+    bar.style.width = percent + '%';
+    bar.setAttribute('aria-valuenow', percent);
+    bar.textContent = percent + '%';
+}
+
 async function runAudit(url) {
     const resultsDiv = document.getElementById('openResults');
     const btn = document.getElementById('btnOpenAudit');
     const btnText = document.getElementById('btnText');
     const btnSpinner = document.getElementById('btnSpinner');
+    const progressContainer = document.getElementById('crawlProgressContainer');
 
     const ovScore = document.getElementById('ovScore');
     const gradeEl = document.getElementById('grade');
@@ -84,6 +102,8 @@ async function runAudit(url) {
     btn.disabled = true;
     btnText.textContent = 'Auditing...';
     btnSpinner.classList.remove('d-none');
+    progressContainer.style.display = 'block';
+    updateProgress(0);
     
     resultsDiv.classList.add('d-none');
     ovScore.textContent = gradeEl.textContent = onpageEl.textContent = perfEl.textContent =
@@ -91,69 +111,84 @@ async function runAudit(url) {
     jsonPre.classList.add('d-none');
 
     try {
-        const response = await fetch('/api/open-audit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
-        });
+        // Use Server-Sent Events (SSE) for live crawl updates
+        const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
+        
+        evtSource.onmessage = (e) => {
+            const data = JSON.parse(e.data);
 
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.detail || 'Audit failed');
-        }
-
-        const data = await response.json();
-
-        // 2. Populate text fields (Mapping JSON results from runner.py)
-        ovScore.textContent = data.overall_score ?? '-';
-        gradeEl.textContent = data.grade ?? '-';
-        onpageEl.textContent = data.breakdown.onpage ?? '-';
-        perfEl.textContent = data.breakdown.performance ?? '-';
-        coverageEl.textContent = data.breakdown.coverage ?? '-';
-        confEl.textContent = (data.breakdown.confidence ?? '-') + '%';
-
-        jsonPre.textContent = JSON.stringify(data, null, 2);
-        jsonPre.classList.remove('d-none');
-
-        // 3. Integrated Chart Logic
-        const ctx = document.getElementById('breakdownChart').getContext('2d');
-        if (breakdownChartInstance) breakdownChartInstance.destroy();
-
-        breakdownChartInstance = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: ['On-page', 'Performance', 'Coverage', 'Confidence'],
-                datasets: [{
-                    label: 'Score',
-                    data: [
-                        data.breakdown.onpage || 0,
-                        data.breakdown.performance || 0,
-                        data.breakdown.coverage || 0,
-                        data.breakdown.confidence || 0
-                    ],
-                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
-                    borderColor: 'rgba(59, 130, 246, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: { y: { beginAtZero: true, max: 100 } },
-                plugins: { legend: { display: false } }
+            // Update progress bar based on pages crawled
+            if (data.crawl_progress !== undefined) {
+                updateProgress(Math.round(data.crawl_progress * 100));
             }
-        });
 
-        resultsDiv.classList.remove('d-none');
+            // Once audit finished, render the final results
+            if (data.finished) {
+                evtSource.close();
+
+                ovScore.textContent = data.overall_score ?? '-';
+                gradeEl.textContent = data.grade ?? '-';
+                onpageEl.textContent = data.breakdown.onpage ?? '-';
+                perfEl.textContent = data.breakdown.performance ?? '-';
+                coverageEl.textContent = data.breakdown.coverage ?? '-';
+                confEl.textContent = (data.breakdown.confidence ?? '-') + '%';
+
+                jsonPre.textContent = JSON.stringify(data, null, 2);
+                jsonPre.classList.remove('d-none');
+
+                // Chart
+                const ctx = document.getElementById('breakdownChart').getContext('2d');
+                if (breakdownChartInstance) breakdownChartInstance.destroy();
+                breakdownChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['On-page', 'Performance', 'Coverage', 'Confidence'],
+                        datasets: [{
+                            label: 'Score',
+                            data: [
+                                data.breakdown.onpage || 0,
+                                data.breakdown.performance || 0,
+                                data.breakdown.coverage || 0,
+                                data.breakdown.confidence || 0
+                            ],
+                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, max: 100 } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                resultsDiv.classList.remove('d-none');
+                btn.disabled = false;
+                btnText.textContent = 'Audit';
+                btnSpinner.classList.add('d-none');
+                progressContainer.style.display = 'none';
+            }
+        };
+
+        evtSource.onerror = (e) => {
+            console.error('SSE error', e);
+            evtSource.close();
+            alert('Error during live audit.');
+            btn.disabled = false;
+            btnText.textContent = 'Audit';
+            btnSpinner.classList.add('d-none');
+            progressContainer.style.display = 'none';
+        };
 
     } catch (e) {
         console.error("Audit Error:", e);
         alert(e.message || 'Error running audit.');
-    } finally {
-        // Reset Button
         btn.disabled = false;
         btnText.textContent = 'Audit';
         btnSpinner.classList.add('d-none');
+        progressContainer.style.display = 'none';
     }
 }
 
