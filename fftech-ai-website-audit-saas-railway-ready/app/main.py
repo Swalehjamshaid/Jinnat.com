@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -77,6 +77,24 @@ async def dashboard(
     )
 
 # -------------------------
+# FIX: Login Page Routes
+# -------------------------
+@app.get('/request-login', response_class=HTMLResponse)
+async def show_login(request: Request):
+    """Fixes the 404 error when users try to view the login page."""
+    return templates.TemplateResponse(
+        'index.html', 
+        {"request": request}
+    )
+
+@app.post('/request-login')
+async def handle_login(email: str = Form(...)):
+    """Handles the magic link request from the form."""
+    print(f"DEBUG: Login request for email: {email}")
+    # Integration with your auth service would go here
+    return JSONResponse({"message": "Magic link sent if email exists."})
+
+# -------------------------
 # API: Open Access Audit
 # -------------------------
 @app.post('/api/open-audit')
@@ -84,6 +102,8 @@ async def open_audit(request: Request):
     try:
         body = await request.json()
         url: Optional[str] = body.get('url')
+        print(f"DEBUG: Starting audit for URL: {url}") # View this in Railway logs
+        
         if not url:
             return JSONResponse({"detail": "URL is required"}, status_code=400)
 
@@ -111,6 +131,12 @@ async def open_audit(request: Request):
             "competitor_score": 80,  # Simulated competitor score
         })
 
+        # Final check: Ensure breakdown is not None so JS doesn't crash
+        if breakdown is None:
+            breakdown = {}
+
+        print(f"DEBUG: Audit Success - Score: {overall}, Grade: {grade}")
+
         return JSONResponse({
             "overall_score": overall,
             "grade": grade,
@@ -118,15 +144,17 @@ async def open_audit(request: Request):
         })
 
     except Exception as e:
+        print(f"DEBUG ERROR: Audit failed with exception: {str(e)}")
         return JSONResponse({"detail": f"Audit failed: {str(e)}"}, status_code=500)
 
 # -------------------------
 # Local Run
 # -------------------------
 if __name__ == '__main__':
+    # Using 8080 to match your current Railway container logs
     uvicorn.run(
         'app.main:app',
         host='0.0.0.0',
-        port=8000,
+        port=8080,
         reload=True
     )
