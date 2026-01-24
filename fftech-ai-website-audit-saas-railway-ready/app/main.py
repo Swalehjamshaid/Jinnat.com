@@ -11,7 +11,7 @@ import logging
 # Internal Imports
 from .db import engine, Base, get_db
 from .models import Audit, User
-from .settings import get_settings  # FIX: Correctly import settings
+from .settings import get_settings
 from .audit.runner import run_audit
 
 # Setup Logging
@@ -31,30 +31,31 @@ def run_self_healing_migration():
     with engine.connect() as conn:
         logger.info("Checking database schema integrity...")
         
-        # 1. Check for 'result_json' column
-        query_json = text("""
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_name='audits' AND column_name='result_json';
-        """)
-        column_exists = conn.execute(query_json).fetchone()
-        
-        if not column_exists:
-            logger.warning("MIGRATION: Column 'result_json' missing. Repairing...")
-            try:
-                conn.execute(text("ALTER TABLE audits ADD COLUMN result_json JSONB;"))
-                conn.commit()
-            except Exception as e:
-                logger.error(f"MIGRATION FAILED (result_json): {e}")
-                conn.rollback()
-
-        # 2. FIX: Check if 'status' column is blocking saves (the NotNullViolation fix)
+        # 1. Ensure 'result_json' column exists
         try:
-            # This makes the status column optional so null values don't crash the app
+            conn.execute(text("ALTER TABLE audits ADD COLUMN IF NOT EXISTS result_json JSONB;"))
+            conn.commit()
+            logger.info("MIGRATION: 'result_json' column verified.")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"MIGRATION ERROR (result_json): {e}")
+
+        # 2. Relax 'status' column (NotNullViolation Fix)
+        try:
             conn.execute(text("ALTER TABLE audits ALTER COLUMN status DROP NOT NULL;"))
             conn.commit()
             logger.info("MIGRATION: 'status' column constraint relaxed.")
         except Exception:
             conn.rollback()
+
+        # 3. FIX: Relax 'score' column (The NotNullViolation fix from your last logs)
+        try:
+            conn.execute(text("ALTER TABLE audits ALTER COLUMN score DROP NOT NULL;"))
+            conn.commit()
+            logger.info("MIGRATION: 'score' column constraint relaxed.")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"MIGRATION ERROR (score): {e}")
 
 @app.on_event("startup")
 def startup_event():
@@ -78,11 +79,12 @@ async def api_open_audit(request: Request, db: Session = Depends(get_db)):
         # Run the comprehensive runner
         result = await run_audit(url)
 
-        # Persistence: Fix the NotNullViolation by explicitly setting status
+        # Persistence: We set status and allow score to be null to satisfy DB constraints
         new_audit = Audit(
             url=url,
-            status="completed",  # FIX: Ensures the DB is happy with this record
+            status="completed", 
             result_json=result
+            # score is omitted because it is now nullable and data is in result_json
         )
         db.add(new_audit)
         db.commit()
@@ -92,7 +94,6 @@ async def api_open_audit(request: Request, db: Session = Depends(get_db)):
 
     except Exception as e:
         logger.error(f"API Error: {e}")
-        # Rollback the DB session on error to prevent transaction hanging
         db.rollback()
         return JSONResponse({"detail": f"Audit failed: {str(e)}"}, status_code=500)
 
