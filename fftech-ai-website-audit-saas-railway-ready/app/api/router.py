@@ -1,6 +1,5 @@
-
 # app/api/routes.py
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Query
 from fastapi.responses import StreamingResponse
 import asyncio
 from typing import Dict, Any
@@ -8,80 +7,117 @@ from contextlib import suppress
 import json
 import logging
 
+from app.audit.crawler import crawl
+from app.audit.psi import fetch_lighthouse
+from app.audit.grader import compute_scores
+
 logger = logging.getLogger("FFTech_Production")
+logging.basicConfig(level=logging.INFO)
+
 router = APIRouter()
 
-# In-memory job registry. For production, prefer Redis.
+# In-memory job registry. For production, prefer Redis or RQ
 _jobs: Dict[str, Dict[str, Any]] = {}
 
 def json_dumps(obj) -> str:
     """Compact JSON for SSE."""
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
 
-# ====== Replace this with your real logic in audit_runner if you have it ====== #
-# You can import your own runner and call it from here.
-async def run_audit_and_emit(url: str, queue: asyncio.Queue):
+
+async def run_audit_and_emit(url: str, api_key: str, queue: asyncio.Queue):
     """
-    Start the audit for a URL and push progress updates + final result to `queue`.
-    This is a safe template; replace the simulated sections with real steps.
-    Make sure your real network calls have timeouts.
+    Run the audit for a URL:
+      - Crawl pages
+      - Fetch Lighthouse metrics (async)
+      - Compute final scores
+      - Emit progress updates via queue
     """
-    async def emit_progress(pct: int, status: str = None):
-        payload = {"crawl_progress": pct / 100}
+    async def emit_progress(crawl_pct: float = None, psi_pct: float = None, status: str = None):
+        payload = {}
+        if crawl_pct is not None:
+            payload["crawl_progress"] = crawl_pct
+        if psi_pct is not None:
+            payload["psi_progress"] = psi_pct
         if status:
             payload["status"] = status
         await queue.put(payload)
 
     try:
         logger.info(f"Audit Started: {url}")
-        await emit_progress(5, "Initializing")
+        await emit_progress(0.0, 0.0, "Starting Audit")
 
-        # --- Fetch HTML (set timeouts to avoid hanging) ---
-        await emit_progress(20, "Fetching HTML")
-        await asyncio.sleep(0.8)  # <-- replace with your fetch_html(url, timeout=15000)
+        # -----------------------------
+        # Start async crawl and Lighthouse fetch concurrently
+        # -----------------------------
+        crawl_task = asyncio.create_task(crawl(url, max_pages=15))
+        psi_task = asyncio.create_task(fetch_lighthouse(url, api_key))
 
-        # --- Parse & collect signals ---
-        await emit_progress(50, "Parsing & Signals")
-        await asyncio.sleep(0.8)  # <-- parse html, extract metrics, etc.
+        # While tasks run, we can emit incremental updates (fake loop for demo)
+        while not crawl_task.done() or not psi_task.done():
+            crawl_pct = 0.0
+            psi_pct = 0.0
+            if crawl_task.done():
+                crawl_pct = 1.0
+            else:
+                crawl_pct = 0.5  # or crawl_task.progress() if implemented
 
-        # --- Compute scores ---
-        await emit_progress(75, "Scoring")
-        await asyncio.sleep(0.6)  # <-- compute On-page/Performance/Coverage/Confidence
+            if psi_task.done():
+                psi_pct = 1.0
+            else:
+                psi_pct = 0.5
 
-        # Build final payload (replace with real results)
-        result = {
-            "overall_score": 86,
-            "grade": "B+",
-            "breakdown": {
-                "onpage": 88,
-                "performance": 79,
-                "coverage": 83,
-                "confidence": 70
-            },
-            "finished": True,
-            "crawl_progress": 1.0
+            await emit_progress(crawl_pct, psi_pct, "Auditing...")
+            await asyncio.sleep(0.5)
+
+        # Wait for results
+        crawl_result, psi_result = await asyncio.gather(crawl_task, psi_task)
+
+        # -----------------------------
+        # Compute scores
+        # -----------------------------
+        crawl_stats = {
+            "pages": len(crawl_result.pages),
+            "broken_links": len(crawl_result.broken_internal),
+            "errors": crawl_result.status_counts.get(0, 0),
         }
-        await queue.put(result)
+
+        overall_score, grade, breakdown = compute_scores(
+            lighthouse=psi_result,
+            crawl=crawl_stats
+        )
+
+        final_payload = {
+            "finished": True,
+            "overall_score": overall_score,
+            "grade": grade,
+            "breakdown": breakdown,
+            "crawl_progress": 1.0,
+            "psi_progress": 1.0
+        }
+
+        await queue.put(final_payload)
 
     except Exception as exc:
-        logger.exception("Audit failed")
+        logger.exception(f"Audit failed for {url}")
         await queue.put({
             "error": str(exc),
             "finished": True,
-            "crawl_progress": 1.0
+            "crawl_progress": 1.0,
+            "psi_progress": 1.0
         })
 
+
 @router.get("/api/open-audit-progress")
-async def open_audit_progress(request: Request, url: str):
+async def open_audit_progress(request: Request, url: str = Query(...), api_key: str = Query(...)):
     """
-    Idempotent SSE endpoint:
-      - If there is no running job for `url`, starts it.
-      - Streams progress events + final result.
+    SSE endpoint for audit progress.
+      - Starts audit if not already running
+      - Streams progress + final result
     """
-    # Start a new job if none exists or last one finished
+    # Start new job if none exists or previous finished
     if url not in _jobs or _jobs[url]["task"].done():
         queue: asyncio.Queue = asyncio.Queue()
-        task = asyncio.create_task(run_audit_and_emit(url, queue))
+        task = asyncio.create_task(run_audit_and_emit(url, api_key, queue))
         _jobs[url] = {"task": task, "queue": queue}
 
     queue = _jobs[url]["queue"]
@@ -89,25 +125,21 @@ async def open_audit_progress(request: Request, url: str):
 
     async def event_stream():
         try:
-            # Initial heartbeat improves perceived responsiveness
-            yield f"data: {json_dumps({'crawl_progress':0.0,'status':'Queued'})}\n\n"
+            # Initial heartbeat
+            yield f"data: {json_dumps({'crawl_progress': 0.0, 'psi_progress': 0.0, 'status': 'Queued'})}\n\n"
             while True:
-                # Client disconnected?
                 if await request.is_disconnected():
                     break
 
-                # Wait for next message; timeout to allow loop to check disconnections
                 with suppress(asyncio.TimeoutError):
                     item = await asyncio.wait_for(queue.get(), timeout=1.0)
                     yield f"data: {json_dumps(item)}\n\n"
                     if item.get("finished"):
                         break
         finally:
-            # Optional: cleanup finished jobs
+            # Optional cleanup: keep last job for cache
             if task.done():
-                # Keep a small cache window if you want to allow re-attach
-                # For now, we just leave it in memory; or uncomment:
-                # _jobs.pop(url, None)
+                # _jobs.pop(url, None)  # Uncomment to remove finished jobs
                 pass
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
