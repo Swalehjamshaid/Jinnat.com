@@ -1,106 +1,108 @@
 {% extends 'base.html' %}
-
 {% block content %}
 <div class="container mt-4">
-
   <h3>Open Audit Details</h3>
-
   <div class="mb-3">
     <label><b>URL:</b></label>
     <span id="auditUrl">-</span>
   </div>
-
   <div class="row">
-
-    <!-- Overall Score -->
     <div class="col-md-4 mb-3">
       <div class="p-3 bg-dark-subtle rounded">
         <b>Overall Score</b>
-        <div id="ovScore">-</div>
-        <div id="grade">-</div>
-        <div id="benchmark">-</div>
+        <div id="ovScore" class="fs-3">-</div>
+        <div id="grade" class="fs-4 fw-bold">-</div>
       </div>
     </div>
-
-    <!-- Confidence & Competitor -->
     <div class="col-md-4 mb-3">
       <div class="p-3 bg-dark-subtle rounded">
         <b>Audit Confidence</b>
         <div id="confidence">-</div>
-        <b>Competitor Score</b>
-        <div id="competitor_score">-</div>
       </div>
     </div>
-
-    <!-- Performance Breakdown Chart -->
     <div class="col-md-4 mb-3">
-      <canvas id="breakdownChart" height="150"></canvas>
+      <canvas id="breakdownChart" height="180"></canvas>
     </div>
-
   </div>
-
-  <!-- JSON Data -->
   <div class="mt-3">
+    <h6>Details</h6>
+    <ul class="list-group">
+      <li class="list-group-item">On-page SEO: <span id="onpageScore">-</span></li>
+      <li class="list-group-item">Performance: <span id="perfScore">-</span></li>
+      <li class="list-group-item">Coverage: <span id="coverageScore">-</span></li>
+    </ul>
+  </div>
+  <div class="mt-4">
     <h6>Raw JSON</h6>
     <pre id="auditJson" class="bg-light p-2 rounded"></pre>
   </div>
-
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 async function loadAudit(url) {
-    const response = await fetch('/api/open-audit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
-    });
+    try {
+        const response = await fetch('/api/open-audit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
 
-    if (!response.ok) {
-        const err = await response.json();
-        return alert(err.detail || 'Audit failed');
-    }
-
-    const data = await response.json();
-
-    document.getElementById('auditUrl').textContent = url;
-    document.getElementById('ovScore').textContent = data.overall_score ?? '-';
-    document.getElementById('grade').textContent = data.grade ?? '-';
-    document.getElementById('benchmark').textContent = data.breakdown.benchmark ?? '-';
-    document.getElementById('confidence').textContent = data.breakdown.confidence ?? '-';
-    document.getElementById('competitor_score').textContent = data.breakdown.competitor_score ?? '-';
-    document.getElementById('auditJson').textContent = JSON.stringify(data, null, 2);
-
-    const ctx = document.getElementById('breakdownChart').getContext('2d');
-    if (window.breakdownChart) window.breakdownChart.destroy();
-
-    window.breakdownChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['Onpage','Performance','Performance Mobile','Performance Desktop','Links','Coverage'],
-            datasets: [{
-                label: 'Score',
-                data: [
-                    data.breakdown.onpage,
-                    data.breakdown.performance,
-                    data.breakdown.performance_mobile,
-                    data.breakdown.performance_desktop,
-                    data.breakdown.links,
-                    data.breakdown.coverage
-                ],
-                backgroundColor: 'rgba(59, 130, 246, 0.7)',
-                borderColor: 'rgba(59, 130, 246, 1)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            scales: { y: { beginAtZero: true, max: 100 } },
-            plugins: { legend: { display: false } }
+        if (!response.ok) {
+            const err = await response.json();
+            alert(err.detail || 'Audit failed');
+            return;
         }
-    });
+
+        const data = await response.json();
+
+        document.getElementById('auditUrl').textContent = url;
+        document.getElementById('ovScore').textContent = data.overall_score ?? '-';
+        document.getElementById('grade').textContent = data.grade ?? '-';
+        document.getElementById('confidence').textContent = data.breakdown.confidence ?? '-';
+
+        document.getElementById('onpageScore').textContent = data.breakdown.onpage ?? '-';
+        document.getElementById('perfScore').textContent = data.breakdown.performance ?? '-';
+        document.getElementById('coverageScore').textContent = data.breakdown.coverage ?? '-';
+
+        document.getElementById('auditJson').textContent = JSON.stringify(data, null, 2);
+
+        const ctx = document.getElementById('breakdownChart').getContext('2d');
+        if (window.breakdownChart) window.breakdownChart.destroy();
+        window.breakdownChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['On-page', 'Performance', 'Coverage', 'Confidence'],
+                datasets: [{
+                    label: 'Score',
+                    data: [
+                        data.breakdown.onpage || 0,
+                        data.breakdown.performance || 0,
+                        data.breakdown.coverage || 0,
+                        data.breakdown.confidence || 0
+                    ],
+                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: { y: { beginAtZero: true, max: 100 } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    } catch (e) {
+        console.error(e);
+        alert('Error loading audit');
+    }
 }
 
-const auditUrlInput = new URLSearchParams(window.location.search).get('url');
-if (auditUrlInput) loadAudit(auditUrlInput);
+const urlParams = new URLSearchParams(window.location.search);
+const auditUrl = urlParams.get('url');
+if (auditUrl) {
+    loadAudit(auditUrl);
+} else {
+    document.getElementById('auditUrl').textContent = 'No URL provided';
+}
 </script>
 {% endblock %}
