@@ -1,113 +1,103 @@
+# app/app/main.py
+
 from fastapi import FastAPI, Request, Query
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import JSONResponse
+import time
+import json
 
 from app.audit.grader import compute_scores
 
 app = FastAPI(title="FF Tech Audit")
 
+# Static files & templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-# =========================
-# IN-MEMORY AUDIT STATE
-# =========================
-audit_jobs = {}
 
-@app.get("/")
+# -----------------------------
+# HOME PAGE
+# -----------------------------
+@app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-# =========================
-# START AUDIT
-# =========================
-@app.get("/api/start-open-audit")
-def start_audit(url: str = Query(...)):
-    audit_jobs[url] = {
-        "progress": 0,
-        "status": "running",
-        "result": None
-    }
-    return {"started": True, "url": url}
-
-
-# =========================
-# AUDIT PROGRESS
-# =========================
+# -----------------------------
+# SSE OPEN AUDIT PROGRESS API
+# -----------------------------
 @app.get("/api/open-audit-progress")
-def audit_progress(url: str = Query(...)):
-    if url not in audit_jobs:
-        return JSONResponse(
-            {"error": "Audit not started"}, status_code=404
-        )
+def open_audit_progress(
+    url: str = Query(..., description="Website URL to audit")
+):
+    """
+    Server-Sent Events endpoint.
+    Matches frontend EventSource EXACTLY.
+    """
 
-    job = audit_jobs[url]
+    def event_stream():
+        try:
+            # ---- Simulated crawl progress ----
+            for i in range(1, 6):
+                progress = i / 5
+                yield f"data: {json.dumps({'crawl_progress': progress})}\n\n"
+                time.sleep(0.6)
 
-    if job["status"] == "completed":
-        return {
-            "status": "completed",
-            "progress": 100
-        }
+            # ---- Mock audit inputs (replace later with real crawler) ----
+            onpage = {
+                "missing_title_tags": 1,
+                "multiple_h1": 0
+            }
 
-    # Simulate crawl + analysis steps
-    job["progress"] += 20
+            perf = {
+                "lcp_ms": 2800
+            }
 
-    if job["progress"] >= 100:
-        # ---- REALISTIC SAMPLE DATA ----
-        onpage = {
-            "missing_title_tags": 1,
-            "multiple_h1": 0
-        }
-        perf = {
-            "lcp_ms": 2800
-        }
-        links = {
-            "total_broken_links": 3
-        }
+            links = {
+                "total_broken_links": 2
+            }
 
-        score, grade, breakdown = compute_scores(
-            onpage=onpage,
-            perf=perf,
-            links=links,
-            crawl_pages_count=25
-        )
+            crawl_pages_count = 32
 
-        job["result"] = {
-            "score": score,
-            "grade": grade,
-            "breakdown": breakdown
-        }
-        job["status"] = "completed"
-        job["progress"] = 100
+            # ---- Call your EXISTING grader.py ----
+            overall_score, grade, breakdown = compute_scores(
+                onpage=onpage,
+                perf=perf,
+                links=links,
+                crawl_pages_count=crawl_pages_count
+            )
 
-        return {
-            "status": "completed",
-            "progress": 100
-        }
+            # ---- Final payload (STRICT frontend contract) ----
+            final_payload = {
+                "finished": True,
+                "overall_score": overall_score,
+                "grade": grade,
+                "breakdown": breakdown
+            }
 
-    return {
-        "status": "running",
-        "progress": job["progress"]
-    }
+            yield f"data: {json.dumps(final_payload)}\n\n"
 
+        except Exception as e:
+            error_payload = {
+                "finished": True,
+                "error": str(e)
+            }
+            yield f"data: {json.dumps(error_payload)}\n\n"
 
-# =========================
-# FINAL RESULT
-# =========================
-@app.get("/api/open-audit-result")
-def audit_result(url: str = Query(...)):
-    job = audit_jobs.get(url)
-
-    if not job or job["status"] != "completed":
-        return JSONResponse(
-            {"error": "Audit not completed"}, status_code=400
-        )
-
-    return job["result"]
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
+# -----------------------------
+# HEALTH CHECK
+# -----------------------------
 @app.get("/healthz")
 def healthz():
-    return {"ok": True}
+    return {"status": "ok"}
