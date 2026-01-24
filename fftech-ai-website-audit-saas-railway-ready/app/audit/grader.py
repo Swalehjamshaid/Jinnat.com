@@ -1,4 +1,5 @@
 # app/audit/grader.py
+
 from typing import Dict, Tuple
 import random
 
@@ -9,7 +10,7 @@ GRADE_BANDS = [
     (70, 'B'),
     (60, 'C'),
     (0,  'D')
-]
+)
 
 def compute_scores(
     onpage: Dict[str, float],
@@ -20,35 +21,24 @@ def compute_scores(
     mobile_weight: float = 0.5
 ) -> Tuple[float, str, Dict[str, float]]:
     """
-    Compute website audit scores based on multiple factors.
-    Returns: (overall score, letter grade, breakdown dictionary)
+    Computes overall website score and detailed breakdown.
     """
     try:
-        # ----------------------
         # SEO Penalties
-        # ----------------------
         penalties = 0
         penalties += onpage.get('missing_title_tags', 0) * 2
         penalties += onpage.get('missing_meta_descriptions', 0) * 1.5
         penalties += onpage.get('multiple_h1', 0) * 1
 
-        # ----------------------
-        # Performance Score
-        # ----------------------
+        # Performance Score (Simulated logic based on speed)
         lcp = perf.get('lcp_ms', 4000) or 4000
         fcp = perf.get('fcp_ms', 2000) or 2000
         perf_score = max(0, 100 - (lcp / 40 + fcp / 30))
 
-        # ----------------------
-        # Links & Coverage
-        # ----------------------
-        link_penalty = links.get('total_broken_links', 0) * 0.5
+        # Coverage Score
         coverage = min(100, (crawl_pages_count or 0) * 2)
-        penalties += link_penalty
 
-        # ----------------------
-        # Weighted Final Score
-        # ----------------------
+        # Final Weighted Score
         raw_score = (
             max(0, 100 - penalties) * 0.4 +
             perf_score * 0.4 +
@@ -57,19 +47,17 @@ def compute_scores(
 
         overall = max(0, min(100, raw_score))
 
-        # ----------------------
         # Determine Letter Grade
-        # ----------------------
         grade = 'D'
         for cutoff, letter in GRADE_BANDS:
             if overall >= cutoff:
                 grade = letter
                 break
 
-        # ----------------------
-        # Detailed Breakdown
-        # ----------------------
+        # Generate Confidence Level
         confidence = random.uniform(85, 99)
+
+        # Final Breakdown Dictionary
         breakdown = {
             'onpage': round(max(0, 100 - penalties), 2),
             'performance': round(perf_score, 2),
@@ -80,6 +68,6 @@ def compute_scores(
         return round(overall, 2), grade, breakdown
 
     except Exception as e:
-        # Safety fallback to prevent frontend "Error running audit"
         print(f"Grader Error: {e}")
-        return 0.0, "D", {"error": "Calculation error", "onpage": 0, "performance": 0}
+        # Fallback to prevent crash
+        return 0.0, "D", {"onpage": 0, "performance": 0, "coverage": 0, "confidence": 0}
