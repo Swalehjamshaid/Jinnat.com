@@ -1,94 +1,62 @@
 # app/audit/crawler.py
 import asyncio
-import aiohttp
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-from collections import defaultdict
 import time
-import logging
-
-logger = logging.getLogger("crawler_engine")
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; FFTechAuditor/2.0; +https://fftech.ai)",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-}
+from urllib.request import urlopen, Request
+from urllib.parse import urljoin, urlparse
+from html.parser import HTMLParser
+from collections import defaultdict
 
 JUNK_EXTENSIONS = ('.pdf', '.jpg', '.png', '.zip', '.docx', '.jpeg', '.gif')
+HEADERS = {'User-Agent': 'FFTechAuditor/2.0'}
+
+class SimpleHTMLParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            href = dict(attrs).get("href")
+            if href:
+                self.links.append(href)
 
 class CrawlResult:
     def __init__(self):
-        self.pages = {}  
+        self.pages = {}
         self.status_counts = defaultdict(int)
         self.internal_links = defaultdict(list)
         self.external_links = defaultdict(list)
-        self.broken_internal = []  
-        self.broken_external = []
+        self.broken_internal = []
         self.total_crawl_time = 0
 
-def is_same_host(start_url: str, link: str) -> bool:
-    try:
-        return urlparse(start_url).netloc == urlparse(link).netloc
-    except:
-        return False
+def is_same_host(start_url, link):
+    return urlparse(start_url).netloc == urlparse(link).netloc
 
-async def fetch_page(session: aiohttp.ClientSession, url: str, timeout: int = 7):
-    """Fetch page content async (Python-only)"""
-    try:
-        async with session.get(url, timeout=timeout) as resp:
-            text = await resp.text()
-            return url, resp.status, resp.headers.get("Content-Type", ""), text
-    except Exception as e:
-        logger.warning(f"Failed fetching {url}: {e}")
-        return url, 0, "", ""
-
-async def check_link(session: aiohttp.ClientSession, link: str):
-    """Check if a link is broken using HEAD (fast)"""
-    try:
-        async with session.head(link, timeout=3, allow_redirects=True) as resp:
-            return link, resp.status
-    except:
-        return link, 0
-
-async def crawl(start_url: str, max_pages: int = 15, timeout: int = 7) -> CrawlResult:
-    """
-    100% Python-based async crawler:
-    - Async requests for parallelism
-    - Skips non-HTML pages & junk extensions
-    - Limited broken link checks
-    """
+async def crawl(start_url: str, max_pages=15, timeout=5):
     start_time = time.time()
     result = CrawlResult()
     queue = [start_url]
     seen = set()
 
-    connector = aiohttp.TCPConnector(limit=20)  # 20 concurrent requests
-    async with aiohttp.ClientSession(headers=HEADERS, connector=connector) as session:
+    while queue and len(seen) < max_pages:
+        url = queue.pop(0)
+        if url in seen:
+            continue
+        seen.add(url)
 
-        while queue and len(seen) < max_pages:
-            tasks = []
-            for url in queue[:max_pages - len(seen)]:
-                if url in seen: continue
-                seen.add(url)
-                tasks.append(fetch_page(session, url, timeout))
-            queue = []
-
-            pages = await asyncio.gather(*tasks)
-            for url, status, content_type, html in pages:
+        try:
+            req = Request(url, headers=HEADERS)
+            with urlopen(req, timeout=timeout) as resp:
+                html = resp.read().decode('utf-8', errors='ignore')
+                status = resp.getcode()
                 result.status_counts[status] += 1
-                if status != 200 or "text/html" not in content_type.lower() or not html:
-                    continue
-
                 result.pages[url] = html
-                soup = BeautifulSoup(html, "html.parser")
 
-                for tag in soup.find_all("a", href=True):
-                    href = tag.get("href", "").strip()
-                    if not href or href.startswith(("mailto:", "tel:", "javascript:", "#")):
-                        continue
+                parser = SimpleHTMLParser()
+                parser.feed(html)
+                for href in parser.links:
                     if any(href.lower().endswith(ext) for ext in JUNK_EXTENSIONS):
                         continue
-
                     abs_url = urljoin(url, href)
                     if is_same_host(start_url, abs_url):
                         result.internal_links[url].append(abs_url)
@@ -96,16 +64,8 @@ async def crawl(start_url: str, max_pages: int = 15, timeout: int = 7) -> CrawlR
                             queue.append(abs_url)
                     else:
                         result.external_links[url].append(abs_url)
-
-        # --- Broken Link Check (Python-only) ---
-        all_internal = [link for links in result.internal_links.values() for link in links]
-        all_internal = list(set(all_internal))[:50]  # Limit to 50 links
-        tasks = [check_link(session, l) for l in all_internal]
-        check_results = await asyncio.gather(*tasks)
-        for link, status in check_results:
-            if status >= 400 or status == 0:
-                src = next((k for k, v in result.internal_links.items() if link in v), None)
-                result.broken_internal.append((src, link, status))
+        except Exception:
+            result.status_counts[0] += 1
 
     result.total_crawl_time = round(time.time() - start_time, 2)
     return result
