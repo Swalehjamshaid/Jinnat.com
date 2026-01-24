@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 import aiohttp
 from aiohttp import ClientTimeout
 from aiohttp.client_exceptions import ClientError
-import validators
 import requests
 
 logger = logging.getLogger(__name__)
@@ -63,6 +62,12 @@ def _extract_retry_after(resp: aiohttp.ClientResponse) -> Optional[float]:
         return None
 
 
+def _is_valid_url(url: str) -> bool:
+    """Basic URL validation without external libraries."""
+    parsed = urlparse(url)
+    return bool(parsed.scheme and parsed.netloc)
+
+
 # -------------------
 # Phase 1: Python Pre-Audit
 # -------------------
@@ -76,7 +81,7 @@ def python_library_audit(url: str) -> Dict[str, float]:
     result = DEFAULT_RESULT.copy()
     target = _normalize_url(url)
 
-    if not target or not validators.url(target):
+    if not target or not _is_valid_url(target):
         logger.error("[PRE-AUDIT] Invalid URL: %s", url)
         return result
 
@@ -85,7 +90,7 @@ def python_library_audit(url: str) -> Dict[str, float]:
         if resp.status_code >= 400:
             logger.warning("[PRE-AUDIT] Page returned HTTP %s for %s", resp.status_code, target)
         else:
-            # Increment placeholder metrics
+            # Increment placeholder metrics for pre-audit
             result["seo"] += 20.0
             result["accessibility"] += 10.0
     except Exception as e:
@@ -210,3 +215,9 @@ async def full_audit(url: str, api_key: str) -> Dict[str, float]:
                 result[k] = v
 
     return result
+
+
+# -------------------
+# Backward Compatibility
+# -------------------
+fetch_lighthouse = run_ai_audit  # Alias for old code
