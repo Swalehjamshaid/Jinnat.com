@@ -2,7 +2,25 @@
 {% block content %}
 <div class="row">
   <div class="col-lg-7">
-    <div class="card bg-body-tertiary mb-4">
+    <div class="card bg-body-tertiary mb-4 position-relative" id="auditCard">
+      <!-- Overlay -->
+      <div id="loadingOverlay" style="
+           display:none;
+           position:absolute;
+           top:0; left:0;
+           width:100%; height:100%;
+           background: rgba(0,0,0,0.4);
+           z-index: 10;
+           border-radius: 0.5rem;
+           display:flex;
+           align-items:center;
+           justify-content:center;">
+        <div class="text-center text-white">
+          <div class="spinner-border text-light" role="status"></div>
+          <div class="mt-2">Processing...</div>
+        </div>
+      </div>
+
       <div class="card-body">
         <h4 class="card-title">Open Access Audit</h4>
         <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
@@ -14,10 +32,15 @@
           </button>
         </div>
 
-        <!-- New Live Progress Bar -->
+        <!-- Live Progress Bar -->
         <div class="progress mb-3" style="height: 20px; display:none;" id="crawlProgressContainer">
-          <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
-               style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+          <div id="crawlProgressBar"
+               class="progress-bar progress-bar-striped progress-bar-animated bg-info"
+               role="progressbar"
+               style="width: 0%"
+               aria-valuenow="0"
+               aria-valuemin="0"
+               aria-valuemax="100">
             0%
           </div>
         </div>
@@ -89,6 +112,7 @@ async function runAudit(url) {
     const btnText = document.getElementById('btnText');
     const btnSpinner = document.getElementById('btnSpinner');
     const progressContainer = document.getElementById('crawlProgressContainer');
+    const overlay = document.getElementById('loadingOverlay');
 
     const ovScore = document.getElementById('ovScore');
     const gradeEl = document.getElementById('grade');
@@ -98,31 +122,29 @@ async function runAudit(url) {
     const confEl = document.getElementById('confidence');
     const jsonPre = document.getElementById('openJson');
 
-    // 1. Loading State
+    // Loading state
     btn.disabled = true;
     btnText.textContent = 'Auditing...';
     btnSpinner.classList.remove('d-none');
     progressContainer.style.display = 'block';
+    overlay.style.display = 'flex';
     updateProgress(0);
-    
+
     resultsDiv.classList.add('d-none');
     ovScore.textContent = gradeEl.textContent = onpageEl.textContent = perfEl.textContent =
     coverageEl.textContent = confEl.textContent = '-';
     jsonPre.classList.add('d-none');
 
     try {
-        // Use Server-Sent Events (SSE) for live crawl updates
         const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
         
         evtSource.onmessage = (e) => {
             const data = JSON.parse(e.data);
 
-            // Update progress bar based on pages crawled
             if (data.crawl_progress !== undefined) {
                 updateProgress(Math.round(data.crawl_progress * 100));
             }
 
-            // Once audit finished, render the final results
             if (data.finished) {
                 evtSource.close();
 
@@ -136,7 +158,6 @@ async function runAudit(url) {
                 jsonPre.textContent = JSON.stringify(data, null, 2);
                 jsonPre.classList.remove('d-none');
 
-                // Chart
                 const ctx = document.getElementById('breakdownChart').getContext('2d');
                 if (breakdownChartInstance) breakdownChartInstance.destroy();
                 breakdownChartInstance = new Chart(ctx, {
@@ -169,6 +190,7 @@ async function runAudit(url) {
                 btnText.textContent = 'Audit';
                 btnSpinner.classList.add('d-none');
                 progressContainer.style.display = 'none';
+                overlay.style.display = 'none';
             }
         };
 
@@ -180,6 +202,7 @@ async function runAudit(url) {
             btnText.textContent = 'Audit';
             btnSpinner.classList.add('d-none');
             progressContainer.style.display = 'none';
+            overlay.style.display = 'none';
         };
 
     } catch (e) {
@@ -189,10 +212,11 @@ async function runAudit(url) {
         btnText.textContent = 'Audit';
         btnSpinner.classList.add('d-none');
         progressContainer.style.display = 'none';
+        overlay.style.display = 'none';
     }
 }
 
-// Logic flow starts here
+// Event listeners
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
     const urlInput = document.getElementById('openUrl');
     const url = urlInput.value.trim();
