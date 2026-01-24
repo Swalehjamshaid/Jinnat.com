@@ -1,79 +1,227 @@
-import logging
-from fastapi import FastAPI, Request, Depends
-from fastapi.responses import JSONResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
-from sqlalchemy import text
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card bg-body-tertiary mb-4 position-relative" id="auditCard">
+      <!-- Overlay -->
+      <div id="loadingOverlay" style="
+           display:none;
+           position:absolute;
+           top:0; left:0;
+           width:100%; height:100%;
+           background: rgba(0,0,0,0.4);
+           z-index: 10;
+           border-radius: 0.5rem;
+           display:flex;
+           align-items:center;
+           justify-content:center;">
+        <div class="text-center text-white">
+          <div class="spinner-border text-light" role="status"></div>
+          <div class="mt-2">Processing...</div>
+        </div>
+      </div>
 
-# Internal Imports
-from .db import engine, Base, get_db
-from .models import Audit
-from .settings import get_settings
-from .audit.runner import run_audit
+      <div class="card-body">
+        <h4 class="card-title">Open Access Audit</h4>
+        <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
+        <div class="input-group mb-3">
+          <input id="openUrl" type="url" class="form-control" placeholder="https://example.com">
+          <button id="btnOpenAudit" class="btn btn-primary">
+            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            <span id="btnText">Audit</span>
+          </button>
+        </div>
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("fftech_main")
+        <!-- Live Progress Bar -->
+        <div class="progress mb-3" style="height: 20px; display:none;" id="crawlProgressContainer">
+          <div id="crawlProgressBar"
+               class="progress-bar progress-bar-striped progress-bar-animated bg-info"
+               role="progressbar"
+               style="width: 0%"
+               aria-valuenow="0"
+               aria-valuemin="0"
+               aria-valuemax="100">
+            0%
+          </div>
+        </div>
 
-# Initialize FastAPI
-app = FastAPI(title="FF Tech AI Audit")
+        <div id="openResults" class="mt-3 d-none">
+          <h6>Results</h6>
+          <div class="row">
+            <div class="col-md-4">
+              <div class="p-3 rounded bg-dark-subtle">
+                <b>Overall Score</b>
+                <div id="ovScore" class="fs-3">-</div>
+                <div id="grade" class="fs-4 fw-bold">-</div>
+              </div>
+            </div>
+            <div class="col-md-8">
+              <canvas id="breakdownChart" height="140"></canvas>
+            </div>
+          </div>
+          <div class="mt-3">
+            <h6>Details</h6>
+            <ul class="list-group">
+              <li class="list-group-item">On-page SEO: <span id="onpageScore">-</span></li>
+              <li class="list-group-item">Performance: <span id="perfScore">-</span></li>
+              <li class="list-group-item">Coverage: <span id="coverageScore">-</span></li>
+              <li class="list-group-item">Confidence: <span id="confidence">-</span></li>
+            </ul>
+          </div>
+          <pre id="openJson" class="small mt-3 bg-light p-2 rounded d-none"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
 
-# Assets
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+  <div class="col-lg-5">
+    <div class="card bg-body-tertiary mb-4">
+      <div class="card-body">
+        <h4 class="card-title">Passwordless Sign-in</h4>
+        <form method="post" action="/request-login">
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" name="email" class="form-control" required>
+          </div>
+          <button class="btn btn-success w-100">Send Magic Link</button>
+        </form>
+        <p class="small text-secondary mt-2">
+          Free users can run up to 10 audits; subscribe to unlock scheduling & history.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
 
-def run_self_healing_migration():
-    """Fixes 'NotNullViolation' by dropping mandatory constraints and setting defaults"""
-    with engine.connect() as conn:
-        logger.info("Running deep schema repair...")
-        try:
-            # 1. Add missing JSON column
-            conn.execute(text("ALTER TABLE audits ADD COLUMN IF NOT EXISTS result_json JSONB;"))
-            
-            # 2. THE CRITICAL FIX: Set the default time for created_at
-            # This stops the 'null value in column created_at' error permanently
-            conn.execute(text("ALTER TABLE audits ALTER COLUMN created_at SET DEFAULT now();"))
-            
-            # 3. Relax all columns that caused crashes
-            conn.execute(text("ALTER TABLE audits ALTER COLUMN coverage DROP NOT NULL;"))
-            conn.execute(text("ALTER TABLE audits ALTER COLUMN grade DROP NOT NULL;"))
-            conn.execute(text("ALTER TABLE audits ALTER COLUMN score DROP NOT NULL;"))
-            conn.execute(text("ALTER TABLE audits ALTER COLUMN status DROP NOT NULL;"))
-            
-            conn.commit()
-            logger.info("SCHEMA REPAIR: Success. All columns are now optional and created_at is handled.")
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"SCHEMA REPAIR FAILED: {e}")
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Persistent variable to track the chart across multiple runs
+let breakdownChartInstance = null;
 
-@app.on_event("startup")
-def startup():
-    Base.metadata.create_all(bind=engine)
-    run_self_healing_migration()
+// Update the progress bar
+function updateProgress(percent) {
+    const bar = document.getElementById('crawlProgressBar');
+    bar.style.width = percent + '%';
+    bar.setAttribute('aria-valuenow', percent);
+    bar.textContent = percent + '%';
+}
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+async function runAudit(url) {
+    const resultsDiv = document.getElementById('openResults');
+    const btn = document.getElementById('btnOpenAudit');
+    const btnText = document.getElementById('btnText');
+    const btnSpinner = document.getElementById('btnSpinner');
+    const progressContainer = document.getElementById('crawlProgressContainer');
+    const overlay = document.getElementById('loadingOverlay');
 
-@app.post("/api/open-audit")
-async def api_open_audit(request: Request, db: Session = Depends(get_db)):
-    try:
-        body = await request.json()
-        url = body.get("url")
+    const ovScore = document.getElementById('ovScore');
+    const gradeEl = document.getElementById('grade');
+    const onpageEl = document.getElementById('onpageScore');
+    const perfEl = document.getElementById('perfScore');
+    const coverageEl = document.getElementById('coverageScore');
+    const confEl = document.getElementById('confidence');
+    const jsonPre = document.getElementById('openJson');
+
+    // Loading state
+    btn.disabled = true;
+    btnText.textContent = 'Auditing...';
+    btnSpinner.classList.remove('d-none');
+    progressContainer.style.display = 'block';
+    overlay.style.display = 'flex';
+    updateProgress(0);
+
+    resultsDiv.classList.add('d-none');
+    ovScore.textContent = gradeEl.textContent = onpageEl.textContent = perfEl.textContent =
+    coverageEl.textContent = confEl.textContent = '-';
+    jsonPre.classList.add('d-none');
+
+    try {
+        const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
         
-        # Runs audit with the verified AIza... key
-        result = await run_audit(url)
+        evtSource.onmessage = (e) => {
+            const data = JSON.parse(e.data);
 
-        # We don't pass created_at here; the DB handles it automatically now
-        new_audit = Audit(
-            url=url,
-            status="completed",
-            result_json=result
-        )
-        db.add(new_audit)
-        db.commit()
-        return result
-    except Exception as e:
-        logger.error(f"API Error: {e}")
-        db.rollback()
-        return JSONResponse({"detail": str(e)}, status_code=500)
+            if (data.crawl_progress !== undefined) {
+                updateProgress(Math.round(data.crawl_progress * 100));
+            }
+
+            if (data.finished) {
+                evtSource.close();
+
+                ovScore.textContent = data.overall_score ?? '-';
+                gradeEl.textContent = data.grade ?? '-';
+                onpageEl.textContent = data.breakdown.onpage ?? '-';
+                perfEl.textContent = data.breakdown.performance ?? '-';
+                coverageEl.textContent = data.breakdown.coverage ?? '-';
+                confEl.textContent = (data.breakdown.confidence ?? '-') + '%';
+
+                jsonPre.textContent = JSON.stringify(data, null, 2);
+                jsonPre.classList.remove('d-none');
+
+                const ctx = document.getElementById('breakdownChart').getContext('2d');
+                if (breakdownChartInstance) breakdownChartInstance.destroy();
+                breakdownChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['On-page', 'Performance', 'Coverage', 'Confidence'],
+                        datasets: [{
+                            label: 'Score',
+                            data: [
+                                data.breakdown.onpage || 0,
+                                data.breakdown.performance || 0,
+                                data.breakdown.coverage || 0,
+                                data.breakdown.confidence || 0
+                            ],
+                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, max: 100 } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                resultsDiv.classList.remove('d-none');
+                btn.disabled = false;
+                btnText.textContent = 'Audit';
+                btnSpinner.classList.add('d-none');
+                progressContainer.style.display = 'none';
+                overlay.style.display = 'none';
+            }
+        };
+
+        evtSource.onerror = (e) => {
+            console.error('SSE error', e);
+            evtSource.close();
+            alert('Error during live audit.');
+            btn.disabled = false;
+            btnText.textContent = 'Audit';
+            btnSpinner.classList.add('d-none');
+            progressContainer.style.display = 'none';
+            overlay.style.display = 'none';
+        };
+
+    } catch (e) {
+        console.error("Audit Error:", e);
+        alert(e.message || 'Error running audit.');
+        btn.disabled = false;
+        btnText.textContent = 'Audit';
+        btnSpinner.classList.add('d-none');
+        progressContainer.style.display = 'none';
+        overlay.style.display = 'none';
+    }
+}
+
+// Event listener: only triggers when button is clicked
+document.getElementById('btnOpenAudit').addEventListener('click', () => {
+    const urlInput = document.getElementById('openUrl');
+    const url = urlInput.value.trim();
+    if (!url || !url.startsWith('http')) return alert('Please enter a valid URL (http/https)');
+    runAudit(url);
+});
+</script>
+{% endblock %}
