@@ -3,14 +3,16 @@
 
 <div class="row">
 
+  <!-- AUDIT CARD -->
   <div class="col-lg-7">
     <div class="card bg-body-tertiary mb-4 position-relative" id="auditCard">
 
+      <!-- LOADING OVERLAY -->
       <div id="loadingOverlay" style="display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6); z-index: 10; border-radius: 0.5rem; align-items:center; justify-content:center; flex-direction: column;">
         <div class="text-center text-white">
           <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
-          <div class="mt-3 fw-bold h5" id="overlayStatus">AI Engine Scanning...</div>
-          <div class="small text-white-50">This may take up to 30 seconds</div>
+          <div class="mt-3 fw-bold h5" id="overlayStatus">Initializing AI Audit...</div>
+          <div class="small text-white-50">This may take a few seconds</div>
         </div>
       </div>
 
@@ -18,6 +20,7 @@
         <h4 class="card-title fw-bold">Open Access Audit</h4>
         <p class="text-secondary">Quickly audit any URL — no sign-in required.</p>
 
+        <!-- URL INPUT -->
         <div class="input-group mb-3">
           <input id="openUrl" type="url" class="form-control" placeholder="https://example.com" value="https://">
           <button id="btnOpenAudit" class="btn btn-primary px-4">
@@ -26,6 +29,7 @@
           </button>
         </div>
 
+        <!-- PROGRESS BAR -->
         <div id="crawlProgressContainer" class="mb-4" style="display:none;">
           <div class="d-flex justify-content-between mb-1">
             <span class="text-primary small fw-bold" id="statusLabel">Initializing...</span>
@@ -36,9 +40,12 @@
           </div>
         </div>
 
+        <!-- RESULTS CARD -->
         <div id="openResults" class="mt-3 d-none">
           <h5 class="mb-3">Audit Results</h5>
           <div class="row g-3">
+
+            <!-- OVERALL SCORE -->
             <div class="col-md-4">
               <div class="p-4 rounded bg-dark-subtle text-center h-100 border">
                 <b class="text-uppercase small ls-widest text-secondary">Overall Score</b>
@@ -46,13 +53,17 @@
                 <div id="grade" class="h4 fw-bold mt-1">-</div>
               </div>
             </div>
+
+            <!-- BREAKDOWN CHART -->
             <div class="col-md-8">
               <div class="p-2 border rounded h-100">
                 <canvas id="breakdownChart" height="160"></canvas>
               </div>
             </div>
+
           </div>
 
+          <!-- METRIC DETAILS -->
           <div class="mt-4">
             <h6 class="fw-bold">Metric Details</h6>
             <div class="row g-2">
@@ -63,12 +74,14 @@
             </div>
           </div>
 
+          <!-- RAW JSON DATA -->
           <pre id="openJson" class="small mt-4 bg-dark text-info p-3 rounded d-none" style="max-height: 200px; overflow: auto;"></pre>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- PASSWORDLESS SIGN-IN -->
   <div class="col-lg-5">
     <div class="card bg-body-tertiary mb-4 border-0 shadow-sm">
       <div class="card-body p-4">
@@ -87,10 +100,14 @@
 
 </div>
 
+<!-- CHART.JS -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 let breakdownChartInstance = null;
 
+// -----------------------------
+// Progress bar & overlay updates
+// -----------------------------
 function updateProgress(percent, msg = "Auditing...") {
     const bar = document.getElementById('crawlProgressBar');
     const label = document.getElementById('progressLabel');
@@ -103,6 +120,9 @@ function updateProgress(percent, msg = "Auditing...") {
     if(overlayStatus) overlayStatus.textContent = msg;
 }
 
+// -----------------------------
+// Run Audit (SSE + Python Integration)
+// -----------------------------
 async function runAudit(url) {
     const ui = {
         results: document.getElementById('openResults'),
@@ -120,31 +140,34 @@ async function runAudit(url) {
         json: document.getElementById('openJson')
     };
 
-    // UI State Reset
+    // UI Reset
     ui.btn.disabled = true;
     ui.btnText.textContent = "Processing...";
     ui.btnSpinner.classList.remove("d-none");
-    ui.overlay.style.display = "flex"; // Show Overlay
-    ui.progress.style.display = "block"; // Show Progress
+    ui.overlay.style.display = "flex";
+    ui.progress.style.display = "block";
     ui.results.classList.add("d-none");
-    updateProgress(10, "Connecting to Google APIs...");
+    updateProgress(10, "Connecting to AI Audit Engine...");
 
     try {
         const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
-
+        
         evtSource.onmessage = e => {
             const data = JSON.parse(e.data);
 
-            if (data.crawl_progress !== undefined) {
-                const p = Math.round(data.crawl_progress * 100);
-                updateProgress(p, p < 50 ? "Crawling Website..." : "Analyzing Performance...");
+            // Incremental progress
+            if (data.crawl_progress !== undefined || data.psi_progress !== undefined) {
+                const crawlP = Math.round((data.crawl_progress ?? 0) * 100);
+                const psiP = Math.round((data.psi_progress ?? 0) * 100);
+                const combined = Math.round((crawlP + psiP) / 2);
+                updateProgress(combined, combined < 50 ? "Crawling Website..." : "Analyzing Performance...");
             }
 
             if (!data.finished) return;
 
             evtSource.close();
 
-            // Populate Data
+            // Populate results
             ui.ovScore.textContent = data.overall_score ?? "-";
             ui.grade.textContent = data.grade ?? "-";
             ui.onpage.textContent = data.breakdown.onpage ?? "-";
@@ -161,17 +184,21 @@ async function runAudit(url) {
             breakdownChartInstance = new Chart(ctx, {
                 type: "bar",
                 data: {
-                    labels: ["SEO", "Speed", "Links", "AI"],
+                    labels: ["SEO", "Speed", "Links", "AI Confidence"],
                     datasets: [{
                         data: [data.breakdown.onpage, data.breakdown.performance, data.breakdown.coverage, data.breakdown.confidence],
                         backgroundColor: "#0d6efd",
                         borderRadius: 6
                     }]
                 },
-                options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }
+                options: {
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, max: 100 } }
+                }
             });
 
-            // CLEAR OVERLAY - This is the fix
+            // UI reset
             ui.results.classList.remove("d-none");
             ui.btn.disabled = false;
             ui.btnText.textContent = "Audit";
@@ -187,6 +214,7 @@ async function runAudit(url) {
             ui.btnText.textContent = "Audit";
             ui.btnSpinner.classList.add("d-none");
             ui.progress.style.display = "none";
+            alert("Audit failed: Unable to reach server.");
         };
 
     } catch (error) {
@@ -194,13 +222,17 @@ async function runAudit(url) {
         ui.btn.disabled = false;
         ui.btnText.textContent = "Audit";
         ui.btnSpinner.classList.add("d-none");
+        ui.progress.style.display = "none";
+        alert("Unexpected error occurred: " + error.message);
     }
 }
 
+// Event Listener
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
     const url = document.getElementById('openUrl').value.trim();
     if (url.startsWith('http')) runAudit(url);
     else alert("Please enter a valid URL (https://...)");
 });
 </script>
+
 {% endblock %}
