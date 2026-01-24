@@ -5,59 +5,56 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 # Internal Imports
-from .db import engine, Base, get_db
+from .db import engine, Base, get_db, SessionLocal
 from .models import Audit, User
 from .audit.runner import run_audit
 
-# Initialize Database Tables on Startup
-Base.metadata.create_all(bind=engine)
+app = FastAPI(title="FF Tech AI Website Audit SaaS")
 
-app = FastAPI(title='FF Tech AI Audit SaaS')
+# Mount Static and Templates
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
 
-app.mount('/static', StaticFiles(directory='app/static'), name='static')
-templates = Jinja2Templates(directory='app/templates')
+def run_migrations():
+    """Checks for the missing result_json column and adds it if necessary."""
+    with engine.connect() as conn:
+        try:
+            # Check if column exists
+            conn.execute(text("SELECT result_json FROM audits LIMIT 1"))
+        except Exception:
+            print("MIGRATION: Column 'result_json' not found. Adding it now...")
+            conn.execute(text("ALTER TABLE audits ADD COLUMN result_json JSONB"))
+            conn.commit()
 
-# --- PAGE ROUTES ---
+@app.on_event("startup")
+def on_startup():
+    # 1. Create tables if they don't exist
+    Base.metadata.create_all(bind=engine)
+    # 2. Fix the specific column error reported in logs
+    run_migrations()
 
-@app.get('/', response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Serves the main landing page."""
-    return templates.TemplateResponse('index.html', {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get('/dashboard', response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db)):
-    """Pull past audits from the database to show the user."""
-    # For now, we fetch all audits. Later, filter by user_id.
-    past_audits = db.query(Audit).order_by(Audit.created_at.desc()).all()
-    return templates.TemplateResponse('dashboard.html', {
-        "request": request,
-        "audits": past_audits
-    })
-
-# --- API ROUTES ---
-
-@app.post('/api/open-audit')
+@app.post("/api/open-audit")
 async def open_audit(request: Request, db: Session = Depends(get_db)):
-    """
-    The main integration point.
-    1. Runs the full audit logic (Crawler -> SEO -> Perf).
-    2. Saves the result JSON into the database.
-    """
     try:
         body = await request.json()
-        url = body.get('url')
+        url = body.get("url")
         if not url:
             raise HTTPException(status_code=400, detail="URL required")
 
-        # Execute the full audit runner
+        # Execute the runner (handles SSL and API failures internally)
         result = await run_audit(url)
 
-        # PERSISTENCE: Save result to Database
+        # Save to Database
         new_audit = Audit(
             url=url,
-            result_json=result # This captures overall_score, grade, and breakdown
+            result_json=result
         )
         db.add(new_audit)
         db.commit()
@@ -66,9 +63,8 @@ async def open_audit(request: Request, db: Session = Depends(get_db)):
         return result
 
     except Exception as e:
-        print(f"Server Error: {e}")
-        return JSONResponse({"detail": str(e)}, status_code=500)
+        print(f"CRITICAL SERVER ERROR: {e}")
+        return JSONResponse({"detail": "Audit failed. Database or Network error."}, status_code=500)
 
-if __name__ == '__main__':
-    # Railway environment variables
-    uvicorn.run('app.main:app', host='0.0.0.0', port=8080)
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8080)
