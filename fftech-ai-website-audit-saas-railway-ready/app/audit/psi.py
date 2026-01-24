@@ -1,36 +1,42 @@
 # app/audit/psi.py
 import requests
-from typing import Optional
+import logging
 from ..settings import get_settings
 
-API_URL = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed'
+logger = logging.getLogger(__name__)
 
-def fetch_psi(url: str, strategy: str = 'mobile') -> Optional[dict]:
+def fetch_psi(url: str, strategy: str = 'mobile'):
     settings = get_settings()
-    if not settings.PSI_API_KEY:
+    
+    # We use the AIza... string here, NOT the JSON file
+    api_key = settings.PSI_API_KEY 
+    
+    if not api_key:
+        logger.error("PSI_API_KEY is not set in environment variables.")
         return None
 
-    # URL Cleaning to prevent 400 errors
-    clean_url = url.split('#')[0].strip()
-
+    # Google PageSpeed Insights V5 endpoint
+    endpoint = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+    
     params = {
-        'url': clean_url,
+        'url': url,
+        'key': api_key,
         'strategy': strategy,
-        'category': 'PERFORMANCE',
-        'key': settings.PSI_API_KEY
+        'category': ['PERFORMANCE', 'SEO', 'ACCESSIBILITY']
     }
 
     try:
-        r = requests.get(API_URL, params=params, timeout=45)
+        response = requests.get(endpoint, params=params, timeout=60)
         
-        # If the API key is invalid or URL is blocked, log it and return None
-        if r.status_code != 200:
-            print(f"Google PSI API returned {r.status_code}: {r.text}")
+        # This catches the "API key not valid" error specifically
+        if response.status_code == 400:
+            error_data = response.json()
+            logger.error(f"Google API rejected the key: {error_data.get('error', {}).get('message')}")
             return None
             
-        data = r.json()
-        # ... (Parsing logic for 'lab' and 'field' data)
-        return {"strategy": strategy, "lab": {}, "field": {}} # Simplified for brevity
+        response.raise_for_status()
+        return response.json()
+        
     except Exception as e:
-        print(f"Network error contacting Google PSI: {e}")
+        logger.error(f"Failed to fetch PSI data: {e}")
         return None
