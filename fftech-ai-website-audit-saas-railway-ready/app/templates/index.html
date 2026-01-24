@@ -1,9 +1,12 @@
 {% extends 'base.html' %}
 {% block content %}
+
 <div class="row">
+  <!-- Audit Section -->
   <div class="col-lg-7">
     <div class="card bg-body-tertiary mb-4 position-relative" id="auditCard">
-      <!-- Overlay -->
+      
+      <!-- Overlay (hidden by default) -->
       <div id="loadingOverlay" style="
            display:none;
            position:absolute;
@@ -24,6 +27,7 @@
       <div class="card-body">
         <h4 class="card-title">Open Access Audit</h4>
         <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
+
         <div class="input-group mb-3">
           <input id="openUrl" type="url" class="form-control" placeholder="https://example.com">
           <button id="btnOpenAudit" class="btn btn-primary">
@@ -45,6 +49,7 @@
           </div>
         </div>
 
+        <!-- Audit Results -->
         <div id="openResults" class="mt-3 d-none">
           <h6>Results</h6>
           <div class="row">
@@ -59,6 +64,7 @@
               <canvas id="breakdownChart" height="140"></canvas>
             </div>
           </div>
+
           <div class="mt-3">
             <h6>Details</h6>
             <ul class="list-group">
@@ -68,12 +74,15 @@
               <li class="list-group-item">Confidence: <span id="confidence">-</span></li>
             </ul>
           </div>
+
           <pre id="openJson" class="small mt-3 bg-light p-2 rounded d-none"></pre>
         </div>
+
       </div>
     </div>
   </div>
 
+  <!-- Passwordless Sign-in -->
   <div class="col-lg-5">
     <div class="card bg-body-tertiary mb-4">
       <div class="card-body">
@@ -95,8 +104,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+// Persistent chart instance
 let breakdownChartInstance = null;
 
+// Update the progress bar
 function updateProgress(percent) {
     const bar = document.getElementById('crawlProgressBar');
     bar.style.width = percent + '%';
@@ -135,7 +146,7 @@ async function runAudit(url) {
 
     try {
         const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
-        
+
         evtSource.onmessage = (e) => {
             const data = JSON.parse(e.data);
 
@@ -214,7 +225,7 @@ async function runAudit(url) {
     }
 }
 
-// Only trigger audit on button click
+// Trigger only when button is clicked
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
     const urlInput = document.getElementById('openUrl');
     const url = urlInput.value.trim();
@@ -222,4 +233,5 @@ document.getElementById('btnOpenAudit').addEventListener('click', () => {
     runAudit(url);
 });
 </script>
+
 {% endblock %}
