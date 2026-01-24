@@ -1,7 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="row">
-  <!-- Open Access Audit -->
   <div class="col-lg-7">
     <div class="card bg-body-tertiary mb-4">
       <div class="card-body">
@@ -9,7 +8,10 @@
         <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
         <div class="input-group mb-3">
           <input id="openUrl" type="url" class="form-control" placeholder="https://example.com">
-          <button id="btnOpenAudit" class="btn btn-primary">Audit</button>
+          <button id="btnOpenAudit" class="btn btn-primary">
+            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            <span id="btnText">Audit</span>
+          </button>
         </div>
         <div id="openResults" class="mt-3 d-none">
           <h6>Results</h6>
@@ -40,7 +42,6 @@
     </div>
   </div>
 
-  <!-- Passwordless Sign-in -->
   <div class="col-lg-5">
     <div class="card bg-body-tertiary mb-4">
       <div class="card-body">
@@ -62,8 +63,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+// Persistent variable to track the chart across multiple runs
+let breakdownChartInstance = null;
+
 async function runAudit(url) {
     const resultsDiv = document.getElementById('openResults');
+    const btn = document.getElementById('btnOpenAudit');
+    const btnText = document.getElementById('btnText');
+    const btnSpinner = document.getElementById('btnSpinner');
+
     const ovScore = document.getElementById('ovScore');
     const gradeEl = document.getElementById('grade');
     const onpageEl = document.getElementById('onpageScore');
@@ -72,7 +80,11 @@ async function runAudit(url) {
     const confEl = document.getElementById('confidence');
     const jsonPre = document.getElementById('openJson');
 
-    // Reset
+    // 1. Loading State: Reset UI and show spinner
+    btn.disabled = true;
+    btnText.textContent = 'Auditing...';
+    btnSpinner.classList.remove('d-none');
+    
     resultsDiv.classList.add('d-none');
     ovScore.textContent = gradeEl.textContent = onpageEl.textContent = perfEl.textContent =
     coverageEl.textContent = confEl.textContent = '-';
@@ -87,12 +99,12 @@ async function runAudit(url) {
 
         if (!response.ok) {
             const err = await response.json();
-            alert(err.detail || 'Audit failed');
-            return;
+            throw new Error(err.detail || 'Audit failed');
         }
 
         const data = await response.json();
 
+        // 2. Populate text fields from Python response
         ovScore.textContent = data.overall_score ?? '-';
         gradeEl.textContent = data.grade ?? '-';
         onpageEl.textContent = data.breakdown.onpage ?? '-';
@@ -103,10 +115,15 @@ async function runAudit(url) {
         jsonPre.textContent = JSON.stringify(data, null, 2);
         jsonPre.classList.remove('d-none');
 
-        // Chart
+        // 3. THE FIX: Handle the Chart.js instance correctly
         const ctx = document.getElementById('breakdownChart').getContext('2d');
-        if (window.breakdownChart) window.breakdownChart.destroy();
-        window.breakdownChart = new Chart(ctx, {
+        
+        // If a chart already exists, destroy it before creating a new one
+        if (breakdownChartInstance) {
+            breakdownChartInstance.destroy();
+        }
+
+        breakdownChartInstance = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: ['On-page', 'Performance', 'Coverage', 'Confidence'],
@@ -124,6 +141,8 @@ async function runAudit(url) {
                 }]
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: { y: { beginAtZero: true, max: 100 } },
                 plugins: { legend: { display: false } }
             }
@@ -131,12 +150,17 @@ async function runAudit(url) {
 
         resultsDiv.classList.remove('d-none');
     } catch (e) {
-        console.error(e);
-        alert('Error running audit. Check console for details.');
+        console.error("Client Error:", e);
+        alert(e.message || 'Error running audit. Check console for details.');
+    } finally {
+        // 4. Reset Button State
+        btn.disabled = false;
+        btnText.textContent = 'Audit';
+        btnSpinner.classList.add('d-none');
     }
 }
 
-// Run audit on button click
+// Event Listeners
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
     const urlInput = document.getElementById('openUrl');
     const url = urlInput.value.trim();
@@ -144,7 +168,6 @@ document.getElementById('btnOpenAudit').addEventListener('click', () => {
     runAudit(url);
 });
 
-// Optional: Run audit automatically if URL is pre-filled
 window.addEventListener('load', () => {
     const urlInput = document.getElementById('openUrl');
     if (urlInput.value.trim()) runAudit(urlInput.value.trim());
