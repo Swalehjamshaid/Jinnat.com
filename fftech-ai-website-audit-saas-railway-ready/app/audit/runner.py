@@ -3,28 +3,24 @@ import asyncio
 from typing import Any, Dict
 
 from app.audit.grader import compute_scores
-from app.audit.crawler import crawl  # Python-native async crawler
 
 async def crawl_site(url: str, max_pages: int = 3, timeout_total_s: int = 20) -> Dict[str, Any]:
     """
     Python-native crawl stub.
     Returns a dictionary compatible with compute_scores:
-    - pages: list of URLs
-    - broken_links: list of broken URLs
+    - pages: dict of URL -> HTML content
+    - broken_internal: list of broken internal links
     - errors: number of fetch errors
     """
-    # Simulate crawl delay
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(1.0)  # simulate crawl delay
 
-    # Example dummy data
-    pages_list = [f"{url}/page{i+1}" for i in range(max_pages)]
-    broken_links = []  # no broken links in stub
-    errors = 0  # no fetch errors
+    # Create dict of URL -> HTML placeholder
+    pages_dict = {f"{url}/page{i+1}": "<html></html>" for i in range(max_pages)}
 
     return {
-        "pages": pages_list,
-        "broken_links": broken_links,
-        "errors": errors
+        "pages": pages_dict,            # dict expected by compute_scores
+        "broken_internal": [],          # no broken links in stub
+        "errors": 0                     # no errors
     }
 
 async def run_audit(url: str) -> Dict[str, Any]:
@@ -36,20 +32,20 @@ async def run_audit(url: str) -> Dict[str, Any]:
     # Step 1: Crawl site
     crawl_result = await crawl_site(url=url, max_pages=3)
 
-    # Prepare crawl stats for compute_scores
+    # Step 2: Prepare crawl stats for grader
     crawl_stats = {
-        "pages": crawl_result.get("pages", []),
-        "broken_links": crawl_result.get("broken_links", []),
+        "pages": crawl_result.get("pages", {}),          # dict
+        "broken_links": crawl_result.get("broken_internal", []),
         "errors": crawl_result.get("errors", 0),
     }
 
-    # Step 2: Compute audit score (Python-only)
+    # Step 3: Compute audit score (Python-only)
     overall_score, grade, breakdown = compute_scores(
-        lighthouse=None,  # No PSI / AI metrics
+        lighthouse=None,  # no PSI/AI metrics
         crawl=crawl_stats
     )
 
-    # Step 3: Return structured result
+    # Step 4: Return structured result
     result = {
         "overall_score": overall_score,
         "grade": grade,
@@ -60,10 +56,8 @@ async def run_audit(url: str) -> Dict[str, Any]:
 
     return result
 
-# Example usage for testing
+# Test locally
 if __name__ == "__main__":
-    import asyncio
-
     async def test():
         res = await run_audit("https://example.com")
         print(res)
