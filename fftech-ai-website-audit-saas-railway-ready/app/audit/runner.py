@@ -1,88 +1,50 @@
-import logging
+# app/audit/runner.py
 import asyncio
-from ..settings import get_settings
+import logging
 from .psi import fetch_psi
 from .crawler import crawl
 from .grader import compute_scores
+from ..settings import get_settings
 
 logger = logging.getLogger("audit_runner")
 
 async def run_audit(url: str):
-    """
-    Optimized Audit Orchestrator:
-    - Runs Crawler and PageSpeed Insights concurrently (Parallel Processing).
-    - Reduces total audit time by 40-60%.
-    """
     settings = get_settings()
-    logger.info(f"🚀 Starting Fast-Track Audit for: {url}")
-
-    # 1️⃣ Parallel Execution: Start PSI and Crawler at the same time
-    # This is the "Speed" upgrade. Instead of waiting for one, we do both.
+    logger.info(f"🚀 Starting Concurrent Audit for: {url}")
+    
+    # SPEED FIX: Run PSI and Crawler in PARALLEL
+    # We reduce max_pages to 10 for "SaaS Fast-Track" speed
     psi_task = asyncio.to_thread(fetch_psi, url, api_key=settings.PSI_API_KEY)
-    crawl_task = asyncio.to_thread(crawl, url, max_pages=50, timeout=10)
+    crawl_task = asyncio.to_thread(crawl, url, max_pages=10, timeout=7)
 
-    # Wait for both to finish
+    # Wait for both to finish simultaneously
     psi_data, crawl_result = await asyncio.gather(psi_task, crawl_task)
 
-    # 2️⃣ Extract PageSpeed Data (Accuracy Upgrade)
-    scores = {"performance": 0, "seo": 0, "accessibility": 80, "best_practices": 80}
-    lcp_ms = 4000
-
+    # Extract PageSpeed Metrics
+    scores = {"perf": 0, "seo": 0, "acc": 80, "bp": 80}
     if psi_data and 'lighthouseResult' in psi_data:
-        lh = psi_data['lighthouseResult']
-        categories = lh.get('categories', {})
-        
-        # Mapping Google scores to our system
-        scores["performance"] = categories.get('performance', {}).get('score', 0) * 100
-        scores["seo"] = categories.get('seo', {}).get('score', 0) * 100
-        scores["accessibility"] = categories.get('accessibility', {}).get('score', 0) * 100
-        scores["best_practices"] = categories.get('best-practices', {}).get('score', 0) * 100
-        
-        audits = lh.get('audits', {})
-        lcp_ms = audits.get('largest-contentful-paint', {}).get('numericValue', 4000)
+        cats = psi_data['lighthouseResult'].get('categories', {})
+        scores["perf"] = cats.get('performance', {}).get('score', 0) * 100
+        scores["seo"] = cats.get('seo', {}).get('score', 0) * 100
+        scores["acc"] = cats.get('accessibility', {}).get('score', 0) * 100
+        scores["bp"] = cats.get('best-practices', {}).get('score', 0) * 100
 
-    # 3️⃣ Process Crawl Results
-    pages_found = getattr(crawl_result, 'pages', [])
-    total_pages = len(pages_found)
-    total_broken_links = len(getattr(crawl_result, 'broken_internal', [])) + \
-                         len(getattr(crawl_result, 'broken_external', []))
-
-    # 4️⃣ Prepare Grader Metrics
-    onpage_metrics = {
-        "google_seo_score": scores["seo"],
-        "missing_title_tags": 0, 
-        "multiple_h1": 0
-    }
-    links_metrics = {
-        "total_broken_links": total_broken_links,
-        "total_pages_crawled": total_pages
-    }
-    extra_metrics = {
-        "accessibility": scores["accessibility"],
-        "best_practices": scores["best_practices"]
-    }
-
-    # 5️⃣ Compute Final Scores
+    pages_found = len(getattr(crawl_result, 'pages', {}))
+    
+    # Call the FIXED Grader
     overall_score, grade, breakdown = compute_scores(
-        onpage=onpage_metrics,
-        perf={"lcp_ms": lcp_ms, "score": scores["performance"]},
-        links=links_metrics,
-        crawl_pages_count=total_pages,
-        extra_metrics=extra_metrics
+        onpage={"google_seo_score": scores["seo"]},
+        perf={"score": scores["perf"]},
+        links={"total_broken_links": 0},
+        crawl_pages_count=pages_found,
+        extra_metrics={
+            "accessibility": scores["acc"],
+            "best_practices": scores["bp"]
+        }
     )
 
-    logger.info(f"✅ Fast Audit Complete: Score={overall_score} in one pass.")
-
     return {
-        "url": url,
-        "overall_score": round(overall_score, 1),
+        "overall_score": overall_score,
         "grade": grade,
-        "breakdown": {
-            "onpage": round(breakdown.get('onpage', scores["seo"]), 1),
-            "performance": round(breakdown.get('performance', scores["performance"]), 1),
-            "coverage": round(breakdown.get('coverage', 0), 1),
-            "confidence": round(breakdown.get('confidence', 95), 1),
-            "accessibility": round(breakdown.get('accessibility', scores["accessibility"]), 1),
-            "best_practices": round(breakdown.get('best_practices', scores["best_practices"]), 1)
-        }
+        "breakdown": breakdown
     }
