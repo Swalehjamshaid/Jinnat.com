@@ -1,3 +1,5 @@
+# app/app/main.py
+
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -5,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 import asyncio
 import json
 import logging
+import os
 
 from app.audit.grader import compute_scores
 from app.audit.psi import fetch_lighthouse
@@ -17,6 +20,11 @@ app = FastAPI(title="FF Tech Audit")
 # Static files & templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+# Load PSI API key from environment (do not expose to frontend)
+PSI_API_KEY = os.getenv("PSI_API_KEY")
+if not PSI_API_KEY:
+    logger.warning("PSI_API_KEY not set! Audits will fail.")
 
 
 # -----------------------------
@@ -31,10 +39,7 @@ async def home(request: Request):
 # SSE OPEN AUDIT PROGRESS API
 # -----------------------------
 @app.get("/api/open-audit-progress")
-async def open_audit_progress(
-    url: str = Query(..., description="Website URL to audit"),
-    api_key: str = Query(..., description="Google PSI API key")
-):
+async def open_audit_progress(url: str = Query(..., description="Website URL to audit")):
     """
     Server-Sent Events endpoint.
     Async and fast world-class audit.
@@ -42,45 +47,40 @@ async def open_audit_progress(
 
     async def event_stream():
         try:
-            # ---- Start async crawl ----
+            if not PSI_API_KEY:
+                yield f"data: {json.dumps({'finished': True, 'error': 'PSI API key not configured'})}\n\n"
+                return
+
+            # ---- Start async crawl and Lighthouse fetch ----
             crawl_task = asyncio.create_task(crawl(url, max_pages=15))
+            psi_task = asyncio.to_thread(fetch_lighthouse, url, PSI_API_KEY)
 
-            # ---- Start Lighthouse fetch ----
-            psi_task = asyncio.to_thread(fetch_lighthouse, url, api_key)
-
-            total_steps = 2
-            progress = 0
-
-            # ---- Progress: start ----
+            # ---- Report initial progress ----
             yield f"data: {json.dumps({'crawl_progress': 0.0})}\n\n"
 
             # ---- Await tasks concurrently ----
             crawl_result, psi_result = await asyncio.gather(crawl_task, psi_task)
 
-            progress = 1.0
-            yield f"data: {json.dumps({'crawl_progress': progress})}\n\n"
-
-            # ---- Compute final audit score ----
-            # Crawl stats for grader
+            # ---- Crawl stats for grader ----
             crawl_stats = {
                 "pages": len(crawl_result.pages),
                 "broken_links": len(crawl_result.broken_internal),
                 "errors": crawl_result.status_counts.get(0, 0),
             }
 
+            # ---- Compute final audit score ----
             overall_score, grade, breakdown = compute_scores(
                 lighthouse=psi_result,
                 crawl=crawl_stats
             )
 
-            # ---- Final payload ----
+            # ---- Send final payload ----
             final_payload = {
                 "finished": True,
                 "overall_score": overall_score,
                 "grade": grade,
                 "breakdown": breakdown
             }
-
             yield f"data: {json.dumps(final_payload)}\n\n"
 
         except Exception as e:
