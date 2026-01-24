@@ -4,31 +4,49 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# FIX: Add api_key=None to the arguments list here
-def fetch_psi(url: str, strategy: str = 'mobile', api_key: str = None):
-    # If no key is passed, try to get it from settings as a fallback
+def fetch_psi(url: str, strategy: str = 'desktop', api_key: str = None):
+    """
+    World-Class PSI Fetcher:
+    - Requests all 4 major Lighthouse categories.
+    - Handles API key security and timeouts.
+    """
+    # Fallback to settings if key isn't passed directly
     if not api_key:
         from ..settings import get_settings
         api_key = get_settings().PSI_API_KEY
     
     if not api_key:
-        logger.error("No API Key provided for PageSpeed Insights")
+        logger.error("❌ No API Key found. Audit cannot proceed.")
         return None
 
     endpoint = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+    
+    # NEW: We now request all categories to populate the World-Class Dashboard
     params = {
         'url': url, 
         'key': api_key, 
         'strategy': strategy,
-        'category': 'PERFORMANCE'
+        'category': [
+            'PERFORMANCE',
+            'SEO',
+            'ACCESSIBILITY',
+            'BEST_PRACTICES'
+        ]
     }
 
     try:
-        response = requests.get(endpoint, params=params, timeout=30)
+        # Increase timeout to 60s because requesting 4 categories takes longer
+        response = requests.get(endpoint, params=params, timeout=60)
+        
         if response.status_code != 200:
-            logger.error(f"Google API Error: {response.text}")
+            logger.error(f"❌ Google API Error {response.status_code}: {response.text}")
             return None
+            
         return response.json()
+
+    except requests.exceptions.Timeout:
+        logger.error(f"⏳ PSI Request timed out for {url}")
+        return None
     except Exception as e:
-        logger.error(f"PSI Request failed: {e}")
+        logger.error(f"❌ PSI Request failed: {e}")
         return None
