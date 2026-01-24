@@ -1,4 +1,5 @@
 # app/app/main.py
+
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,8 +9,8 @@ import json
 import logging
 
 from app.audit.grader import compute_scores
-from app.audit.psi import fetch_lighthouse
-from app.audit.crawler import crawl  # Make sure crawl is async
+from app.audit.crawler import crawl  # Python-only async crawler
+from app.audit.psi import python_library_audit  # Python-only pre-audit metrics
 
 logger = logging.getLogger("audit_engine")
 logging.basicConfig(level=logging.INFO)
@@ -35,64 +36,40 @@ async def home(request: Request):
 @app.get("/api/open-audit-progress")
 async def open_audit_progress(
     url: str = Query(..., description="Website URL to audit"),
-    api_key: str = Query(None, description="Google PSI API key, optional")
 ):
     """
     Server-Sent Events endpoint for async audit.
-    Python audit runs first; Google PSI fetch is optional.
+    Fully Python-based:
+      1. Crawl
+      2. Local audit scoring
     """
 
     async def event_stream():
         try:
-            # -----------------------------
-            # Step 1: Crawl the website (Python-only)
-            # -----------------------------
-            yield f"data: {json.dumps({'crawl_progress': 0, 'psi_progress': 0, 'status': 'Starting Python audit...'})}\n\n"
+            # Step 1: Start Python pre-audit
+            yield f"data: {json.dumps({'crawl_progress': 0, 'status': 'Starting Python audit...'})}\n\n"
 
+            # Run Python pre-audit (head request + static checks)
+            pre_audit_metrics = python_library_audit(url)
+
+            # Step 2: Crawl the website
             crawl_result = await crawl(url, max_pages=15)
 
-            # Prepare crawl stats
             crawl_stats = {
                 "pages": len(crawl_result.pages),
                 "broken_links": len(crawl_result.broken_internal),
                 "errors": crawl_result.status_counts.get(0, 0),
             }
 
-            yield f"data: {json.dumps({'crawl_progress': 100, 'psi_progress': 0, 'status': 'Python audit complete'})}\n\n"
+            yield f"data: {json.dumps({'crawl_progress': 50, 'status': 'Python crawl complete'})}\n\n"
 
-            # -----------------------------
-            # Step 2: Compute local audit score (Python only)
-            # -----------------------------
+            # Step 3: Compute final audit score (Python-only)
             overall_score, grade, breakdown = compute_scores(
-                lighthouse=None,  # PSI not yet fetched
+                lighthouse=pre_audit_metrics,  # Pre-audit metrics used
                 crawl=crawl_stats
             )
 
-            # Yield intermediate results
-            yield f"data: {json.dumps({'crawl_progress': 100, 'psi_progress': 0, 'overall_score': overall_score, 'grade': grade, 'breakdown': breakdown, 'finished': False})}\n\n"
-
-            # -----------------------------
-            # Step 3: Optional Google PSI / AI audit
-            # -----------------------------
-            if api_key:
-                psi_result = await fetch_lighthouse(url, api_key)
-                # Merge PSI results into breakdown
-                overall_score, grade, breakdown = compute_scores(
-                    lighthouse=psi_result,
-                    crawl=crawl_stats
-                )
-
-            # -----------------------------
-            # Step 4: Final payload
-            # -----------------------------
-            final_payload = {
-                "finished": True,
-                "overall_score": overall_score,
-                "grade": grade,
-                "breakdown": breakdown,
-            }
-
-            yield f"data: {json.dumps(final_payload)}\n\n"
+            yield f"data: {json.dumps({'crawl_progress': 100, 'overall_score': overall_score, 'grade': grade, 'breakdown': breakdown, 'finished': True})}\n\n"
 
         except Exception as e:
             logger.exception(f"Audit failed for {url}")
