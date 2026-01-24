@@ -1,4 +1,3 @@
-
 # app/audit/grader.py
 from typing import Dict, Tuple, Optional
 
@@ -10,6 +9,7 @@ GRADE_BANDS = (
     (0,  "D"),
 )
 
+# Default weights for each component
 WEIGHTS = {
     "performance": 0.35,
     "seo": 0.30,
@@ -26,36 +26,38 @@ def clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
 
 
 def grade(score: float) -> str:
-    for c, g in GRADE_BANDS:
-        if score >= c:
-            return g
+    for cutoff, letter in GRADE_BANDS:
+        if score >= cutoff:
+            return letter
     return "D"
 
 
-def _opt_clamp(v: Optional[float]) -> Optional[float]:
+def _safe_clamp(v: Optional[float]) -> Optional[float]:
     return None if v is None else clamp(v)
 
 
 def compute_scores(
     lighthouse: Dict[str, Optional[float]],
     crawl: Dict[str, int],
-) -> Tuple[float, str, Dict[str, float]]:
+) -> Tuple[float, str, Dict[str, Optional[float]]]:
     """
-    Computes the audit score from Lighthouse (may be partial) and crawl stats.
-      lighthouse: {
-        performance?, seo?, accessibility?, best_practices?,
-        lcp?, cls?
-      }
-      crawl: { pages, broken_links, errors }
+    Computes a world-class website audit score.
+    Inputs:
+      - lighthouse: Lighthouse/PageSpeed Insights metrics (performance, seo, accessibility, best_practices, lcp, cls)
+      - crawl: { pages, broken_links, errors }
     Returns:
-      overall (0..100), letter grade, breakdown dict
+      - overall (0..100)
+      - letter grade
+      - detailed breakdown for dashboards
     """
 
-    # --- Lighthouse Scores (allow None) ---
-    perf = _opt_clamp(lighthouse.get("performance"))
-    seo  = _opt_clamp(lighthouse.get("seo"))
-    acc  = _opt_clamp(lighthouse.get("accessibility"))
-    bp   = _opt_clamp(lighthouse.get("best_practices"))
+    # --- Extract & clamp Lighthouse metrics ---
+    perf = _safe_clamp(lighthouse.get("performance"))
+    seo  = _safe_clamp(lighthouse.get("seo"))
+    acc  = _safe_clamp(lighthouse.get("accessibility"))
+    bp   = _safe_clamp(lighthouse.get("best_practices"))
+    lcp  = lighthouse.get("lcp")  # seconds
+    cls  = lighthouse.get("cls")  # unitless
 
     # --- Coverage ---
     pages = max(0, crawl.get("pages", 0))
@@ -65,38 +67,34 @@ def compute_scores(
     tech_vals = [v for v in (acc, bp) if v is not None]
     tech = sum(tech_vals) / len(tech_vals) if tech_vals else 0.0
 
-    # --- Stability (CLS + LCP penalties) ---
-    lcp = lighthouse.get("lcp")  # seconds
-    cls = lighthouse.get("cls")  # unitless
+    # --- Stability (penalties for LCP and CLS) ---
     lcp_penalty = 0 if (lcp is None or lcp <= 2.5) else min(20, lcp * 3)
     cls_penalty = 0 if (cls is None or cls <= 0.1) else min(20, cls * 100)
     stability = clamp(100 - lcp_penalty - cls_penalty)
 
     # --- Weighted Score (ignore missing components proportionally) ---
-    components = []
-    weights = []
+    components, weights = [], []
 
     if perf is not None:
         components.append(perf); weights.append(WEIGHTS["performance"])
     if seo is not None:
         components.append(seo); weights.append(WEIGHTS["seo"])
 
-    components.append(coverage); weights.append(WEIGHTS["coverage"])
-    components.append(tech);     weights.append(WEIGHTS["technical"])
-    components.append(stability);weights.append(WEIGHTS["stability"])
+    # Coverage, Technical, Stability are always included
+    components.extend([coverage, tech, stability])
+    weights.extend([WEIGHTS["coverage"], WEIGHTS["technical"], WEIGHTS["stability"]])
 
+    weighted_sum = sum(c * w for c, w in zip(components, weights))
     wsum = sum(weights) if weights else 1.0
-    weighted = sum(c * w for c, w in zip(components, weights)) / wsum
-    overall = clamp(weighted)
+    overall = clamp(weighted_sum / wsum)
 
     # --- Penalties from crawl ---
     broken_penalty = min(15, max(0, crawl.get("broken_links", 0)) * 2)
     error_penalty  = min(20, max(0, crawl.get("errors", 0)) * 5)
-
     overall = clamp(round(overall - broken_penalty - error_penalty, 1))
 
-    # --- Breakdown for dashboard/chart ---
-    breakdown = {
+    # --- Detailed breakdown ---
+    breakdown: Dict[str, Optional[float]] = {
         "performance": round(perf, 1) if perf is not None else None,
         "seo": round(seo, 1) if seo is not None else None,
         "coverage": round(coverage, 1),
@@ -111,8 +109,7 @@ def compute_scores(
             "best_practices": bp is None,
             "lcp": lcp is None,
             "cls": cls is None,
-        },
-        # Removed pseudo-random "confidence" — makes results deterministic and honest.
+        }
     }
 
     return overall, grade(overall), breakdown
