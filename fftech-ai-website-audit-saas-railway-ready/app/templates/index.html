@@ -95,10 +95,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// Persistent variable to track the chart across multiple runs
 let breakdownChartInstance = null;
 
-// Update the progress bar
 function updateProgress(percent) {
     const bar = document.getElementById('crawlProgressBar');
     bar.style.width = percent + '%';
@@ -216,14 +214,12 @@ async function runAudit(url) {
     }
 }
 
-// Event listener: only triggers when button is clicked
+// Only trigger audit on button click
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
     const urlInput = document.getElementById('openUrl');
     const url = urlInput.value.trim();
     if (!url || !url.startsWith('http')) return alert('Please enter a valid URL (http/https)');
     runAudit(url);
 });
-
-// Removed automatic audit on page load
 </script>
 {% endblock %}
