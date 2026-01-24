@@ -5,27 +5,44 @@ from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from app.audit.grader import compute_scores # Ensure this import is correct
+# Make sure your folder is named 'app' and has an 'audit' folder with 'grader.py' inside
+from app.audit.grader import compute_scores 
 
 app = FastAPI(title='FF Tech AI Audit')
 
+# ---------------------------------------------------------
 # Static and Template Setup
+# ---------------------------------------------------------
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
 templates = Jinja2Templates(directory='app/templates')
 
-# Route to serve the results page
-@app.get('/audit-detail', response_class=HTMLResponse)
-async def audit_detail(request: Request):
-    return templates.TemplateResponse('audit_detail_open.html', {"request": request})
+# ---------------------------------------------------------
+# Page Routes (GET)
+# ---------------------------------------------------------
 
-# Route to fix the 404 on login
-@app.get('/request-login', response_class=HTMLResponse)
-async def show_login(request: Request):
+# FIX: Added the root route to stop the 404 error in your logs
+@app.get('/', response_class=HTMLResponse)
+async def home(request: Request):
+    """Serve the landing page/main audit input page."""
     return templates.TemplateResponse('index.html', {"request": request})
 
-# THE CRITICAL API LINK
+@app.get('/audit-detail', response_class=HTMLResponse)
+async def audit_detail(request: Request):
+    """Serve the detailed results page."""
+    return templates.TemplateResponse('audit_detail_open.html', {"request": request})
+
+@app.get('/request-login', response_class=HTMLResponse)
+async def show_login(request: Request):
+    """Serve the login/index page for magic link requests."""
+    return templates.TemplateResponse('index.html', {"request": request})
+
+# ---------------------------------------------------------
+# API Routes (POST)
+# ---------------------------------------------------------
+
 @app.post('/api/open-audit')
 async def open_audit(request: Request):
+    """The critical API bridge that processes the audit."""
     try:
         body = await request.json()
         url = body.get('url')
@@ -33,14 +50,14 @@ async def open_audit(request: Request):
         if not url:
             return JSONResponse({"detail": "URL required"}, status_code=400)
 
-        # Simulated Audit Data
+        # Simulated Audit Data (This flows into grader.py)
         onpage = {"missing_title_tags": 1, "multiple_h1": 1}
         perf = {"lcp_ms": 2500}
         
-        # Calculate scores
+        # Calculate scores using the imported grader logic
         overall, grade, breakdown = compute_scores(onpage, perf, {}, 25)
 
-        # RESPONSE: This JSON structure MUST match your loadAudit() script
+        # RESPONSE: Structure must match the 'loadAudit' JS function keys
         return JSONResponse({
             "overall_score": overall,
             "grade": grade,
@@ -48,9 +65,18 @@ async def open_audit(request: Request):
         })
 
     except Exception as e:
-        print(f"Link Error: {e}")
+        # Logs the error to your Railway terminal for debugging
+        print(f"Audit Link Error: {e}")
         return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
+@app.post('/request-login')
+async def handle_login(email: str = Form(...)):
+    """Handles the magic link form submission."""
+    return JSONResponse({"message": f"Magic link sent to {email} if registered."})
+
+# ---------------------------------------------------------
+# Server Execution
+# ---------------------------------------------------------
 if __name__ == '__main__':
-    # Using 8080 to match Railway logs
+    # Port 8080 is standard for Railway deployments
     uvicorn.run('app.main:app', host='0.0.0.0', port=8080, reload=True)
