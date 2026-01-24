@@ -35,46 +35,55 @@ async def home(request: Request):
 @app.get("/api/open-audit-progress")
 async def open_audit_progress(
     url: str = Query(..., description="Website URL to audit"),
-    api_key: str = Query(..., description="Google PSI API key")
+    api_key: str = Query(None, description="Google PSI API key, optional")
 ):
     """
     Server-Sent Events endpoint for async audit.
-    Uses async crawler + async Lighthouse fetch.
+    Python audit runs first; Google PSI fetch is optional.
     """
 
     async def event_stream():
         try:
             # -----------------------------
-            # Start async crawl and Lighthouse fetch concurrently
+            # Step 1: Crawl the website (Python-only)
             # -----------------------------
-            crawl_task = asyncio.create_task(crawl(url, max_pages=15))
-            psi_task = asyncio.create_task(fetch_lighthouse(url, api_key))
+            yield f"data: {json.dumps({'crawl_progress': 0, 'psi_progress': 0, 'status': 'Starting Python audit...'})}\n\n"
 
-            progress = 0
-            yield f"data: {json.dumps({'crawl_progress': progress})}\n\n"
+            crawl_result = await crawl(url, max_pages=15)
 
-            # Gather results
-            crawl_result, psi_result = await asyncio.gather(crawl_task, psi_task)
-
-            # -----------------------------
-            # Crawl stats for grader
-            # -----------------------------
+            # Prepare crawl stats
             crawl_stats = {
                 "pages": len(crawl_result.pages),
                 "broken_links": len(crawl_result.broken_internal),
                 "errors": crawl_result.status_counts.get(0, 0),
             }
 
+            yield f"data: {json.dumps({'crawl_progress': 100, 'psi_progress': 0, 'status': 'Python audit complete'})}\n\n"
+
             # -----------------------------
-            # Compute final audit score
+            # Step 2: Compute local audit score (Python only)
             # -----------------------------
             overall_score, grade, breakdown = compute_scores(
-                lighthouse=psi_result,
+                lighthouse=None,  # PSI not yet fetched
                 crawl=crawl_stats
             )
 
+            # Yield intermediate results
+            yield f"data: {json.dumps({'crawl_progress': 100, 'psi_progress': 0, 'overall_score': overall_score, 'grade': grade, 'breakdown': breakdown, 'finished': False})}\n\n"
+
             # -----------------------------
-            # Final payload
+            # Step 3: Optional Google PSI / AI audit
+            # -----------------------------
+            if api_key:
+                psi_result = await fetch_lighthouse(url, api_key)
+                # Merge PSI results into breakdown
+                overall_score, grade, breakdown = compute_scores(
+                    lighthouse=psi_result,
+                    crawl=crawl_stats
+                )
+
+            # -----------------------------
+            # Step 4: Final payload
             # -----------------------------
             final_payload = {
                 "finished": True,
