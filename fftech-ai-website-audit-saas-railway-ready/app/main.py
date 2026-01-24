@@ -1,13 +1,16 @@
-# app/app/main.py
-
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import time
+import asyncio
 import json
+import logging
 
 from app.audit.grader import compute_scores
+from app.audit.psi import fetch_lighthouse
+from app.audit.crawler import crawl
+
+logger = logging.getLogger("audit_engine")
 
 app = FastAPI(title="FF Tech Audit")
 
@@ -20,7 +23,7 @@ templates = Jinja2Templates(directory="app/templates")
 # HOME PAGE
 # -----------------------------
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
+async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
@@ -28,47 +31,49 @@ def home(request: Request):
 # SSE OPEN AUDIT PROGRESS API
 # -----------------------------
 @app.get("/api/open-audit-progress")
-def open_audit_progress(
-    url: str = Query(..., description="Website URL to audit")
+async def open_audit_progress(
+    url: str = Query(..., description="Website URL to audit"),
+    api_key: str = Query(..., description="Google PSI API key")
 ):
     """
     Server-Sent Events endpoint.
-    Matches frontend EventSource EXACTLY.
+    Async and fast world-class audit.
     """
 
-    def event_stream():
+    async def event_stream():
         try:
-            # ---- Simulated crawl progress ----
-            for i in range(1, 6):
-                progress = i / 5
-                yield f"data: {json.dumps({'crawl_progress': progress})}\n\n"
-                time.sleep(0.6)
+            # ---- Start async crawl ----
+            crawl_task = asyncio.create_task(crawl(url, max_pages=15))
 
-            # ---- Mock audit inputs (replace later with real crawler) ----
-            onpage = {
-                "missing_title_tags": 1,
-                "multiple_h1": 0
+            # ---- Start Lighthouse fetch ----
+            psi_task = asyncio.to_thread(fetch_lighthouse, url, api_key)
+
+            total_steps = 2
+            progress = 0
+
+            # ---- Progress: start ----
+            yield f"data: {json.dumps({'crawl_progress': 0.0})}\n\n"
+
+            # ---- Await tasks concurrently ----
+            crawl_result, psi_result = await asyncio.gather(crawl_task, psi_task)
+
+            progress = 1.0
+            yield f"data: {json.dumps({'crawl_progress': progress})}\n\n"
+
+            # ---- Compute final audit score ----
+            # Crawl stats for grader
+            crawl_stats = {
+                "pages": len(crawl_result.pages),
+                "broken_links": len(crawl_result.broken_internal),
+                "errors": crawl_result.status_counts.get(0, 0),
             }
 
-            perf = {
-                "lcp_ms": 2800
-            }
-
-            links = {
-                "total_broken_links": 2
-            }
-
-            crawl_pages_count = 32
-
-            # ---- Call your EXISTING grader.py ----
             overall_score, grade, breakdown = compute_scores(
-                onpage=onpage,
-                perf=perf,
-                links=links,
-                crawl_pages_count=crawl_pages_count
+                lighthouse=psi_result,
+                crawl=crawl_stats
             )
 
-            # ---- Final payload (STRICT frontend contract) ----
+            # ---- Final payload ----
             final_payload = {
                 "finished": True,
                 "overall_score": overall_score,
@@ -79,6 +84,7 @@ def open_audit_progress(
             yield f"data: {json.dumps(final_payload)}\n\n"
 
         except Exception as e:
+            logger.exception(f"Audit failed for {url}")
             error_payload = {
                 "finished": True,
                 "error": str(e)
@@ -99,5 +105,5 @@ def open_audit_progress(
 # HEALTH CHECK
 # -----------------------------
 @app.get("/healthz")
-def healthz():
+async def healthz():
     return {"status": "ok"}
