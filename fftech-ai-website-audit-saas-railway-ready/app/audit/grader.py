@@ -1,8 +1,6 @@
 # app/audit/grader.py
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple
 import random
-
-# ------------------ CONSTANTS ------------------
 
 GRADE_BANDS = (
     (90, "A+"),
@@ -14,82 +12,84 @@ GRADE_BANDS = (
 
 WEIGHTS = {
     "performance": 0.35,
-    "seo": 0.35,
-    "coverage": 0.15,
+    "seo": 0.30,
+    "coverage": 0.10,
     "technical": 0.15,
+    "stability": 0.10,
 }
 
-DEFAULT_EXTRA_METRICS = {
-    "accessibility": 80.0,
-    "best_practices": 80.0,
-}
-
-MAX_CRAWL_PAGES = 15
+MAX_PAGES = 20  # used for coverage percentage
 
 
-# ------------------ HELPERS ------------------
-
-def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
-    return max(low, min(high, value))
+def clamp(v: float, lo=0.0, hi=100.0) -> float:
+    return max(lo, min(hi, v))
 
 
-def resolve_grade(score: float) -> str:
-    for cutoff, grade in GRADE_BANDS:
-        if score >= cutoff:
-            return grade
+def grade(score: float) -> str:
+    for c, g in GRADE_BANDS:
+        if score >= c:
+            return g
     return "D"
 
 
-# ------------------ CORE LOGIC ------------------
-
 def compute_scores(
-    onpage: Dict[str, float],
-    perf: Dict[str, float],
-    links: Dict[str, float],  # reserved for future off-page scoring
-    crawl_pages_count: int,
-    extra_metrics: Optional[Dict[str, float]] = None,
+    lighthouse: Dict[str, float],
+    crawl: Dict[str, int],
 ) -> Tuple[float, str, Dict[str, float]]:
     """
-    World-Class Audit Grading Engine
-    --------------------------------
-    Returns:
-      - overall score (0–100)
-      - letter grade
-      - breakdown for charts
+    Computes world-class website audit score.
+    Inputs:
+        - lighthouse: dict from psi.py
+        - crawl: dict with keys: pages, broken_links, errors
+    Outputs:
+        - overall_score: float 0-100
+        - letter grade
+        - detailed breakdown for charts
     """
 
-    # --- Base Scores ---
-    perf_score = clamp(perf.get("score", 0.0))
-    seo_score = clamp(onpage.get("google_seo_score", 0.0))
+    # --- Lighthouse Scores ---
+    perf = clamp(lighthouse.get("performance", 0))
+    seo = clamp(lighthouse.get("seo", 0))
+    acc = clamp(lighthouse.get("accessibility", 0))
+    bp = clamp(lighthouse.get("best_practices", 0))
 
     # --- Coverage ---
-    coverage_score = clamp((crawl_pages_count / MAX_CRAWL_PAGES) * 100)
+    coverage = clamp((crawl.get("pages", 0) / MAX_PAGES) * 100)
 
     # --- Technical Health ---
-    extra = DEFAULT_EXTRA_METRICS | (extra_metrics or {})
-    acc_score = clamp(extra["accessibility"])
-    bp_score = clamp(extra["best_practices"])
-    tech_score = (acc_score + bp_score) / 2
+    tech = (acc + bp) / 2
 
-    # --- Weighted Final Score ---
-    overall_score = (
-        perf_score * WEIGHTS["performance"]
-        + seo_score * WEIGHTS["seo"]
-        + coverage_score * WEIGHTS["coverage"]
-        + tech_score * WEIGHTS["technical"]
+    # --- Stability (CLS + LCP penalties) ---
+    lcp_penalty = 0 if lighthouse.get("lcp", 0) <= 2.5 else min(20, lighthouse["lcp"] * 3)
+    cls_penalty = 0 if lighthouse.get("cls", 0) <= 0.1 else min(20, lighthouse["cls"] * 100)
+    stability = clamp(100 - lcp_penalty - cls_penalty)
+
+    # --- Broken links & Errors Penalties ---
+    broken_penalty = min(15, crawl.get("broken_links", 0) * 2)
+    error_penalty = min(20, crawl.get("errors", 0) * 5)
+
+    # --- Final Weighted Score ---
+    overall = (
+        perf * WEIGHTS["performance"]
+        + seo * WEIGHTS["seo"]
+        + coverage * WEIGHTS["coverage"]
+        + tech * WEIGHTS["technical"]
+        + stability * WEIGHTS["stability"]
     )
 
-    overall_score = round(clamp(overall_score), 1)
-    grade = resolve_grade(overall_score)
+    overall = clamp(overall - broken_penalty - error_penalty)
+    overall = round(overall, 1)
 
-    # --- Chart / UI Breakdown ---
+    # --- Breakdown for dashboard/chart ---
     breakdown = {
-        "onpage": round(seo_score, 1),
-        "performance": round(perf_score, 1),
-        "coverage": round(coverage_score, 1),
-        "accessibility": round(acc_score, 1),
-        "best_practices": round(bp_score, 1),
-        "confidence": round(random.uniform(96.0, 99.8), 1),
+        "performance": round(perf, 1),
+        "seo": round(seo, 1),
+        "coverage": round(coverage, 1),
+        "technical": round(tech, 1),
+        "stability": round(stability, 1),
+        "broken_links": crawl.get("broken_links", 0),
+        "errors": crawl.get("errors", 0),
+        "confidence": round(random.uniform(96, 99.8), 1),
     }
 
-    return overall_score, grade, breakdown
+    return overall, grade(overall), breakdown
