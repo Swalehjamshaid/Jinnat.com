@@ -1,9 +1,7 @@
 # app/models.py
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, text
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
-from datetime import datetime
 from .db import Base
 
 # Enhanced JSON logic: JSONB for Railway (Postgres), Standard JSON for local (SQLite)
@@ -31,11 +29,15 @@ class Audit(Base):
     """Stores the complete results of a website audit."""
     __tablename__ = 'audits'
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=True) # Nullable for guest audits
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True) 
     url = Column(String(2048), nullable=False)
     
-    # FIX: Explicitly allow null status to stop the NotNullViolation error in your logs
+    # FIX 1: Allow null status to stop NotNullViolation
     status = Column(String(50), nullable=True, server_default=text("'completed'"))
+    
+    # FIX 2: Added score column as nullable. 
+    # This prevents the DB from crashing when your code sends no score.
+    score = Column(Integer, nullable=True) 
     
     created_at = Column(DateTime, server_default=func.now())
     
