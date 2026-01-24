@@ -1,118 +1,113 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+
+# app/api/routes.py
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
+import asyncio
+from typing import Dict, Any
+from contextlib import suppress
+import json
 import logging
-import tempfile
 
-# ABSOLUTE IMPORTS
-from app.db import get_db
-from app.models import User, Audit
-from app.schemas import AuditCreate, OpenAuditRequest, AuditOut
-from app.audit.runner import run_audit
-from app.audit.report import build_pdf
-from app.auth.tokens import decode_token
+logger = logging.getLogger("FFTech_Production")
+router = APIRouter()
 
-router = APIRouter(prefix='/api', tags=['api'])
+# In-memory job registry. For production, prefer Redis.
+_jobs: Dict[str, Dict[str, Any]] = {}
 
-# Configure logger
-logger = logging.getLogger("audit_api")
+def json_dumps(obj) -> str:
+    """Compact JSON for SSE."""
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
 
-
-def get_current_user(request: Request, db: Session) -> User | None:
+# ====== Replace this with your real logic in audit_runner if you have it ====== #
+# You can import your own runner and call it from here.
+async def run_audit_and_emit(url: str, queue: asyncio.Queue):
     """
-    Get the current user from the session cookie.
+    Start the audit for a URL and push progress updates + final result to `queue`.
+    This is a safe template; replace the simulated sections with real steps.
+    Make sure your real network calls have timeouts.
     """
-    token = request.cookies.get('session')
-    if not token:
-        return None
-    payload = decode_token(token)
-    if not payload:
-        return None
-    email = payload.get('sub')
-    return db.query(User).filter(User.email == email).first()
-
-
-@router.post('/open-audit')
-async def open_audit(body: OpenAuditRequest, request: Request):
-    """
-    Open audit endpoint without rate limiting.
-    Returns audit result JSON.
-    """
-    try:
-        result = await run_audit(body.url)
-        return result
-    except Exception as e:
-        logger.error(f"Open audit failed for URL {body.url}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to run audit")
-
-
-@router.post('/audit', response_model=AuditOut)
-async def create_audit(body: AuditCreate, request: Request, db: Session = Depends(get_db)):
-    """
-    Authenticated audit creation with DB save.
-    Returns saved audit object.
-    """
-    user = get_current_user(request, db)
-    if not user or not user.is_verified:
-        raise HTTPException(401, 'Authentication required')
+    async def emit_progress(pct: int, status: str = None):
+        payload = {"crawl_progress": pct / 100}
+        if status:
+            payload["status"] = status
+        await queue.put(payload)
 
     try:
-        # Run audit
-        result = await run_audit(body.url)
-    except Exception as e:
-        logger.error(f"Audit run failed for user {user.email}, URL {body.url}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to run audit")
+        logger.info(f"Audit Started: {url}")
+        await emit_progress(5, "Initializing")
 
-    try:
-        # Save to DB
-        audit = Audit(user_id=user.id, url=str(body.url), result_json=result)
-        db.add(audit)
-        user.audit_count += 1
-        db.commit()
-        db.refresh(audit)
-    except Exception as e:
-        logger.error(f"DB save failed for user {user.email}, URL {body.url}: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to save audit")
+        # --- Fetch HTML (set timeouts to avoid hanging) ---
+        await emit_progress(20, "Fetching HTML")
+        await asyncio.sleep(0.8)  # <-- replace with your fetch_html(url, timeout=15000)
 
-    return audit
+        # --- Parse & collect signals ---
+        await emit_progress(50, "Parsing & Signals")
+        await asyncio.sleep(0.8)  # <-- parse html, extract metrics, etc.
 
+        # --- Compute scores ---
+        await emit_progress(75, "Scoring")
+        await asyncio.sleep(0.6)  # <-- compute On-page/Performance/Coverage/Confidence
 
-@router.get('/audit/{audit_id}', response_model=AuditOut)
-def get_audit(audit_id: int, request: Request, db: Session = Depends(get_db)):
+        # Build final payload (replace with real results)
+        result = {
+            "overall_score": 86,
+            "grade": "B+",
+            "breakdown": {
+                "onpage": 88,
+                "performance": 79,
+                "coverage": 83,
+                "confidence": 70
+            },
+            "finished": True,
+            "crawl_progress": 1.0
+        }
+        await queue.put(result)
+
+    except Exception as exc:
+        logger.exception("Audit failed")
+        await queue.put({
+            "error": str(exc),
+            "finished": True,
+            "crawl_progress": 1.0
+        })
+
+@router.get("/api/open-audit-progress")
+async def open_audit_progress(request: Request, url: str):
     """
-    Get a saved audit by ID for the authenticated user.
+    Idempotent SSE endpoint:
+      - If there is no running job for `url`, starts it.
+      - Streams progress events + final result.
     """
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(401, 'Authentication required')
+    # Start a new job if none exists or last one finished
+    if url not in _jobs or _jobs[url]["task"].done():
+        queue: asyncio.Queue = asyncio.Queue()
+        task = asyncio.create_task(run_audit_and_emit(url, queue))
+        _jobs[url] = {"task": task, "queue": queue}
 
-    audit = db.query(Audit).filter(Audit.id == audit_id, Audit.user_id == user.id).first()
-    if not audit:
-        raise HTTPException(404, 'Audit not found')
-    return audit
+    queue = _jobs[url]["queue"]
+    task = _jobs[url]["task"]
 
+    async def event_stream():
+        try:
+            # Initial heartbeat improves perceived responsiveness
+            yield f"data: {json_dumps({'crawl_progress':0.0,'status':'Queued'})}\n\n"
+            while True:
+                # Client disconnected?
+                if await request.is_disconnected():
+                    break
 
-@router.get('/audit/{audit_id}/report.pdf')
-def get_pdf(audit_id: int, request: Request, db: Session = Depends(get_db)):
-    """
-    Generate PDF report for a specific audit.
-    Returns PDF file.
-    """
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(401, 'Authentication required')
+                # Wait for next message; timeout to allow loop to check disconnections
+                with suppress(asyncio.TimeoutError):
+                    item = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    yield f"data: {json_dumps(item)}\n\n"
+                    if item.get("finished"):
+                        break
+        finally:
+            # Optional: cleanup finished jobs
+            if task.done():
+                # Keep a small cache window if you want to allow re-attach
+                # For now, we just leave it in memory; or uncomment:
+                # _jobs.pop(url, None)
+                pass
 
-    audit = db.query(Audit).filter(Audit.id == audit_id, Audit.user_id == user.id).first()
-    if not audit:
-        raise HTTPException(404, 'Audit not found')
-
-    try:
-        # Use a temporary file for PDF
-        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        tmp_file.close()
-        build_pdf(audit.result_json, tmp_file.name)
-        return FileResponse(tmp_file.name, media_type='application/pdf', filename=f'audit_{audit_id}.pdf')
-    except Exception as e:
-        logger.error(f"PDF generation failed for audit {audit_id}: {e}")
-        raise HTTPException(500, 'Failed to generate PDF')
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
