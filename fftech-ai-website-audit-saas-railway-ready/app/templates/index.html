@@ -216,7 +216,7 @@ async function runAudit(url) {
     }
 }
 
-// Event listeners
+// Event listener: only triggers when button is clicked
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
     const urlInput = document.getElementById('openUrl');
     const url = urlInput.value.trim();
@@ -224,9 +224,6 @@ document.getElementById('btnOpenAudit').addEventListener('click', () => {
     runAudit(url);
 });
 
-window.addEventListener('load', () => {
-    const urlInput = document.getElementById('openUrl');
-    if (urlInput.value.trim()) runAudit(urlInput.value.trim());
-});
+// Removed automatic audit on page load
 </script>
 {% endblock %}
