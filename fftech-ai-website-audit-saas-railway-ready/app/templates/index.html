@@ -62,11 +62,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-document.getElementById('btnOpenAudit').addEventListener('click', async () => {
-    const urlInput = document.getElementById('openUrl');
-    const url = urlInput.value.trim();
-    if (!url || !url.startsWith('http')) return alert('Please enter a valid URL (http/https)');
-
+async function runAudit(url) {
     const resultsDiv = document.getElementById('openResults');
     const ovScore = document.getElementById('ovScore');
     const gradeEl = document.getElementById('grade');
@@ -138,6 +134,20 @@ document.getElementById('btnOpenAudit').addEventListener('click', async () => {
         console.error(e);
         alert('Error running audit. Check console for details.');
     }
+}
+
+// Run audit on button click
+document.getElementById('btnOpenAudit').addEventListener('click', () => {
+    const urlInput = document.getElementById('openUrl');
+    const url = urlInput.value.trim();
+    if (!url || !url.startsWith('http')) return alert('Please enter a valid URL (http/https)');
+    runAudit(url);
+});
+
+// Optional: Run audit automatically if URL is pre-filled
+window.addEventListener('load', () => {
+    const urlInput = document.getElementById('openUrl');
+    if (urlInput.value.trim()) runAudit(urlInput.value.trim());
 });
 </script>
 {% endblock %}
