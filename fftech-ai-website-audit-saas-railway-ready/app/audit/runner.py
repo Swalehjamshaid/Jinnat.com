@@ -1,7 +1,6 @@
 # app/audit/runner.py
 
 import logging
-import asyncio # Added for better handling if needed
 from ..settings import get_settings
 from .psi import fetch_psi
 from .crawler import crawl
@@ -11,44 +10,46 @@ logger = logging.getLogger("audit_runner")
 
 async def run_audit(url: str):
     """
-    Run a complete website audit for the given URL:
-    - PageSpeed Insights for performance
-    - Crawl for coverage and link checks
-    - Grader for final scoring
+    World-Class Audit Orchestrator:
+    - Extracts 4 core Lighthouse categories.
+    - Deep crawls for internal health.
+    - Computes weighted scores for the Radar Dashboard.
     """
 
     settings = get_settings()
-    logger.info(f"Auditing URL: {url}")
+    logger.info(f"🚀 Initializing World-Class Audit for: {url}")
 
-    # 1️⃣ Fetch PageSpeed Insights data
-    # Note: Ensure fetch_psi is handled properly as it might be a sync call in your current setup
+    # 1️⃣ Fetch Multi-Category PageSpeed Insights data
+    # We now look for: Performance, SEO, Accessibility, and Best Practices
     psi_data = fetch_psi(url, api_key=settings.PSI_API_KEY)
     
-    perf_score = 0
-    lcp_ms = 4000  # default worst-case
-    seo_score = 0
-    
+    # Defaults
+    lcp_ms = 4000
+    scores = {
+        "performance": 0,
+        "seo": 0,
+        "accessibility": 80,  # Fallback
+        "best_practices": 80  # Fallback
+    }
+
     if psi_data and 'lighthouseResult' in psi_data:
         lh = psi_data['lighthouseResult']
         categories = lh.get('categories', {})
         
-        # Get Performance
-        perf_category = categories.get('performance', {})
-        perf_score = perf_category.get('score', 0) * 100
+        # Extract individual scores (multiplied by 100 for percentage)
+        scores["performance"] = categories.get('performance', {}).get('score', 0) * 100
+        scores["seo"] = categories.get('seo', {}).get('score', 0) * 100
+        scores["accessibility"] = categories.get('accessibility', {}).get('score', 0) * 100
+        scores["best_practices"] = categories.get('best-practices', {}).get('score', 0) * 100
         
-        # Get SEO score from Google to help with 'onpage' breakdown
-        seo_category = categories.get('seo', {})
-        seo_score = seo_category.get('score', 0) * 100
-        
-        # Extract LCP (Largest Contentful Paint)
+        # Extract LCP (Largest Contentful Paint) for deep performance grading
         audits = lh.get('audits', {})
         lcp_ms = audits.get('largest-contentful-paint', {}).get('numericValue', 4000)
 
-    # 2️⃣ Crawl the site to calculate coverage & broken links
-    # Max pages set to 50; this dictates the 'Coverage' potential
+    # 2️⃣ Crawl the site (Coverage & Broken Link Detection)
+    # This remains the heart of the 'Coverage' metric
     crawl_result = crawl(url, max_pages=50, timeout=10)
     
-    # FIX: Ensure we are counting pages correctly
     pages_found = getattr(crawl_result, 'pages', [])
     total_pages = len(pages_found)
     
@@ -56,10 +57,9 @@ async def run_audit(url: str):
     broken_ex = getattr(crawl_result, 'broken_external', [])
     total_broken_links = len(broken_in) + len(broken_ex)
 
-    # 3️⃣ Prepare metrics for the grader
-    # We pass the seo_score from Google to make 'onpage' accurate
+    # 3️⃣ Prepare Data for the New Grader
     onpage_metrics = {
-        "google_seo_score": seo_score,
+        "google_seo_score": scores["seo"],
         "missing_title_tags": 0, 
         "multiple_h1": 0
     }
@@ -68,27 +68,35 @@ async def run_audit(url: str):
         "total_broken_links": total_broken_links,
         "total_pages_crawled": total_pages
     }
+    
+    extra_metrics = {
+        "accessibility": scores["accessibility"],
+        "best_practices": scores["best_practices"]
+    }
 
-    # 4️⃣ Compute final audit scores using grader
-    # The grader uses 'crawl_pages_count' to determine Coverage %
+    # 4️⃣ Compute Final Scores
+    # Note: We now pass 'extra_metrics' to support the new World-Class Grader
     overall_score, grade, breakdown = compute_scores(
         onpage=onpage_metrics,
-        perf={"lcp_ms": lcp_ms, "score": perf_score},
+        perf={"lcp_ms": lcp_ms, "score": scores["performance"]},
         links=links_metrics,
-        crawl_pages_count=total_pages
+        crawl_pages_count=total_pages,
+        extra_metrics=extra_metrics
     )
 
-    logger.info(f"Audit complete: URL={url}, Score={overall_score}, Grade={grade}, Pages={total_pages}")
+    logger.info(f"✅ Audit Complete: Score={overall_score}, Grade={grade}")
 
-    # 5️⃣ Return JSON output (matches frontend index.html exactly)
+    # 5️⃣ World-Class JSON Return
     return {
         "url": url,
         "overall_score": round(overall_score, 1),
         "grade": grade,
         "breakdown": {
-            "onpage": round(breakdown.get('onpage', seo_score), 1),
-            "performance": round(breakdown.get('performance', perf_score), 1),
+            "onpage": round(breakdown.get('onpage', scores["seo"]), 1),
+            "performance": round(breakdown.get('performance', scores["performance"]), 1),
             "coverage": round(breakdown.get('coverage', 0), 1),
-            "confidence": round(breakdown.get('confidence', 90), 1)
+            "confidence": round(breakdown.get('confidence', 95), 1),
+            "accessibility": round(breakdown.get('accessibility', scores["accessibility"]), 1),
+            "best_practices": round(breakdown.get('best_practices', scores["best_practices"]), 1)
         }
     }
