@@ -9,11 +9,9 @@ import logging
 
 logger = logging.getLogger("crawler_engine")
 
-# World-class User-Agent to prevent getting blocked
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; FFTechAuditor/1.0; +https://fftech.ai)",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
 }
 
 class CrawlResult:
@@ -29,41 +27,35 @@ class CrawlResult:
 def is_same_host(start_url: str, link: str) -> bool:
     try:
         return urlparse(start_url).netloc == urlparse(link).netloc
-    except Exception:
-        return False
+    except: return False
 
-def crawl(start_url: str, max_pages: int = 50, timeout: int = 10) -> CrawlResult:
+def crawl(start_url: str, max_pages: int = 15, timeout: int = 7) -> CrawlResult:
     """
-    Optimized BFS Crawler:
-    - Robust error handling for modern JS-heavy sites.
-    - Faster link validation.
+    World-Class Speed Optimization:
+    - Reduced max_pages (15 is enough for a quick health check).
+    - Skip non-HTML files early (PDFs, Images, etc.).
+    - Limited broken link validation to the first 10 links per page.
     """
     start_time = time.time()
     queue = deque([start_url])
     seen = set()
     result = CrawlResult()
-
-    # Using a session for connection pooling (much faster)
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    logger.info(f"🕸️ Starting crawl for: {start_url}")
-
+    # 1. Faster Crawl Loop
     while queue and len(seen) < max_pages:
         url = queue.popleft()
-        if url in seen:
-            continue
+        if url in seen: continue
         seen.add(url)
 
         try:
-            # allow_redirects=True is vital for modern sites
-            r = session.get(url, timeout=timeout, allow_redirects=True)
+            # stream=True allows us to check headers before downloading body
+            r = session.get(url, timeout=timeout, allow_redirects=True, stream=True)
             result.status_counts[r.status_code] += 1
             
-            if r.status_code != 200:
-                continue
-
-            if "text/html" not in r.headers.get("Content-Type", "").lower():
+            if r.status_code != 200 or "text/html" not in r.headers.get("Content-Type", "").lower():
+                r.close() # Close connection without reading
                 continue
 
             html = r.text
@@ -72,41 +64,40 @@ def crawl(start_url: str, max_pages: int = 50, timeout: int = 10) -> CrawlResult
 
             for tag in soup.find_all("a", href=True):
                 href = tag.get("href").strip()
-                if not href or href.startswith(("mailto:", "tel:", "javascript:", "#")):
+                # Optimized filter: skip common junk extensions
+                if not href or any(href.endswith(ext) for ext in ['.pdf', '.jpg', '.png', '.zip', '.docx']):
+                    continue
+                if href.startswith(("mailto:", "tel:", "javascript:", "#")):
                     continue
                 
-                absolute_url = urljoin(url, href)
-                
-                # Stay on the same domain for crawling, but record external for auditing
-                if is_same_host(start_url, absolute_url):
-                    result.internal_links[url].append(absolute_url)
-                    if absolute_url not in seen:
-                        queue.append(absolute_url)
+                abs_url = urljoin(url, href)
+                if is_same_host(start_url, abs_url):
+                    result.internal_links[url].append(abs_url)
+                    if abs_url not in seen: queue.append(abs_url)
                 else:
-                    result.external_links[url].append(absolute_url)
+                    result.external_links[url].append(abs_url)
 
         except Exception as e:
-            logger.warning(f"⚠️ Failed to crawl {url}: {e}")
             result.status_counts[0] += 1
 
-    # ======================================
-    # Fast Link Validation (Internal only)
-    # To keep it world-class, we only check internal links to save time
-    # ======================================
+    # 
+    # 2. Optimized Link Validation (Check only unique internal links)
     checked_links = set()
+    # Limit to 50 total link checks to keep it under 5 seconds
+    total_checks = 0
     for src, links in result.internal_links.items():
-        for link in links:
-            if link in checked_links or link in result.pages:
-                continue
+        if total_checks > 50: break 
+        for link in links[:10]: # Only check first 10 links per page
+            if link in checked_links or link in result.pages: continue
             checked_links.add(link)
+            total_checks += 1
             try:
-                # Use HEAD request instead of GET (saves 90% bandwidth)
-                res = session.head(link, timeout=5, allow_redirects=True)
+                # HEAD is 10x faster than GET for link checking
+                res = session.head(link, timeout=3, allow_redirects=True)
                 if res.status_code >= 400:
                     result.broken_internal.append((src, link, res.status_code))
             except:
                 result.broken_internal.append((src, link, 0))
 
     result.total_crawl_time = round(time.time() - start_time, 2)
-    logger.info(f"✅ Crawl finished. Found {len(result.pages)} pages in {result.total_crawl_time}s")
     return result
