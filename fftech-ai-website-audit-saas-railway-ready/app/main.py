@@ -1,227 +1,71 @@
-{% extends 'base.html' %}
-{% block content %}
-<div class="row">
-  <div class="col-lg-7">
-    <div class="card bg-body-tertiary mb-4 position-relative" id="auditCard">
-      <!-- Overlay -->
-      <div id="loadingOverlay" style="
-           display:none;
-           position:absolute;
-           top:0; left:0;
-           width:100%; height:100%;
-           background: rgba(0,0,0,0.4);
-           z-index: 10;
-           border-radius: 0.5rem;
-           display:flex;
-           align-items:center;
-           justify-content:center;">
-        <div class="text-center text-white">
-          <div class="spinner-border text-light" role="status"></div>
-          <div class="mt-2">Processing...</div>
-        </div>
-      </div>
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 
-      <div class="card-body">
-        <h4 class="card-title">Open Access Audit</h4>
-        <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
-        <div class="input-group mb-3">
-          <input id="openUrl" type="url" class="form-control" placeholder="https://example.com">
-          <button id="btnOpenAudit" class="btn btn-primary">
-            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-            <span id="btnText">Audit</span>
-          </button>
-        </div>
+from app.audit.grader import compute_scores  # Your grader function
 
-        <!-- Live Progress Bar -->
-        <div class="progress mb-3" style="height: 20px; display:none;" id="crawlProgressContainer">
-          <div id="crawlProgressBar"
-               class="progress-bar progress-bar-striped progress-bar-animated bg-info"
-               role="progressbar"
-               style="width: 0%"
-               aria-valuenow="0"
-               aria-valuemin="0"
-               aria-valuemax="100">
-            0%
-          </div>
-        </div>
+import asyncio
+import random
+import json
 
-        <div id="openResults" class="mt-3 d-none">
-          <h6>Results</h6>
-          <div class="row">
-            <div class="col-md-4">
-              <div class="p-3 rounded bg-dark-subtle">
-                <b>Overall Score</b>
-                <div id="ovScore" class="fs-3">-</div>
-                <div id="grade" class="fs-4 fw-bold">-</div>
-              </div>
-            </div>
-            <div class="col-md-8">
-              <canvas id="breakdownChart" height="140"></canvas>
-            </div>
-          </div>
-          <div class="mt-3">
-            <h6>Details</h6>
-            <ul class="list-group">
-              <li class="list-group-item">On-page SEO: <span id="onpageScore">-</span></li>
-              <li class="list-group-item">Performance: <span id="perfScore">-</span></li>
-              <li class="list-group-item">Coverage: <span id="coverageScore">-</span></li>
-              <li class="list-group-item">Confidence: <span id="confidence">-</span></li>
-            </ul>
-          </div>
-          <pre id="openJson" class="small mt-3 bg-light p-2 rounded d-none"></pre>
-        </div>
-      </div>
-    </div>
-  </div>
+app = FastAPI(title="FFTech AI Website Audit SaaS")
 
-  <div class="col-lg-5">
-    <div class="card bg-body-tertiary mb-4">
-      <div class="card-body">
-        <h4 class="card-title">Passwordless Sign-in</h4>
-        <form method="post" action="/request-login">
-          <div class="mb-3">
-            <label class="form-label">Email</label>
-            <input type="email" name="email" class="form-control" required>
-          </div>
-          <button class="btn btn-success w-100">Send Magic Link</button>
-        </form>
-        <p class="small text-secondary mt-2">
-          Free users can run up to 10 audits; subscribe to unlock scheduling & history.
-        </p>
-      </div>
-    </div>
-  </div>
-</div>
+# Serve static files (CSS/JS/img)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-// Persistent variable to track the chart across multiple runs
-let breakdownChartInstance = null;
+# Templates folder
+templates = Jinja2Templates(directory="app/templates")
 
-// Update the progress bar
-function updateProgress(percent) {
-    const bar = document.getElementById('crawlProgressBar');
-    bar.style.width = percent + '%';
-    bar.setAttribute('aria-valuenow', percent);
-    bar.textContent = percent + '%';
-}
 
-async function runAudit(url) {
-    const resultsDiv = document.getElementById('openResults');
-    const btn = document.getElementById('btnOpenAudit');
-    const btnText = document.getElementById('btnText');
-    const btnSpinner = document.getElementById('btnSpinner');
-    const progressContainer = document.getElementById('crawlProgressContainer');
-    const overlay = document.getElementById('loadingOverlay');
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    """
+    Render the main dashboard page (index.html)
+    """
+    return templates.TemplateResponse("index.html", {"request": request})
 
-    const ovScore = document.getElementById('ovScore');
-    const gradeEl = document.getElementById('grade');
-    const onpageEl = document.getElementById('onpageScore');
-    const perfEl = document.getElementById('perfScore');
-    const coverageEl = document.getElementById('coverageScore');
-    const confEl = document.getElementById('confidence');
-    const jsonPre = document.getElementById('openJson');
 
-    // Loading state
-    btn.disabled = true;
-    btnText.textContent = 'Auditing...';
-    btnSpinner.classList.remove('d-none');
-    progressContainer.style.display = 'block';
-    overlay.style.display = 'flex';
-    updateProgress(0);
+@app.get("/api/open-audit-progress")
+async def open_audit_progress(url: str):
+    """
+    Simulated SSE (Server-Sent Events) endpoint for live progress updates.
+    Replace this simulation with your actual website audit logic.
+    """
+    async def event_generator():
+        total_pages = random.randint(5, 25)
+        for i in range(1, total_pages + 1):
+            crawl_progress = i / total_pages
+            data = {"crawl_progress": crawl_progress, "finished": False}
+            yield f"data: {json.dumps(data)}\n\n"
+            await asyncio.sleep(0.1)
 
-    resultsDiv.classList.add('d-none');
-    ovScore.textContent = gradeEl.textContent = onpageEl.textContent = perfEl.textContent =
-    coverageEl.textContent = confEl.textContent = '-';
-    jsonPre.classList.add('d-none');
+        # Compute final scores using your grader function
+        onpage_metrics = {"missing_title_tags": 0, "multiple_h1": 1}
+        perf_metrics = {"lcp_ms": random.randint(1200, 4000)}
+        links_metrics = {"total_broken_links": random.randint(0, 5)}
 
-    try {
-        const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
-        
-        evtSource.onmessage = (e) => {
-            const data = JSON.parse(e.data);
+        overall_score, grade, breakdown = compute_scores(
+            onpage_metrics, perf_metrics, links_metrics, crawl_pages_count=total_pages
+        )
 
-            if (data.crawl_progress !== undefined) {
-                updateProgress(Math.round(data.crawl_progress * 100));
-            }
+        final_data = {
+            "crawl_progress": 1,
+            "finished": True,
+            "overall_score": overall_score,
+            "grade": grade,
+            "breakdown": breakdown
+        }
 
-            if (data.finished) {
-                evtSource.close();
+        yield f"data: {json.dumps(final_data)}\n\n"
 
-                ovScore.textContent = data.overall_score ?? '-';
-                gradeEl.textContent = data.grade ?? '-';
-                onpageEl.textContent = data.breakdown.onpage ?? '-';
-                perfEl.textContent = data.breakdown.performance ?? '-';
-                coverageEl.textContent = data.breakdown.coverage ?? '-';
-                confEl.textContent = (data.breakdown.confidence ?? '-') + '%';
+    return HTMLResponse(content=event_generator(), media_type="text/event-stream")
 
-                jsonPre.textContent = JSON.stringify(data, null, 2);
-                jsonPre.classList.remove('d-none');
 
-                const ctx = document.getElementById('breakdownChart').getContext('2d');
-                if (breakdownChartInstance) breakdownChartInstance.destroy();
-                breakdownChartInstance = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: ['On-page', 'Performance', 'Coverage', 'Confidence'],
-                        datasets: [{
-                            label: 'Score',
-                            data: [
-                                data.breakdown.onpage || 0,
-                                data.breakdown.performance || 0,
-                                data.breakdown.coverage || 0,
-                                data.breakdown.confidence || 0
-                            ],
-                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
-                            borderColor: 'rgba(59, 130, 246, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: { y: { beginAtZero: true, max: 100 } },
-                        plugins: { legend: { display: false } }
-                    }
-                });
-
-                resultsDiv.classList.remove('d-none');
-                btn.disabled = false;
-                btnText.textContent = 'Audit';
-                btnSpinner.classList.add('d-none');
-                progressContainer.style.display = 'none';
-                overlay.style.display = 'none';
-            }
-        };
-
-        evtSource.onerror = (e) => {
-            console.error('SSE error', e);
-            evtSource.close();
-            alert('Error during live audit.');
-            btn.disabled = false;
-            btnText.textContent = 'Audit';
-            btnSpinner.classList.add('d-none');
-            progressContainer.style.display = 'none';
-            overlay.style.display = 'none';
-        };
-
-    } catch (e) {
-        console.error("Audit Error:", e);
-        alert(e.message || 'Error running audit.');
-        btn.disabled = false;
-        btnText.textContent = 'Audit';
-        btnSpinner.classList.add('d-none');
-        progressContainer.style.display = 'none';
-        overlay.style.display = 'none';
-    }
-}
-
-// Event listener: only triggers when button is clicked
-document.getElementById('btnOpenAudit').addEventListener('click', () => {
-    const urlInput = document.getElementById('openUrl');
-    const url = urlInput.value.trim();
-    if (!url || !url.startsWith('http')) return alert('Please enter a valid URL (http/https)');
-    runAudit(url);
-});
-</script>
-{% endblock %}
+@app.post("/request-login")
+async def request_login(email: str = Form(...)):
+    """
+    Passwordless login: sends a magic link to the provided email.
+    """
+    # TODO: integrate with real email sending
+    return JSONResponse({"message": f"Magic link sent to {email}"})
