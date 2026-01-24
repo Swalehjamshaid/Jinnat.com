@@ -1,5 +1,4 @@
 # app/audit/grader.py
-
 from typing import Dict, Tuple
 import random
 
@@ -22,10 +21,11 @@ def compute_scores(
 ) -> Tuple[float, str, Dict[str, float]]:
     """
     Compute website audit scores based on multiple factors.
+    Returns: (overall score, letter grade, breakdown dictionary)
     """
     try:
         # ----------------------
-        # Penalties for SEO issues
+        # SEO Penalties
         # ----------------------
         penalties = 0
         penalties += onpage.get('missing_title_tags', 0) * 2
@@ -33,22 +33,21 @@ def compute_scores(
         penalties += onpage.get('multiple_h1', 0) * 1
 
         # ----------------------
-        # Performance score
+        # Performance Score
         # ----------------------
         lcp = perf.get('lcp_ms', 4000) or 4000
         fcp = perf.get('fcp_ms', 2000) or 2000
-        # Calculate performance based on speed thresholds
         perf_score = max(0, 100 - (lcp / 40 + fcp / 30))
 
         # ----------------------
-        # Links & coverage
+        # Links & Coverage
         # ----------------------
         link_penalty = links.get('total_broken_links', 0) * 0.5
-        coverage = min(100, crawl_pages_count * 2)
+        coverage = min(100, (crawl_pages_count or 0) * 2)
         penalties += link_penalty
 
         # ----------------------
-        # Combine scores with weights
+        # Weighted Final Score
         # ----------------------
         raw_score = (
             max(0, 100 - penalties) * 0.4 +
@@ -56,25 +55,10 @@ def compute_scores(
             coverage * 0.2
         )
 
-        # ----------------------
-        # Mobile vs Desktop adjustment
-        # ----------------------
-        mobile_score = raw_score * mobile_weight
-        desktop_score = raw_score * (1 - mobile_weight)
-        overall = (mobile_score + desktop_score)
+        overall = max(0, min(100, raw_score))
 
         # ----------------------
-        # Competitor comparison
-        # ----------------------
-        if competitor_scores:
-            competitor_avg = sum(competitor_scores.values()) / max(1, len(competitor_scores))
-            overall = overall * 0.9 + competitor_avg * 0.1
-
-        # Ensure result is between 0 and 100
-        overall = max(0, min(100, overall))
-
-        # ----------------------
-        # Compute letter grade
+        # Determine Letter Grade
         # ----------------------
         grade = 'D'
         for cutoff, letter in GRADE_BANDS:
@@ -83,7 +67,7 @@ def compute_scores(
                 break
 
         # ----------------------
-        # Breakdown & Confidence
+        # Detailed Breakdown
         # ----------------------
         confidence = random.uniform(85, 99)
         breakdown = {
@@ -96,6 +80,6 @@ def compute_scores(
         return round(overall, 2), grade, breakdown
 
     except Exception as e:
-        # Fallback to prevent crash if logic fails
-        print(f"Error in grader logic: {e}")
-        return 0.0, "D", {"error": "Score calculation failed"}
+        # Safety fallback to prevent frontend "Error running audit"
+        print(f"Grader Error: {e}")
+        return 0.0, "D", {"error": "Calculation error", "onpage": 0, "performance": 0}
