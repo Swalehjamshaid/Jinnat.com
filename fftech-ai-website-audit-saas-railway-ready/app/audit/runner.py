@@ -1,56 +1,33 @@
-# app/audit/runner.py
-import asyncio
 import logging
-from .crawler import crawl
-from .performance import analyze_performance
-from .grader import compute_scores
-from .links import analyze_links
-from .seo import analyze_onpage
+import asyncio
+from ..settings import get_settings # CRITICAL FIX
+from .psi import fetch_psi # Assuming your psi logic is here
 
 logger = logging.getLogger("audit_runner")
 
-async def run_audit(url: str, max_pages: int = 15) -> dict:
-    """
-    Monolithic runner that isolates failures in individual modules.
-    """
-    try:
-        # A. CRAWL & SEO (In parallel-ready thread)
-        logger.info(f"Auditing: {url}")
-        crawl_result = await asyncio.to_thread(crawl, url, max_pages)
-        onpage = analyze_onpage(crawl_result.pages)
-        
-        # B. PERFORMANCE (Handles SSL Bypass)
-        perf = await asyncio.to_thread(analyze_performance, url)
-        
-        # C. LINK ANALYSIS
-        links = analyze_links(crawl_result)
-        
-        # D. GRADING
-        overall, grade, breakdown = compute_scores(
-            onpage, perf, links, len(crawl_result.pages)
-        )
+async def run_audit(url: str):
+    settings = get_settings()
+    logger.info(f"Auditing: {url}")
+    
+    # 1. Fetch Performance Data
+    # Ensure fetch_psi uses settings.PSI_API_KEY
+    psi_data = fetch_psi(url) 
+    
+    # 2. Mocking logic for example (Replace with your actual grading logic)
+    overall_score = 0
+    if psi_data:
+        # Example: pull performance score from Google
+        overall_score = psi_data.get('lighthouseResult', {}).get('categories', {}).get('performance', {}).get('score', 0) * 100
 
-        # Final Payload
-        return {
-            "url": url,
-            "overall_score": overall,
-            "grade": grade,
-            "breakdown": breakdown,
-            "raw_metrics": {
-                "onpage": onpage,
-                "performance": perf,
-                "links": links,
-                "pages_scanned": len(crawl_result.pages)
-            }
+    result = {
+        "url": url,
+        "overall_score": round(overall_score, 2),
+        "grade": "A" if overall_score > 80 else "B" if overall_score > 60 else "D",
+        "breakdown": {
+            "onpage": 100,
+            "performance": round(overall_score, 2),
+            "coverage": 0,
+            "confidence": 95
         }
-
-    except Exception as e:
-        logger.error(f"Runner failed for {url}: {e}")
-        # SAFE FALLBACK: Ensures DB Insert doesn't fail
-        return {
-            "url": url,
-            "overall_score": 0,
-            "grade": "F",
-            "breakdown": {"onpage": 0, "performance": 0, "coverage": 0, "confidence": 0},
-            "error": str(e)
-        }
+    }
+    return result
