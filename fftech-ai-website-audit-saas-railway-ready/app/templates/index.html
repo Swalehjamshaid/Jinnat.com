@@ -1,149 +1,99 @@
 {% extends 'base.html' %}
 {% block content %}
 <style>
-    :root {
-        --glass-bg: rgba(255, 255, 255, 0.03);
-        --glass-border: rgba(255, 255, 255, 0.1);
-        --accent-glow: rgba(13, 110, 253, 0.15);
-    }
-
-    .dashboard-container {
-        animation: fadeIn 0.8s ease-out;
-    }
-
     .glass-panel {
-        background: var(--glass-bg);
-        backdrop-filter: blur(12px);
-        border: 1px solid var(--glass-border);
-        border-radius: 24px;
-        padding: 2rem;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 1.5rem;
     }
-
-    /* Radial Score Gauge */
     .gauge-wrapper {
         position: relative;
-        width: 180px;
-        height: 180px;
+        width: 150px;
+        height: 150px;
         margin: 0 auto;
     }
-
     .gauge-svg { transform: rotate(-90deg); }
-
-    .gauge-bg { fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 8; }
-
+    .gauge-bg { fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 10; }
     .gauge-progress {
         fill: none;
         stroke: #0d6efd;
-        stroke-width: 8;
+        stroke-width: 10;
         stroke-linecap: round;
         stroke-dasharray: 440;
         stroke-dashoffset: 440;
-        transition: stroke-dashoffset 2s ease-out;
+        transition: stroke-dashoffset 1.5s ease-in-out;
     }
-
     .gauge-text {
         position: absolute;
-        top: 50%;
-        left: 50%;
+        top: 50%; left: 50%;
         transform: translate(-50%, -50%);
         text-align: center;
     }
-
-    .recommendation-item {
-        border-left: 4px solid #0d6efd;
-        background: rgba(13, 110, 253, 0.05);
-        padding: 1rem;
-        margin-bottom: 1rem;
-        border-radius: 0 12px 12px 0;
-    }
-
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 
-<div class="container dashboard-container py-4">
-    <div class="row mb-5 text-center">
-        <div class="col-12">
-            <span class="badge bg-primary-subtle text-primary px-3 py-2 mb-3 rounded-pill">V2.0 AI ENGINE LIVE</span>
-            <h1 class="display-5 fw-bold text-white">Advanced Web Intelligence</h1>
-        </div>
-    </div>
-
-    <div class="row justify-content-center mb-5">
-        <div class="col-lg-8">
-            <div class="glass-panel text-center pulse-on-load">
-                <div class="input-group input-group-lg shadow-sm">
-                    <input id="openUrl" type="url" class="form-control bg-dark text-white border-0" placeholder="Enter Website URL (e.g. https://apple.com)" value="https://">
-                    <button id="btnOpenAudit" class="btn btn-primary px-5">
-                        <span id="btnSpinner" class="spinner-border spinner-border-sm d-none"></span>
-                        <span id="btnText">ANALYZE NOW</span>
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card bg-body-tertiary shadow-sm border-0 mb-4">
+            <div class="card-body p-4">
+                <h4 class="card-title fw-bold"><i class="bi bi-cpu-fill text-primary me-2"></i>Open Access Audit</h4>
+                <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
+                
+                <div class="input-group mb-4 shadow-sm">
+                    <input id="openUrl" type="url" class="form-control border-0 bg-dark-subtle" placeholder="https://example.com" value="https://">
+                    <button id="btnOpenAudit" class="btn btn-primary px-4 fw-bold">
+                        <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+                        <span id="btnText">Audit</span>
                     </button>
                 </div>
-                <div id="progressBox" class="mt-4 d-none">
-                    <div class="d-flex justify-content-between small mb-1">
-                        <span id="statusLabel" class="text-secondary">Ready...</span>
-                        <span id="percentLabel" class="text-primary fw-bold">0%</span>
+
+                <div id="openResults" class="mt-4 d-none">
+                    <h5 class="mb-4 border-bottom pb-2">Analysis Results</h5>
+                    
+                    <div class="row align-items-center mb-4">
+                        <div class="col-md-5 text-center">
+                            <div class="gauge-wrapper">
+                                <svg width="150" height="150" class="gauge-svg">
+                                    <circle class="gauge-bg" cx="75" cy="75" r="65"></circle>
+                                    <circle id="gaugeCircle" class="gauge-progress" cx="75" cy="75" r="65"></circle>
+                                </svg>
+                                <div class="gauge-text">
+                                    <div id="ovScore" class="h1 fw-bold mb-0">-</div>
+                                    <small id="gradeText" class="text-primary fw-bold text-uppercase">Score</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-7">
+                            <canvas id="breakdownChart" height="180"></canvas>
+                        </div>
                     </div>
-                    <div class="progress" style="height: 6px; background: rgba(255,255,255,0.05);">
-                        <div id="auditBar" class="progress-bar bg-primary" style="width: 0%"></div>
+
+                    <div class="mt-4">
+                        <h6 class="text-secondary small text-uppercase fw-bold">Raw Audit Data</h6>
+                        <pre id="openJson" class="small bg-black text-info p-3 rounded" style="max-height: 250px; overflow: auto;"></pre>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="resultsEngine" class="d-none">
-        <div class="row g-4">
-            <div class="col-lg-4">
-                <div class="glass-panel h-100 text-center">
-                    <h6 class="text-uppercase text-secondary ls-widest mb-4">Authority Score</h6>
-                    <div class="gauge-wrapper">
-                        <svg class="gauge-svg" width="180" height="180">
-                            <circle class="gauge-bg" cx="90" cy="90" r="70"></circle>
-                            <circle id="gaugeCircle" class="gauge-progress" cx="90" cy="90" r="70"></circle>
-                        </svg>
-                        <div class="gauge-text">
-                            <div id="ovScore" class="display-4 fw-bold">0</div>
-                            <div id="grade" class="text-primary fw-bold small">CALCULATING</div>
-                        </div>
+    <div class="col-lg-5">
+        <div class="card bg-body-tertiary shadow-sm border-0 mb-4">
+            <div class="card-body p-4">
+                <h4 class="card-title fw-bold"><i class="bi bi-magic text-success me-2"></i>Passwordless Sign-in</h4>
+                <form method="post" action="/request-login">
+                    <div class="mb-3">
+                        <label class="form-label text-secondary">Work/Personal Email</label>
+                        <input type="email" name="email" class="form-control bg-dark-subtle border-0" placeholder="name@company.com" required>
                     </div>
-                    <div class="mt-4 pt-3 border-top border-secondary">
-                        <div class="row">
-                            <div class="col-6 border-end border-secondary">
-                                <small class="text-secondary d-block">Status</small>
-                                <span class="badge bg-success">Healthy</span>
-                            </div>
-                            <div class="col-6">
-                                <small class="text-secondary d-block">AI Trust</small>
-                                <span id="confidence">0%</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-lg-8">
-                <div class="glass-panel h-100">
-                    <h6 class="text-uppercase text-secondary ls-widest mb-4">Metric Breakdown</h6>
-                    <div style="height: 300px;">
-                        <canvas id="radarChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-12">
-                <div class="glass-panel">
-                    <h5 class="mb-4"><i class="bi bi-robot text-primary me-2"></i> AI Recommendations</h5>
-                    <div id="aiRecommendations">
-                        <div class="recommendation-item">
-                            <h6 class="text-white">Performance Optimization</h6>
-                            <p class="small text-secondary mb-0" id="perfAdvice">Analyzing server response times and asset compression...</p>
-                        </div>
-                        <div class="recommendation-item" style="border-left-color: #0dcaf0;">
-                            <h6 class="text-white">SEO & Structure</h6>
-                            <p class="small text-secondary mb-0" id="seoAdvice">Checking meta tags, header hierarchy, and crawlability...</p>
-                        </div>
-                    </div>
+                    <button class="btn btn-success w-100 fw-bold py-2">Send Magic Link</button>
+                </form>
+                <div class="mt-4 p-3 rounded bg-info bg-opacity-10 border border-info border-opacity-25">
+                    <p class="small text-secondary mb-0">
+                        <i class="bi bi-info-circle-fill me-2"></i>Free users can run up to 10 audits; subscribe to unlock scheduling & history.
+                    </p>
                 </div>
             </div>
         </div>
@@ -152,81 +102,80 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-let radarChartInstance = null;
-
-function updateProgress(val, msg) {
-    document.getElementById('progressBox').classList.remove('d-none');
-    document.getElementById('auditBar').style.width = val + '%';
-    document.getElementById('percentLabel').textContent = val + '%';
-    document.getElementById('statusLabel').textContent = msg;
-}
+let chartInstance = null;
 
 async function runAudit(url) {
     const btn = document.getElementById('btnOpenAudit');
-    const results = document.getElementById('resultsEngine');
-    
+    const btnText = document.getElementById('btnText');
+    const btnSpinner = document.getElementById('btnSpinner');
+    const resultsDiv = document.getElementById('openResults');
+    const jsonPre = document.getElementById('openJson');
+
     btn.disabled = true;
-    document.getElementById('btnSpinner').classList.remove('d-none');
-    results.classList.add('d-none');
-    
-    updateProgress(20, 'Bypassing Cloudflare & Connecting...');
+    btnText.textContent = 'Auditing...';
+    btnSpinner.classList.remove('d-none');
+    resultsDiv.classList.add('d-none');
 
     try {
-        const res = await fetch('/api/open-audit', {
+        const response = await fetch('/api/open-audit', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
         });
-        
-        updateProgress(60, 'Parsing Google Lighthouse Nodes...');
 
-        if (!res.ok) throw new Error();
-        const data = await res.json();
+        if (!response.ok) throw new Error('Network response was not ok');
+        const data = await response.json();
 
-        // Animate Circle Gauge
+        // 1. Update Score Gauge
         const score = Math.round(data.overall_score);
+        document.getElementById('ovScore').textContent = score;
         const offset = 440 - (440 * score) / 100;
         document.getElementById('gaugeCircle').style.strokeDashoffset = offset;
-        document.getElementById('ovScore').textContent = score;
-        document.getElementById('grade').textContent = data.grade;
-        document.getElementById('confidence').textContent = data.breakdown.confidence + '%';
-
-        // Update Radar Chart
-        const ctx = document.getElementById('radarChart').getContext('2d');
-        if (radarChartInstance) radarChartInstance.destroy();
         
-        radarChartInstance = new Chart(ctx, {
+        // 2. Update breakdownChart (Radar is more comprehensive)
+        const ctx = document.getElementById('breakdownChart').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, {
             type: 'radar',
             data: {
                 labels: ['SEO', 'Performance', 'Coverage', 'Security', 'Accessibility'],
                 datasets: [{
                     label: 'Website Score',
-                    data: [data.breakdown.onpage, data.breakdown.performance, data.breakdown.coverage, 85, 90],
+                    data: [
+                        data.breakdown.onpage || 0,
+                        data.breakdown.performance || 0,
+                        data.breakdown.coverage || 0,
+                        data.breakdown.best_practices || 80, // Fallback
+                        data.breakdown.accessibility || 80   // Fallback
+                    ],
                     backgroundColor: 'rgba(13, 110, 253, 0.2)',
                     borderColor: '#0d6efd',
-                    pointBackgroundColor: '#0d6efd'
+                    borderWidth: 2
                 }]
             },
             options: {
-                scales: { r: { grid: { color: 'rgba(255,255,255,0.1)' }, angleLines: { color: 'rgba(255,255,255,0.1)' }, suggestMin: 0, suggestMax: 100, ticks: { display: false } } },
+                scales: { r: { beginAtZero: true, max: 100, ticks: { display: false }, grid: { color: 'rgba(255,255,255,0.1)' } } },
                 plugins: { legend: { display: false } }
             }
         });
 
-        results.classList.remove('d-none');
-        updateProgress(100, 'Analysis Complete');
+        // 3. Populate JSON Preview (PRESERVED)
+        jsonPre.textContent = JSON.stringify(data, null, 2);
+        resultsDiv.classList.remove('d-none');
 
-    } catch (e) {
-        alert('Audit Error');
-        updateProgress(0, 'System Ready');
+    } catch (error) {
+        console.error('Audit failed:', error);
+        alert('Audit failed. Please check the URL and your API keys.');
     } finally {
         btn.disabled = false;
-        document.getElementById('btnSpinner').classList.add('d-none');
+        btnText.textContent = 'Audit';
+        btnSpinner.classList.add('d-none');
     }
 }
 
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
-    runAudit(document.getElementById('openUrl').value);
+    const urlInput = document.getElementById('openUrl');
+    if(urlInput.value.length > 5) runAudit(urlInput.value);
 });
 </script>
 {% endblock %}
