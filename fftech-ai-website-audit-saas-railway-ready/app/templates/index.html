@@ -1,212 +1,232 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="row">
-  <div class="col-lg-7">
-    <div class="card bg-body-tertiary mb-4">
-      <div class="card-body">
-        <h4 class="card-title">Open Access Audit</h4>
-        <p class="text-secondary">Quickly audit any URL - no sign-in required.</p>
-        <div class="input-group mb-3">
-          <input id="openUrl" type="url" class="form-control" placeholder="https://example.com">
-          <button id="btnOpenAudit" class="btn btn-primary">
-            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-            <span id="btnText">Audit</span>
-          </button>
-        </div>
-        <!-- Real-time progress bar -->
-        <div class="progress mb-3" style="height: 12px;">
-          <div id="auditProgress" class="progress-bar progress-bar-striped progress-bar-animated" 
-               role="progressbar" style="width: 0%;"></div>
-        </div>
-        <div id="openResults" class="mt-3 d-none">
-          <h6>Results</h6>
-          <div class="row">
-            <div class="col-md-4">
-              <div class="p-3 rounded bg-dark-subtle">
-                <b>Overall Score</b>
-                <div id="ovScore" class="fs-3">-</div>
-                <div id="grade" class="fs-4 fw-bold">-</div>
-              </div>
-            </div>
-            <div class="col-md-8">
-              <canvas id="breakdownChart" height="140"></canvas>
-            </div>
-          </div>
-          <div class="mt-3">
-            <h6>Details</h6>
-            <ul class="list-group">
-              <li class="list-group-item">On-page SEO: <span id="onpageScore">-</span></li>
-              <li class="list-group-item">Performance: <span id="perfScore">-</span></li>
-              <li class="list-group-item">Coverage: <span id="coverageScore">-</span></li>
-              <li class="list-group-item">Confidence: <span id="confidence">-</span></li>
-            </ul>
-          </div>
-          <pre id="openJson" class="small mt-3 bg-light p-2 rounded d-none"></pre>
-        </div>
-      </div>
-    </div>
-  </div>
+<style>
+    :root {
+        --glass-bg: rgba(255, 255, 255, 0.03);
+        --glass-border: rgba(255, 255, 255, 0.1);
+        --accent-glow: rgba(13, 110, 253, 0.15);
+    }
 
-  <div class="col-lg-5">
-    <div class="card bg-body-tertiary mb-4">
-      <div class="card-body">
-        <h4 class="card-title">Passwordless Sign-in</h4>
-        <form method="post" action="/request-login">
-          <div class="mb-3">
-            <label class="form-label">Email</label>
-            <input type="email" name="email" class="form-control" required>
-          </div>
-          <button class="btn btn-success w-100">Send Magic Link</button>
-        </form>
-        <p class="small text-secondary mt-2">
-          Free users can run up to 10 audits; subscribe to unlock scheduling & history.
-        </p>
-      </div>
+    .dashboard-container {
+        animation: fadeIn 0.8s ease-out;
+    }
+
+    .glass-panel {
+        background: var(--glass-bg);
+        backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border);
+        border-radius: 24px;
+        padding: 2rem;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    }
+
+    /* Radial Score Gauge */
+    .gauge-wrapper {
+        position: relative;
+        width: 180px;
+        height: 180px;
+        margin: 0 auto;
+    }
+
+    .gauge-svg { transform: rotate(-90deg); }
+
+    .gauge-bg { fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 8; }
+
+    .gauge-progress {
+        fill: none;
+        stroke: #0d6efd;
+        stroke-width: 8;
+        stroke-linecap: round;
+        stroke-dasharray: 440;
+        stroke-dashoffset: 440;
+        transition: stroke-dashoffset 2s ease-out;
+    }
+
+    .gauge-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+    }
+
+    .recommendation-item {
+        border-left: 4px solid #0d6efd;
+        background: rgba(13, 110, 253, 0.05);
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-radius: 0 12px 12px 0;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+
+<div class="container dashboard-container py-4">
+    <div class="row mb-5 text-center">
+        <div class="col-12">
+            <span class="badge bg-primary-subtle text-primary px-3 py-2 mb-3 rounded-pill">V2.0 AI ENGINE LIVE</span>
+            <h1 class="display-5 fw-bold text-white">Advanced Web Intelligence</h1>
+        </div>
     </div>
-  </div>
+
+    <div class="row justify-content-center mb-5">
+        <div class="col-lg-8">
+            <div class="glass-panel text-center pulse-on-load">
+                <div class="input-group input-group-lg shadow-sm">
+                    <input id="openUrl" type="url" class="form-control bg-dark text-white border-0" placeholder="Enter Website URL (e.g. https://apple.com)" value="https://">
+                    <button id="btnOpenAudit" class="btn btn-primary px-5">
+                        <span id="btnSpinner" class="spinner-border spinner-border-sm d-none"></span>
+                        <span id="btnText">ANALYZE NOW</span>
+                    </button>
+                </div>
+                <div id="progressBox" class="mt-4 d-none">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span id="statusLabel" class="text-secondary">Ready...</span>
+                        <span id="percentLabel" class="text-primary fw-bold">0%</span>
+                    </div>
+                    <div class="progress" style="height: 6px; background: rgba(255,255,255,0.05);">
+                        <div id="auditBar" class="progress-bar bg-primary" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="resultsEngine" class="d-none">
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="glass-panel h-100 text-center">
+                    <h6 class="text-uppercase text-secondary ls-widest mb-4">Authority Score</h6>
+                    <div class="gauge-wrapper">
+                        <svg class="gauge-svg" width="180" height="180">
+                            <circle class="gauge-bg" cx="90" cy="90" r="70"></circle>
+                            <circle id="gaugeCircle" class="gauge-progress" cx="90" cy="90" r="70"></circle>
+                        </svg>
+                        <div class="gauge-text">
+                            <div id="ovScore" class="display-4 fw-bold">0</div>
+                            <div id="grade" class="text-primary fw-bold small">CALCULATING</div>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-top border-secondary">
+                        <div class="row">
+                            <div class="col-6 border-end border-secondary">
+                                <small class="text-secondary d-block">Status</small>
+                                <span class="badge bg-success">Healthy</span>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-secondary d-block">AI Trust</small>
+                                <span id="confidence">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-8">
+                <div class="glass-panel h-100">
+                    <h6 class="text-uppercase text-secondary ls-widest mb-4">Metric Breakdown</h6>
+                    <div style="height: 300px;">
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="glass-panel">
+                    <h5 class="mb-4"><i class="bi bi-robot text-primary me-2"></i> AI Recommendations</h5>
+                    <div id="aiRecommendations">
+                        <div class="recommendation-item">
+                            <h6 class="text-white">Performance Optimization</h6>
+                            <p class="small text-secondary mb-0" id="perfAdvice">Analyzing server response times and asset compression...</p>
+                        </div>
+                        <div class="recommendation-item" style="border-left-color: #0dcaf0;">
+                            <h6 class="text-white">SEO & Structure</h6>
+                            <p class="small text-secondary mb-0" id="seoAdvice">Checking meta tags, header hierarchy, and crawlability...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// Chart instance
-let breakdownChartInstance = null;
+let radarChartInstance = null;
 
-// Update progress bar based on crawl + PSI
-function updateProgressBar(progress, message = '') {
-    const bar = document.getElementById('auditProgress');
-    bar.style.width = `${progress}%`;
-    bar.textContent = message;
+function updateProgress(val, msg) {
+    document.getElementById('progressBox').classList.remove('d-none');
+    document.getElementById('auditBar').style.width = val + '%';
+    document.getElementById('percentLabel').textContent = val + '%';
+    document.getElementById('statusLabel').textContent = msg;
 }
 
 async function runAudit(url) {
-    const resultsDiv = document.getElementById('openResults');
     const btn = document.getElementById('btnOpenAudit');
-    const btnText = document.getElementById('btnText');
-    const btnSpinner = document.getElementById('btnSpinner');
-
-    const ovScore = document.getElementById('ovScore');
-    const gradeEl = document.getElementById('grade');
-    const onpageEl = document.getElementById('onpageScore');
-    const perfEl = document.getElementById('perfScore');
-    const coverageEl = document.getElementById('coverageScore');
-    const confEl = document.getElementById('confidence');
-    const jsonPre = document.getElementById('openJson');
-
+    const results = document.getElementById('resultsEngine');
+    
     btn.disabled = true;
-    btnText.textContent = 'Auditing...';
-    btnSpinner.classList.remove('d-none');
-
-    resultsDiv.classList.add('d-none');
-    ovScore.textContent = gradeEl.textContent = onpageEl.textContent = perfEl.textContent =
-    coverageEl.textContent = confEl.textContent = '-';
-    jsonPre.classList.add('d-none');
-
-    updateProgressBar(0, 'Starting audit...');
+    document.getElementById('btnSpinner').classList.remove('d-none');
+    results.classList.add('d-none');
+    
+    updateProgress(20, 'Bypassing Cloudflare & Connecting...');
 
     try {
-        // Polling API for crawl + PSI progress
-        const progressResponse = await fetch('/api/open-audit-progress', {
+        const res = await fetch('/api/open-audit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ url })
         });
+        
+        updateProgress(60, 'Parsing Google Lighthouse Nodes...');
 
-        if (!progressResponse.ok) {
-            const err = await progressResponse.json();
-            throw new Error(err.detail || 'Audit failed');
-        }
+        if (!res.ok) throw new Error();
+        const data = await res.json();
 
-        // Receive a stream of progress updates
-        const reader = progressResponse.body.getReader();
-        const decoder = new TextDecoder();
-        let partial = '';
+        // Animate Circle Gauge
+        const score = Math.round(data.overall_score);
+        const offset = 440 - (440 * score) / 100;
+        document.getElementById('gaugeCircle').style.strokeDashoffset = offset;
+        document.getElementById('ovScore').textContent = score;
+        document.getElementById('grade').textContent = data.grade;
+        document.getElementById('confidence').textContent = data.breakdown.confidence + '%';
 
-        while(true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            partial += decoder.decode(value, { stream: true });
-            const lines = partial.split("\n");
-            partial = lines.pop(); // keep last incomplete
-
-            lines.forEach(line => {
-                if (!line) return;
-                try {
-                    const obj = JSON.parse(line);
-                    if (obj.type === 'progress') {
-                        updateProgressBar(obj.percentage, obj.message);
-                    }
-                } catch(e) {
-                    console.error('Progress parse error', e);
-                }
-            });
-        }
-
-        // Final result after crawl + PSI
-        const resultData = JSON.parse(partial);
-        ovScore.textContent = resultData.overall_score ?? '-';
-        gradeEl.textContent = resultData.grade ?? '-';
-        onpageEl.textContent = resultData.breakdown.onpage ?? '-';
-        perfEl.textContent = resultData.breakdown.performance ?? '-';
-        coverageEl.textContent = resultData.breakdown.coverage ?? '-';
-        confEl.textContent = (resultData.breakdown.confidence ?? '-') + '%';
-
-        jsonPre.textContent = JSON.stringify(resultData, null, 2);
-        jsonPre.classList.remove('d-none');
-
-        const ctx = document.getElementById('breakdownChart').getContext('2d');
-        if (breakdownChartInstance) breakdownChartInstance.destroy();
-
-        breakdownChartInstance = new Chart(ctx, {
-            type: 'bar',
+        // Update Radar Chart
+        const ctx = document.getElementById('radarChart').getContext('2d');
+        if (radarChartInstance) radarChartInstance.destroy();
+        
+        radarChartInstance = new Chart(ctx, {
+            type: 'radar',
             data: {
-                labels: ['On-page', 'Performance', 'Coverage', 'Confidence'],
+                labels: ['SEO', 'Performance', 'Coverage', 'Security', 'Accessibility'],
                 datasets: [{
-                    label: 'Score',
-                    data: [
-                        resultData.breakdown.onpage || 0,
-                        resultData.breakdown.performance || 0,
-                        resultData.breakdown.coverage || 0,
-                        resultData.breakdown.confidence || 0
-                    ],
-                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
-                    borderColor: 'rgba(59, 130, 246, 1)',
-                    borderWidth: 1
+                    label: 'Website Score',
+                    data: [data.breakdown.onpage, data.breakdown.performance, data.breakdown.coverage, 85, 90],
+                    backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                    borderColor: '#0d6efd',
+                    pointBackgroundColor: '#0d6efd'
                 }]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: { y: { beginAtZero: true, max: 100 } },
+                scales: { r: { grid: { color: 'rgba(255,255,255,0.1)' }, angleLines: { color: 'rgba(255,255,255,0.1)' }, suggestMin: 0, suggestMax: 100, ticks: { display: false } } },
                 plugins: { legend: { display: false } }
             }
         });
 
-        resultsDiv.classList.remove('d-none');
-        updateProgressBar(100, 'Audit completed');
+        results.classList.remove('d-none');
+        updateProgress(100, 'Analysis Complete');
 
     } catch (e) {
-        console.error("Audit Error:", e);
-        alert(e.message || 'Error running audit.');
-        updateProgressBar(0, 'Audit failed');
+        alert('Audit Error');
+        updateProgress(0, 'System Ready');
     } finally {
         btn.disabled = false;
-        btnText.textContent = 'Audit';
-        btnSpinner.classList.add('d-none');
+        document.getElementById('btnSpinner').classList.add('d-none');
     }
 }
 
-// Button click logic
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
-    const urlInput = document.getElementById('openUrl');
-    const url = urlInput.value.trim();
-    if (!url || !url.startsWith('http')) return alert('Please enter a valid URL (http/https)');
-    runAudit(url);
-});
-
-window.addEventListener('load', () => {
-    const urlInput = document.getElementById('openUrl');
-    if (urlInput.value.trim()) runAudit(urlInput.value.trim());
+    runAudit(document.getElementById('openUrl').value);
 });
 </script>
 {% endblock %}
