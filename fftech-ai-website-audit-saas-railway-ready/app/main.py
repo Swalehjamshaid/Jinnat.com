@@ -12,8 +12,8 @@ from app.auth.router import router as auth_router
 from app.api.router import router as api_router
 from app.services.resend_admin import ensure_resend_ready
 
-# New: grader.py import
-from app.grader import compute_scores
+# ✅ FIXED IMPORT: grader.py location
+from app.audit.grader import compute_scores
 
 app = FastAPI(title='FF Tech AI Website Audit SaaS')
 
@@ -84,8 +84,6 @@ async def open_audit(request: Request):
         # -------------------------
         # Fetch audit data (simulate real audit)
         # -------------------------
-        # Normally here you would call your crawler/analysis service.
-        # For demonstration, we simulate dummy results:
         onpage = {"missing_title_tags": 1, "missing_meta_descriptions": 2, "multiple_h1": 1}
         perf = {"lcp_ms": 2800, "fcp_ms": 1500, "mobile_score": 85, "desktop_score": 92}
         links = {"total_broken_links": 3}
