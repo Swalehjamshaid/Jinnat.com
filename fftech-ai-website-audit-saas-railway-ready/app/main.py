@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.audit.runner import run_audit  # now synchronous
+from app.audit.runner import run_audit  # synchronous Python-only audit
 
 logger = logging.getLogger("audit_engine")
 logging.basicConfig(level=logging.INFO)
@@ -45,21 +45,23 @@ def audit_event_generator(url: str) -> Generator[str, None, None]:
     """
     Generator that yields SSE-formatted strings.
     Sends progress updates + final result or error.
+    Fully synchronous implementation.
     """
-    yield f"data: {json.dumps({'crawl_progress': 0, 'status': 'Starting Python audit...', 'finished': False})}\n\n"
-    yield f": audit-started {url}\n\n"
-
     try:
-        # Step 1: Starting crawl/fetch
-        yield f"data: {json.dumps({'crawl_progress': 10, 'status': 'Fetching page(s)...', 'finished': False})}\n\n"
-        time.sleep(0.4)  # small artificial delay for better UX – remove in production if unwanted
+        # Start
+        yield f"data: {json.dumps({'crawl_progress': 0, 'status': 'Starting Python audit...', 'finished': False})}\n\n"
+        time.sleep(0.2)
 
-        # Step 2: Run full synchronous audit
+        # Fetching pages
+        yield f"data: {json.dumps({'crawl_progress': 10, 'status': 'Fetching page(s)...', 'finished': False})}\n\n"
+        time.sleep(0.3)
+
+        # Run full audit
         result = run_audit(url)
 
-        # Step 3: Processing results
+        # Processing & final steps
         yield f"data: {json.dumps({'crawl_progress': 80, 'status': 'Analyzing SEO, performance & links...', 'finished': False})}\n\n"
-        time.sleep(0.3)
+        time.sleep(0.2)
 
         # Final result
         result['finished'] = True
@@ -82,7 +84,6 @@ def audit_event_generator(url: str) -> Generator[str, None, None]:
 def open_audit_progress(url: str = Query(..., description="Website URL to audit")):
     """
     SSE endpoint: streams audit progress and final result.
-    Fully synchronous implementation.
     """
     try:
         normalized_url = _normalize_url(url)
