@@ -4,7 +4,7 @@ import certifi
 import urllib3
 from urllib.parse import urlparse
 
-# Disable warnings only if we have to fall back to insecure mode
+# This prevents console noise when you bypass SSL for a specific site
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger("audit_engine")
@@ -24,37 +24,34 @@ def run_audit(url: str) -> dict:
             url,
             headers=headers,
             timeout=20,
-            verify=certifi.where(), # Use the trusted bundle
+            verify=certifi.where(), 
             allow_redirects=True,
         )
     except requests.exceptions.SSLError:
-        # 2. Fallback: If SSL fails, try once more without verification
-        # This is crucial for an audit tool because you still want to 
-        # analyze the site's content even if their SSL is misconfigured.
+        # 2. Fallback: Catch SSL error and retry without verification
         logger.warning(f"SSL verification failed for {url}. Retrying without verification.")
         ssl_verified = False
         response = session.get(
             url,
             headers=headers,
             timeout=20,
-            verify=False, # Ignore the chain error
+            verify=False, # This allows the audit to proceed
             allow_redirects=True,
         )
-    except requests.exceptions.Timeout:
-        raise RuntimeError("The website took too long to respond.")
     except requests.exceptions.RequestException as e:
+        logger.error(f"Audit failed: {e}")
         raise RuntimeError(f"Failed to fetch URL: {e}")
 
-    # 3. Process Result
     parsed = urlparse(response.url)
     
+    # 3. Return the result dictionary so the UI can update
     return {
-        "finished": True, # Changed to True since it worked
+        "finished": True,
         "url": response.url,
         "domain": parsed.netloc,
         "http_status": response.status_code,
         "https": parsed.scheme == "https",
-        "ssl_secure": ssl_verified, # Pass this back to your frontend!
+        "ssl_secure": ssl_verified, 
         "content_length": len(response.text),
-        "status": "Audit completed" if ssl_verified else "Audit completed with SSL warnings",
+        "status": "Audit completed successfully",
     }
