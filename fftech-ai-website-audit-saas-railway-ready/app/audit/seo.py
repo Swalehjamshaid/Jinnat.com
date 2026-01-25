@@ -1,9 +1,8 @@
-# app/audit/seo.py
-
 from bs4 import BeautifulSoup
 from collections import Counter
+from typing import Union, Dict
 
-def analyze_onpage(html_docs: dict[str, str]) -> dict:
+def analyze_onpage(html_docs: Union[Dict[str, str], str]) -> dict:
     """
     Detailed SEO analysis of all HTML pages collected by the crawler.
     Evaluates:
@@ -13,6 +12,10 @@ def analyze_onpage(html_docs: dict[str, str]) -> dict:
       - Image alt attributes (missing)
     Returns a metrics dictionary summarizing the SEO health.
     """
+    # If a single HTML string is passed, wrap it in a dict
+    if isinstance(html_docs, str):
+        html_docs = {"single_url": html_docs}
+
     metrics = {
         'missing_title_tags': 0,
         'duplicate_title_tags': 0,
@@ -31,7 +34,7 @@ def analyze_onpage(html_docs: dict[str, str]) -> dict:
     for url, html in html_docs.items():
         soup = BeautifulSoup(html, 'html.parser')
 
-        # 1. Title Tag Analysis
+        # 1️⃣ Title Tag Analysis
         title_tag = soup.title.string.strip() if soup.title and soup.title.string else None
         if not title_tag:
             metrics['missing_title_tags'] += 1
@@ -42,26 +45,26 @@ def analyze_onpage(html_docs: dict[str, str]) -> dict:
             elif len(title_tag) < 10:
                 metrics['title_too_short'] += 1
 
-        # 2. Meta Description Analysis
+        # 2️⃣ Meta Description Analysis
         md = soup.find('meta', attrs={'name': 'description'})
         if md and md.get('content') and md.get('content').strip():
             metas.append(md['content'].strip())
         else:
             metrics['missing_meta_descriptions'] += 1
 
-        # 3. H1 Tag Analysis
+        # 3️⃣ H1 Tag Analysis
         h1s = soup.find_all('h1')
         if not h1s:
             metrics['missing_h1'] += 1
         elif len(h1s) > 1:
             metrics['multiple_h1'] += 1
 
-        # 4. Image Alt Attribute Analysis
+        # 4️⃣ Image Alt Attribute Analysis
         for img in soup.find_all('img'):
             if not img.get('alt') or not img.get('alt').strip():
                 metrics['image_missing_alt'] += 1
 
-    # 5. Duplicate Analysis using Counter
+    # 5️⃣ Duplicate Analysis using Counter
     title_counts = Counter(titles)
     metrics['duplicate_title_tags'] = sum(1 for text, count in title_counts.items() if count > 1)
 
