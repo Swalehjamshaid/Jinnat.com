@@ -1,39 +1,33 @@
+# app/audit/performance.py
 import time
 import requests
 import urllib3
-import asyncio
 from .psi import fetch_lighthouse
 from ..settings import get_settings
 
-# Disable SSL warnings to keep logs clean
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-async def analyze_performance(url: str) -> dict:
+async def analyze_performance(url: str):
     """
-    Measures website performance:
-    - Tries Google PSI / Lighthouse first (if API key present)
-    - Falls back to simple request-based timing
-    - Returns LCP, FCP, total size, and server response time
+    Async website performance measurement.
+    Uses Google PSI if API key is present, else falls back to simple timing.
     """
     settings = get_settings()
     
-    mobile_result, desktop_result = None, None
+    mobile_result = None
+    desktop_result = None
 
+    # Await PSI / Lighthouse calls
     if settings.PSI_API_KEY:
-        try:
-            # Await async calls
-            mobile_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="mobile")
-            desktop_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="desktop")
-        except Exception as e:
-            print(f"Lighthouse fetch error for {url}: {e}")
+        mobile_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="mobile")
+        desktop_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="desktop")
 
     if mobile_result or desktop_result:
-        # Prioritize desktop metrics if available
         result = desktop_result or mobile_result
         result['fallback_active'] = False
         return result
 
-    # Step 2: Fallback with SSL bypass (for sites with certificate issues)
+    # Fallback: request-based measurement
     t0 = time.time()
     try:
         r = requests.get(
@@ -49,7 +43,6 @@ async def analyze_performance(url: str) -> dict:
         size, ttfb = 0, 15
 
     total_time = time.time() - t0
-
     return {
         'lcp_ms': min(4000, int(total_time * 1000)),
         'fcp_ms': min(2500, int(ttfb * 1000)),
