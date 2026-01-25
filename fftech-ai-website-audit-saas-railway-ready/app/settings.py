@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # API Keys
     AI_API_KEY: str
-    GEMINI_API_KEY: str
+    GEMINI_API_KEY: str | None = None  # optional, default None
     RESEND_API_KEY: str
     PSI_API_KEY: str
 
@@ -30,6 +30,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"  # ignore any unexpected env variables
+        case_sensitive = False  # environment variable names are usually uppercase
 
 # Singleton access
 _settings_instance: Settings | None = None
