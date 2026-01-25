@@ -1,19 +1,19 @@
-# app/app/main.py
+# app/main.py
 import json
 import logging
 import time
 from urllib.parse import urlparse
-from typing import Generator, AsyncGenerator
+from typing import Generator
 
 from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.audit.runner import run_audit_async  # updated async SSL-verified audit
+from app.audit.runner import run_audit  # ✅ import now works correctly
 
 # ─────────────────────────────────────
-# Logging setup
+# Logging
 # ─────────────────────────────────────
 logger = logging.getLogger("audit_engine")
 logging.basicConfig(
@@ -22,102 +22,78 @@ logging.basicConfig(
 )
 
 # ─────────────────────────────────────
-# FastAPI app initialization
+# FastAPI App
 # ─────────────────────────────────────
-app = FastAPI(title="FF Tech SSL-Verified Audit", version="3.0")
+app = FastAPI(title="FF Tech International Audit Engine", version="2.0")
 
-# Static files & templates
+# Static & Templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 # ─────────────────────────────────────
-# Utility Functions
+# Utils
 # ─────────────────────────────────────
-def _normalize_url(u: str) -> str:
-    """Normalize URL for audit: add https:// if missing, keep scheme + netloc + path only."""
-    if not u:
-        raise ValueError("Empty URL")
-    candidate = u if "://" in u else f"https://{u}"
-    parsed = urlparse(candidate)
+def normalize_url(url: str) -> str:
+    if not url:
+        raise ValueError("URL is required")
+
+    if "://" not in url:
+        url = "https://" + url
+
+    parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
-        raise ValueError(f"Invalid URL: {u}")
+        raise ValueError("Invalid URL format")
+
     return f"{parsed.scheme}://{parsed.netloc}{parsed.path or ''}"
 
 # ─────────────────────────────────────
-# Home route
+# Home Page
 # ─────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    """Render main audit homepage."""
     return templates.TemplateResponse("index.html", {"request": request})
 
 # ─────────────────────────────────────
-# Async SSE Generator for audit progress
+# SSE Generator
 # ─────────────────────────────────────
-async def audit_event_generator_async(url: str) -> AsyncGenerator[str, None]:
-    """
-    Yield Server-Sent Events (SSE) strings with progress updates and final audit result.
-    Fully async using SSL-verified HTTP requests.
-    """
+def audit_event_generator(url: str) -> Generator[str, None, None]:
     try:
-        # Start
-        yield f"data: {json.dumps({'crawl_progress': 0, 'status': 'Initializing audit...', 'finished': False})}\n\n"
-        await asyncio.sleep(0.2)
+        yield f"data: {json.dumps({'progress': 5, 'status': 'Starting audit...', 'finished': False})}\n\n"
+        time.sleep(0.3)
 
-        # Fetching pages
-        yield f"data: {json.dumps({'crawl_progress': 10, 'status': 'Fetching pages...', 'finished': False})}\n\n"
-        await asyncio.sleep(0.3)
+        yield f"data: {json.dumps({'progress': 20, 'status': 'Crawling website...', 'finished': False})}\n\n"
+        time.sleep(0.3)
 
-        # Run full async audit
-        result_html = await run_audit_async(url)
+        result = run_audit(url)
 
-        # Processing & final steps
-        yield f"data: {json.dumps({'crawl_progress': 80, 'status': 'Analyzing SEO, performance & links...', 'finished': False})}\n\n"
-        await asyncio.sleep(0.2)
+        yield f"data: {json.dumps({'progress': 80, 'status': 'Analyzing results...', 'finished': False})}\n\n"
+        time.sleep(0.3)
 
-        # Final result
-        result_payload = {
-            "finished": True,
-            "status": "Audit completed successfully.",
-            "length": len(result_html)
-        }
-        yield f"data: {json.dumps(result_payload)}\n\n"
+        result["finished"] = True
+        yield f"data: {json.dumps(result)}\n\n"
 
     except Exception as e:
-        logger.exception("Audit failed for %s", url)
-        error_payload = {
-            "finished": True,
-            "error": str(e),
-            "status": "Audit failed. Check server logs for details."
-        }
-        yield f"data: {json.dumps(error_payload)}\n\n"
-
-    finally:
-        # End of stream
-        yield f": done\n\n"
+        logger.exception("Audit error")
+        yield f"data: {json.dumps({'finished': True, 'error': str(e)})}\n\n"
 
 # ─────────────────────────────────────
-# SSE Endpoint
+# SSE API
 # ─────────────────────────────────────
 @app.get("/api/open-audit-progress")
-async def open_audit_progress(url: str = Query(..., description="Website URL to audit")):
-    """
-    Async SSE endpoint that streams SSL-verified audit progress + final result.
-    Returns: StreamingResponse with text/event-stream
-    """
+def open_audit_progress(url: str = Query(...)):
     try:
-        normalized_url = _normalize_url(url)
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
+        url = normalize_url(url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return StreamingResponse(
-        audit_event_generator_async(normalized_url),
+        audit_event_generator(url),
         media_type="text/event-stream"
     )
 
 # ─────────────────────────────────────
-# Health check
+# Health Check
 # ─────────────────────────────────────
 @app.get("/healthz")
-def healthz():
+def health():
     return {"status": "ok"}
