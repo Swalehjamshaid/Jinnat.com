@@ -1,4 +1,4 @@
-# app/app/main.py
+# app/main.py
 import asyncio
 import json
 import logging
@@ -46,11 +46,11 @@ async def open_audit_progress(
             # Step 0: Notify client
             yield f"data: {json.dumps({'crawl_progress': 0, 'status': 'Starting Python audit...'})}\n\n"
 
-            # Step 1: Run audit
+            # Step 1: Run audit (await coroutine properly)
             result = await run_audit(url)
 
             # Step 2: Send final result
-            yield f"data: {json.dumps(result)}\n\n"
+            yield f"data: {json.dumps({'crawl_progress': 100, 'status': 'Audit Complete', 'result': result})}\n\n"
 
         except Exception as e:
             logger.exception(f"Audit failed for {url}")
