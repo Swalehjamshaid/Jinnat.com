@@ -1,6 +1,7 @@
 # app/audit/grader.py
 from typing import Dict, Tuple, Optional, Any, Mapping, Iterable
 import re
+from .links import analyze_links  # NEW: import link analyzer
 
 GRADE_BANDS = (
     (90, "A+"),
@@ -10,6 +11,7 @@ GRADE_BANDS = (
     (0,  "D"),
 )
 
+# Default weights for each component
 WEIGHTS = {
     "performance": 0.35,
     "seo": 0.30,
@@ -42,7 +44,8 @@ TAG_META_DESC = re.compile(
 def _to_html(x: Any) -> str:
     if isinstance(x, (bytes, bytearray)):
         return x[:MAX_HTML_BYTES].decode("utf-8", "ignore")
-    return str(x)[:MAX_HTML_BYTES]
+    s = str(x)
+    return s[:MAX_HTML_BYTES]
 
 def _iter_pages(raw_pages: Any) -> Iterable[str]:
     if isinstance(raw_pages, Mapping):
@@ -60,115 +63,119 @@ def _count_pages(raw_pages: Any) -> int:
     return 0
 
 def _as_count(x: Any) -> int:
-    if isinstance(x, (list, tuple, set, dict)):
-        return len(x)
-    if isinstance(x, (int, float)):
-        return int(x)
-    return 0
-
-def _sum_internal_links(internal_links: Any) -> int:
-    if isinstance(internal_links, Mapping):
-        return sum(len(v) for v in internal_links.values() if isinstance(v, (list, set, tuple)))
-    if isinstance(internal_links, (list, set, tuple)):
-        return len(internal_links)
-    if isinstance(internal_links, int):
-        return internal_links
-    return 0
-
+    try:
+        if isinstance(x, (list, tuple, set, dict)):
+            return len(x)
+        if isinstance(x, (int, float)):
+            return int(x)
+        if x is None:
+            return 0
+        return int(str(x).strip() or 0)
+    except Exception:
+        return 0
 
 def compute_scores(
     lighthouse: Optional[Dict[str, Optional[float]]],
     crawl: Dict[str, Any],
 ) -> Tuple[float, str, Dict[str, Optional[float]]]:
-
+    """
+    Compute website audit scores using Python heuristics + links.py metrics.
+    """
     try:
-        pages = crawl.get("pages", {})
-        errors = _as_count(crawl.get("errors", []))
-
-        # ✅ FIX: support both old and new crawler keys
-        broken_links = _as_count(
-            crawl.get("broken_links")
-            or crawl.get("broken_internal")
-            or []
-        )
-
-        # --- SEO ---
-        total_pages = 0
+        raw_pages = crawl.get("pages") or {}
+        total_for_seo = 0
         title_count = 0
         desc_count = 0
 
-        for html in _iter_pages(pages):
-            total_pages += 1
+        for html in _iter_pages(raw_pages):
+            total_for_seo += 1
             if TAG_TITLE.search(html):
                 title_count += 1
             if TAG_META_DESC.search(html):
                 desc_count += 1
 
-        total_pages = total_pages or 1
-        seo_score = clamp(
-            (title_count / total_pages) * 50 +
-            (desc_count / total_pages) * 50
-        )
+        total_for_seo = total_for_seo or 1
+        seo_score = ((title_count / total_for_seo) * 50.0 +
+                     (desc_count / total_for_seo) * 50.0)
+        seo_score = clamp(seo_score)
 
-        # --- Performance ---
-        performance = clamp(100 - broken_links * 5)
+        # --- Use links.py to analyze link data ---
+        link_metrics = analyze_links(crawl)
+
+        broken_links = link_metrics.get("total_broken_links", 0)
+        total_internal_links = link_metrics.get("total_internal_links", 0)
+        total_external_links = link_metrics.get("total_external_links", 0)
+        internal_ratio = link_metrics.get("internal_link_ratio", 0)
+
+        # --- Performance score: fewer broken links is better ---
+        perf_score = clamp(100.0 - broken_links * 5.0)
 
         # --- Coverage ---
-        coverage = clamp((_count_pages(pages) / MAX_PAGES) * 100)
+        discovered_pages = _count_pages(raw_pages)
+        coverage = clamp((discovered_pages / MAX_PAGES) * 100.0)
 
-        # --- Technical ---
-        internal_links = crawl.get("internal_links", {})
-        internal_total = _sum_internal_links(internal_links)
-        ideal_links = max(1, total_pages * 10)
-        technical = clamp((internal_total / ideal_links) * 100)
+        # --- Technical: internal link richness ---
+        ideal_links = max(1, total_for_seo * 10)
+        technical = clamp((total_internal_links / ideal_links) * 100.0)
 
-        # --- Stability ---
-        stability = clamp(100 - errors * 5)
+        # --- Stability: fewer crawl errors better ---
+        errors = _as_count(crawl.get("errors", 0))
+        stability = clamp(100.0 - errors * 5.0)
 
-        # --- Weighted score ---
-        weighted = (
-            performance * WEIGHTS["performance"] +
-            seo_score * WEIGHTS["seo"] +
-            coverage * WEIGHTS["coverage"] +
-            technical * WEIGHTS["technical"] +
-            stability * WEIGHTS["stability"]
-        )
-        overall = clamp(round(weighted, 1))
+        # --- Weighted overall ---
+        components = [perf_score, seo_score, coverage, technical, stability]
+        weights = [
+            WEIGHTS["performance"],
+            WEIGHTS["seo"],
+            WEIGHTS["coverage"],
+            WEIGHTS["technical"],
+            WEIGHTS["stability"],
+        ]
+        weighted_sum = sum(c * w for c, w in zip(components, weights))
+        overall = clamp(weighted_sum / max(1e-9, sum(weights)))
+
+        # --- Penalties ---
+        broken_penalty = min(15.0, broken_links * 2.0)
+        error_penalty  = min(20.0, errors * 5.0)
+        overall = clamp(round(overall - broken_penalty - error_penalty, 1))
 
         breakdown = {
-            "performance": round(performance, 1),
+            "performance": round(perf_score, 1),
             "seo": round(seo_score, 1),
             "coverage": round(coverage, 1),
             "technical": round(technical, 1),
             "stability": round(stability, 1),
             "broken_links": broken_links,
             "errors": errors,
+            "internal_link_ratio": internal_ratio,
             "missing": {
                 "performance": False,
                 "seo": False,
                 "coverage": False,
                 "technical": False,
-                "stability": False,
+                "stability": False
             },
         }
 
         return overall, grade(overall), breakdown
 
     except Exception as e:
-        return 0.0, "D", {
-            "performance": 0,
-            "seo": 0,
-            "coverage": 0,
-            "technical": 0,
-            "stability": 0,
+        breakdown = {
+            "performance": 0.0,
+            "seo": 0.0,
+            "coverage": 0.0,
+            "technical": 0.0,
+            "stability": 0.0,
             "broken_links": 0,
             "errors": 0,
+            "internal_link_ratio": 0,
             "missing": {
                 "performance": True,
                 "seo": True,
                 "coverage": True,
                 "technical": True,
-                "stability": True,
+                "stability": True
             },
-            "reason": str(e),
+            "reason": f"grader_error: {type(e).__name__}",
         }
+        return 0.0, "D", breakdown
