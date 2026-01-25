@@ -1,44 +1,34 @@
-import logging
-from urllib.request import urlopen, Request
+# app/audit/psi.py
+import aiohttp
+import asyncio
 
-logger = logging.getLogger(__name__)
-
-DEFAULT_RESULT = {
-    "performance": 50.0,
-    "seo": 50.0,
-    "accessibility": 50.0,
-    "best_practices": 50.0,
-    "lcp": 2.0,
-    "cls": 0.05,
-}
-
-HEADERS = {"User-Agent": "FFTechAuditor/2.0"}
-
-def python_library_audit(url: str):
+async def fetch_lighthouse(url: str, api_key: str, strategy: str = "desktop") -> dict:
     """
-    Pre-audit entirely in Python:
-    - Checks reachability
-    - Sets baseline SEO and performance metrics
+    Fetch Lighthouse / PageSpeed Insights data asynchronously.
+    strategy: "desktop" or "mobile"
+    Returns: dict with lcp_ms, fcp_ms, total_page_size_kb
     """
-    result = DEFAULT_RESULT.copy()
+    if not api_key:
+        return {}
+
+    endpoint = f"https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url={url}&key={api_key}&strategy={strategy}"
+
     try:
-        req = Request(url, headers=HEADERS)
-        with urlopen(req, timeout=5) as resp:
-            if resp.getcode() == 200:
-                result["seo"] += 10
-                result["performance"] += 10
-            else:
-                result["seo"] -= 5
-                result["performance"] -= 5
-    except Exception:
-        logger.warning("Failed to reach %s", url)
-        result["seo"] -= 10
-        result["performance"] -= 10
-    return result
+        async with aiohttp.ClientSession() as session:
+            async with session.get(endpoint, timeout=20) as response:
+                data = await response.json()
 
-async def fetch_lighthouse(url: str, api_key: str = None):
-    """
-    Python-compatible placeholder for Lighthouse/PSI.
-    Returns pre-audit metrics when PSI API is not configured.
-    """
-    return python_library_audit(url)
+                audits = data.get("lighthouseResult", {}).get("audits", {})
+
+                lcp = int(audits.get("largest-contentful-paint", {}).get("numericValue", 0))
+                fcp = int(audits.get("first-contentful-paint", {}).get("numericValue", 0))
+                total_size = int(audits.get("total-byte-weight", {}).get("numericValue", 0) / 1024)
+
+                return {
+                    "lcp_ms": lcp,
+                    "fcp_ms": fcp,
+                    "total_page_size_kb": total_size
+                }
+    except Exception as e:
+        print(f"Lighthouse fetch error for {url} ({strategy}): {e}")
+        return {}
