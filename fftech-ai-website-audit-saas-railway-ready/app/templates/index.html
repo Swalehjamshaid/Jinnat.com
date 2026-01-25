@@ -1,4 +1,3 @@
-
 {% extends 'base.html' %}
 {% block content %}
 
@@ -27,6 +26,7 @@
   .metric-chip { font-variant-numeric: tabular-nums; }
   .demo-links a { text-decoration: none; }
   .demo-links a:hover { text-decoration: underline; }
+  .chart-container { position: relative; width: 100%; height: 300px; }
 </style>
 
 <div class="row gy-4">
@@ -84,7 +84,9 @@
         <!-- Audit Results -->
         <div id="openResults" class="mt-3 d-none">
           <h5 class="mb-3">Audit Results</h5>
-          <div class="row g-3">
+          
+          <!-- Overall Score & Grade -->
+          <div class="row g-3 mb-4">
             <div class="col-md-4">
               <div class="p-4 rounded bg-dark-subtle text-center h-100 border">
                 <b class="text-uppercase small ls-widest text-secondary">Overall Score</b>
@@ -92,13 +94,16 @@
                 <div id="grade" class="h4 fw-bold mt-1">-</div>
               </div>
             </div>
+            
+            <!-- Breakdown Chart -->
             <div class="col-md-8">
-              <div class="p-2 border rounded h-100">
-                <canvas id="breakdownChart" height="160"></canvas>
+              <div class="p-2 border rounded h-100 chart-container">
+                <canvas id="breakdownChart"></canvas>
               </div>
             </div>
           </div>
 
+          <!-- Metric Details -->
           <div class="mt-4">
             <h6 class="fw-bold">Metric Details</h6>
             <div class="row g-2">
@@ -109,14 +114,16 @@
             </div>
           </div>
 
+          <!-- Download Buttons -->
           <div class="mt-3 d-flex gap-2">
             <a id="downloadExcel" href="#" class="btn btn-sm btn-outline-primary">Download XLSX</a>
             <a id="downloadPPT" href="#" class="btn btn-sm btn-outline-success">Download PPTX</a>
+            <button id="downloadPDF" class="btn btn-sm btn-outline-dark">Download PDF</button>
           </div>
 
+          <!-- Raw JSON for advanced users -->
           <pre id="openJson" class="small mt-4 bg-dark text-info p-3 rounded d-none" style="max-height:220px; overflow:auto;"></pre>
         </div>
-
       </div>
     </div>
   </div>
@@ -139,6 +146,7 @@
   </div>
 </div>
 
+<!-- Toast for notifications -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080">
   <div id="appToast" class="toast align-items-center text-bg-dark border-0" role="alert" aria-live="assertive" aria-atomic="true">
     <div class="d-flex">
@@ -209,15 +217,13 @@ function runAudit(url) {
     let data;
     try { data = JSON.parse(e.data || "{}"); } catch { data = {}; }
 
-    // If server streams interim status, update progress
     if (!data.finished) {
-      const msg = (typeof data.status === 'string' && data.status) ? data.status : "Auditing…";
+      const msg = data.status || "Auditing…";
       const pct = Number(data.crawl_progress ?? 0);
       updateProgress(pct, msg);
       return;
     }
 
-    // Finished or error
     evtSource.close();
 
     if (data.error) {
@@ -229,8 +235,6 @@ function runAudit(url) {
 
     document.getElementById('openResults').classList.remove("d-none");
     const breakdown = data.breakdown || {};
-
-    // Match backend keys: onpage, performance, coverage, confidence
     const onpage = Number(breakdown.onpage ?? 0);
     const perf   = Number(breakdown.performance ?? 0);
     const cover  = Number(breakdown.coverage ?? 0);
@@ -243,8 +247,7 @@ function runAudit(url) {
     document.getElementById('coverageScore').textContent= isFinite(cover) ? cover : "-";
     document.getElementById('confidence').textContent   = isFinite(conf) ? (conf + "%") : "-";
 
-    // Render chart safely
-    const chartData = [onpage, perf, cover, conf].map(v => (isFinite(v) ? v : 0));
+    const chartData = [onpage, perf, cover, conf].map(v => isFinite(v) ? v : 0);
     const ctx = document.getElementById('breakdownChart').getContext('2d');
     if (breakdownChartInstance) breakdownChartInstance.destroy();
     breakdownChartInstance = new Chart(ctx, {
@@ -260,7 +263,6 @@ function runAudit(url) {
       }
     });
 
-    // Optional download links (if your backend sets these)
     document.getElementById('downloadExcel').href = data.excel_path ?? "#";
     document.getElementById('downloadPPT').href   = data.pptx_path ?? "#";
 
@@ -276,6 +278,7 @@ function runAudit(url) {
   };
 }
 
+// Audit button triggers
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
   const url = normalizeUrl(document.getElementById('openUrl').value);
   if (!url || !/^https?:\/\/.+\..+/.test(url)) {
@@ -284,12 +287,35 @@ document.getElementById('btnOpenAudit').addEventListener('click', () => {
   }
   runAudit(url);
 });
-
 document.querySelectorAll('.demo-link').forEach(a => a.addEventListener('click', e => {
   e.preventDefault();
   const url = normalizeUrl(a.getAttribute('data-url'));
   if (url) runAudit(url);
 }));
+
+// PDF download button
+document.getElementById('downloadPDF').addEventListener('click', () => {
+  const url = normalizeUrl(document.getElementById('openUrl').value);
+  if (!url) { toast("No audit data to export.", "warning"); return; }
+
+  const payload = {
+    overall_score: document.getElementById('ovScore').textContent,
+    grade: document.getElementById('grade').textContent,
+    breakdown: {
+      onpage: document.getElementById('onpageScore').textContent,
+      performance: document.getElementById('perfScore').textContent,
+      coverage: document.getElementById('coverageScore').textContent,
+      confidence: document.getElementById('confidence').textContent.replace("%","")
+    }
+  };
+
+  fetch("/api/download-pdf", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+  })
+  .then(res => { if(!res.ok) throw new Error("Failed to generate PDF."); return res.blob(); })
+  .then(blob => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download="audit-report.pdf"; a.click(); toast("PDF downloaded!", "success"); })
+  .catch(err => { console.error(err); toast(err.message, "danger"); });
+});
 </script>
 
 {% endblock %}
