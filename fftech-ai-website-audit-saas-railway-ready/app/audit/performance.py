@@ -4,30 +4,30 @@ import requests
 import urllib3
 from .psi import fetch_lighthouse
 from ..settings import get_settings
+import asyncio
 
+# Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 async def analyze_performance(url: str):
     """
-    Async website performance measurement.
-    Uses Google PSI if API key is present, else falls back to simple timing.
+    Measures website performance:
+    1️⃣ Google PSI / Lighthouse (desktop & mobile)
+    2️⃣ Fallback: simple request timing
     """
     settings = get_settings()
     
-    mobile_result = None
-    desktop_result = None
+    # Step 1: Lighthouse / PSI
+    mobile_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="mobile") if settings.PSI_API_KEY else None
+    desktop_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="desktop") if settings.PSI_API_KEY else None
 
-    # Await PSI / Lighthouse calls
-    if settings.PSI_API_KEY:
-        mobile_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="mobile")
-        desktop_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="desktop")
+    result = desktop_result or mobile_result
 
-    if mobile_result or desktop_result:
-        result = desktop_result or mobile_result
+    if result:
         result['fallback_active'] = False
         return result
 
-    # Fallback: request-based measurement
+    # Step 2: Fallback with SSL bypass
     t0 = time.time()
     try:
         r = requests.get(
@@ -43,6 +43,7 @@ async def analyze_performance(url: str):
         size, ttfb = 0, 15
 
     total_time = time.time() - t0
+
     return {
         'lcp_ms': min(4000, int(total_time * 1000)),
         'fcp_ms': min(2500, int(ttfb * 1000)),
