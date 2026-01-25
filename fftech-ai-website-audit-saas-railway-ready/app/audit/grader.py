@@ -57,3 +57,15 @@ def grade_audit(
     }
 
     return overall_score, grade, breakdown
+
+
+# -----------------------------
+# Add compute_scores for main.py compatibility
+# -----------------------------
+def compute_scores(seo_metrics: Dict[str, int],
+                   perf_metrics: Dict[str, int],
+                   link_metrics: Dict[str, int]) -> Tuple[int, str, Dict[str, int]]:
+    """
+    Wrapper function to maintain import compatibility with main.py.
+    """
+    return grade_audit(seo_metrics, perf_metrics, link_metrics)
