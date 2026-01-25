@@ -6,34 +6,28 @@ from app.audit.crawler import crawl
 from app.audit.grader import compute_scores
 
 async def run_audit(url: str) -> Dict[str, Any]:
-    """
-    Full Python-native audit:
-    - Crawl the website
-    - Compute scores using compute_scores
-    - Returns overall_score, grade, breakdown
-    """
     try:
-        # Run crawl (Python-native)
         crawl_result = await crawl(url, max_pages=15)
 
-        # --- Prepare crawl stats for grader ---
-        # compute_scores expects 'pages' as dict and broken_links as int
+        # convert CrawlResult to dict for grader
         crawl_stats = {
-            "pages": crawl_result.pages,  # dict: {url: html}
-            "broken_links": len(crawl_result.broken_internal),
+            "pages": crawl_result.pages,
+            "broken_internal": crawl_result.broken_internal,
+            "internal_links": crawl_result.internal_links,
+            "external_links": crawl_result.external_links,
+            "status_counts": crawl_result.status_counts,
             "errors": crawl_result.status_counts.get(0, 0),
         }
 
-        # --- Compute scores ---
-        overall_score, grade, breakdown = compute_scores(
-            lighthouse=None,  # Python-only, no PSI
+        overall_score, grade_letter, breakdown = compute_scores(
+            lighthouse=None,
             crawl=crawl_stats
         )
 
         return {
             "finished": True,
             "overall_score": overall_score,
-            "grade": grade,
+            "grade": grade_letter,
             "breakdown": breakdown,
             "crawl_progress": 1.0
         }
