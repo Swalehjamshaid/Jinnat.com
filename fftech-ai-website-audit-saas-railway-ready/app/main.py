@@ -1,31 +1,31 @@
-
 # app/app/main.py
-import asyncio
 import json
 import logging
+import time
 from urllib.parse import urlparse
+from typing import Generator
 
 from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.audit.runner import run_audit
+from app.audit.runner import run_audit  # now synchronous
 
 logger = logging.getLogger("audit_engine")
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="FF Tech Python-Only Audit")
 
-# Static & templates
+# Static files & templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
 def _normalize_url(u: str) -> str:
     """
-    Ensure URL has a scheme and looks valid enough for our crawler.
-    Adds https:// if missing and checks that netloc exists.
+    Ensure URL has scheme and looks valid.
+    Adds https:// if missing; keeps path but strips query/fragment for root audit.
     """
     if not u:
         raise ValueError("Empty URL")
@@ -33,52 +33,68 @@ def _normalize_url(u: str) -> str:
     parsed = urlparse(candidate)
     if not parsed.scheme or not parsed.netloc:
         raise ValueError(f"Invalid URL: {u}")
-    # Keep path if present, ignore query/fragment for the root audit
     return f"{parsed.scheme}://{parsed.netloc}{parsed.path or ''}"
 
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
+def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+def audit_event_generator(url: str) -> Generator[str, None, None]:
+    """
+    Generator that yields SSE-formatted strings.
+    Sends progress updates + final result or error.
+    """
+    yield f"data: {json.dumps({'crawl_progress': 0, 'status': 'Starting Python audit...', 'finished': False})}\n\n"
+    yield f": audit-started {url}\n\n"
+
+    try:
+        # Step 1: Starting crawl/fetch
+        yield f"data: {json.dumps({'crawl_progress': 10, 'status': 'Fetching page(s)...', 'finished': False})}\n\n"
+        time.sleep(0.4)  # small artificial delay for better UX – remove in production if unwanted
+
+        # Step 2: Run full synchronous audit
+        result = run_audit(url)
+
+        # Step 3: Processing results
+        yield f"data: {json.dumps({'crawl_progress': 80, 'status': 'Analyzing SEO, performance & links...', 'finished': False})}\n\n"
+        time.sleep(0.3)
+
+        # Final result
+        result['finished'] = True
+        yield f"data: {json.dumps(result)}\n\n"
+
+    except Exception as e:
+        logger.exception("Audit failed for %s", url)
+        error_payload = {
+            "finished": True,
+            "error": str(e),
+            "status": "Audit failed. Check server logs for details."
+        }
+        yield f"data: {json.dumps(error_payload)}\n\n"
+
+    finally:
+        yield f": done\n\n"
+
+
 @app.get("/api/open-audit-progress")
-async def open_audit_progress(url: str = Query(..., description="Website URL to audit")):
-    # Validate/normalize early to fail fast with a clear message
+def open_audit_progress(url: str = Query(..., description="Website URL to audit")):
+    """
+    SSE endpoint: streams audit progress and final result.
+    Fully synchronous implementation.
+    """
     try:
         normalized_url = _normalize_url(url)
-    except Exception as ve:
+    except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
 
-    async def event_stream():
-        # Initial event for the UI
-        yield f"data: {json.dumps({'crawl_progress': 0, 'status': 'Starting Python audit...', 'finished': False})}\n\n"
-
-        try:
-            # Optional SSE comment to mark start (comment lines start with ':')
-            yield f": audit-started {normalized_url}\n\n"
-
-            # Run audit
-            result = await run_audit(normalized_url)
-            result['finished'] = True
-
-            # Send final result
-            yield f"data: {json.dumps(result)}\n\n"
-        except Exception as e:
-            logger.exception("Audit failed for %s", normalized_url)
-            error_payload = {
-                "finished": True,
-                "error": str(e),
-                "status": "Audit failed. Check server logs for details."
-            }
-            yield f"data: {json.dumps(error_payload)}\n\n"
-        finally:
-            # Final SSE comment to reduce risk of last-chunk truncation by proxies
-            yield f": done\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        audit_event_generator(normalized_url),
+        media_type="text/event-stream"
+    )
 
 
 @app.get("/healthz")
-async def healthz():
+def healthz():
     return {"status": "ok"}
