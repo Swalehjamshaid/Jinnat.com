@@ -6,14 +6,35 @@ matplotlib.use('Agg')  # Essential for headless servers like Railway
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
+import aiohttp  # For async HTML fetching
+
 from pptx import Presentation
 from pptx.util import Inches
 
-# Ensure the directory exists using absolute path logic
+# -----------------------------
+# Directory setup
+# -----------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = BASE_DIR / 'static' / 'generated_assets'
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
+# -----------------------------
+# Async HTML fetch function
+# -----------------------------
+async def fetch_site_html(url: str) -> str:
+    """
+    Fetches the HTML content of the given website asynchronously.
+    Returns a string.
+    """
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            response.raise_for_status()
+            html = await response.text()
+            return html
+
+# -----------------------------
+# Chart generation functions
+# -----------------------------
 def generate_charts(audit_result: dict) -> str:
     """
     Generates a primary breakdown chart for a single audit.
@@ -24,7 +45,7 @@ def generate_charts(audit_result: dict) -> str:
     cats = list(breakdown.keys())
     vals = [breakdown[k] for k in cats]
 
-    # Matching the blue/green/orange palette used in your frontend CSS
+    # Matching the blue/green/orange palette used in frontend CSS
     colors = ['#2E86DE', '#58D68D', '#F5B041', '#EB4D4B', '#A569BD']
     ax.bar(cats, vals, color=colors[:len(cats)])
 
@@ -60,6 +81,9 @@ def generate_bar(labels, values, title, filename):
     plt.close(fig)
     return str(out_path)
 
+# -----------------------------
+# Export functions
+# -----------------------------
 def export_xlsx(audit_result: dict) -> str:
     """
     Exports raw audit data to Excel.
