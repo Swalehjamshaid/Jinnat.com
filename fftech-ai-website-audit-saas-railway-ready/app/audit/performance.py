@@ -1,13 +1,14 @@
 import time
 import requests
 import urllib3
+import asyncio
 from .psi import fetch_lighthouse
 from ..settings import get_settings
 
 # Disable SSL warnings to keep logs clean
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def analyze_performance(url: str):
+async def analyze_performance(url: str) -> dict:
     """
     Measures website performance:
     - Tries Google PSI / Lighthouse first (if API key present)
@@ -16,12 +17,18 @@ def analyze_performance(url: str):
     """
     settings = get_settings()
     
-    # Step 1: Attempt Google PSI / Lighthouse
-    mobile_result = fetch_lighthouse(url, api_key=settings.PSI_API_KEY) if settings.PSI_API_KEY else None
-    desktop_result = fetch_lighthouse(url, api_key=settings.PSI_API_KEY) if settings.PSI_API_KEY else None
+    mobile_result, desktop_result = None, None
+
+    if settings.PSI_API_KEY:
+        try:
+            # Await async calls
+            mobile_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="mobile")
+            desktop_result = await fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="desktop")
+        except Exception as e:
+            print(f"Lighthouse fetch error for {url}: {e}")
 
     if mobile_result or desktop_result:
-        # For simplicity, prioritize desktop metrics if available
+        # Prioritize desktop metrics if available
         result = desktop_result or mobile_result
         result['fallback_active'] = False
         return result
