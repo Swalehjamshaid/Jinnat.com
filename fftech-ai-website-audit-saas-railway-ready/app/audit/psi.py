@@ -8,7 +8,9 @@ async def fetch_lighthouse(url: str, api_key: str, strategy: str = "desktop") ->
     strategy: "desktop" or "mobile"
     Returns: dict with lcp_ms, fcp_ms, total_page_size_kb
     """
+
     if not api_key:
+        # No API key → skip PSI, fallback will be used
         return {}
 
     endpoint = f"https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url={url}&key={api_key}&strategy={strategy}"
@@ -16,6 +18,11 @@ async def fetch_lighthouse(url: str, api_key: str, strategy: str = "desktop") ->
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(endpoint, timeout=20) as response:
+                if response.status != 200:
+                    text = await response.text()
+                    print(f"[Lighthouse] HTTP {response.status} for {url} ({strategy}): {text}")
+                    return {}
+
                 data = await response.json()
 
                 audits = data.get("lighthouseResult", {}).get("audits", {})
@@ -29,6 +36,17 @@ async def fetch_lighthouse(url: str, api_key: str, strategy: str = "desktop") ->
                     "fcp_ms": fcp,
                     "total_page_size_kb": total_size
                 }
+
+    except aiohttp.ClientConnectorCertificateError as ssl_err:
+        print(f"[Lighthouse] SSL error for {url} ({strategy}): {ssl_err}")
+        return {}
     except Exception as e:
-        print(f"Lighthouse fetch error for {url} ({strategy}): {e}")
+        # Try to get text response if possible
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(endpoint, timeout=20) as response:
+                    text = await response.text()
+        except:
+            text = ""
+        print(f"[Lighthouse] Fetch error for {url} ({strategy}): {e}, response: {text}")
         return {}
