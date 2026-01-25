@@ -1,74 +1,54 @@
+# app/audit/seo.py
 from bs4 import BeautifulSoup
-from collections import Counter
-from typing import Union, Dict
+from typing import Dict
+import requests
 
-def analyze_onpage(html_docs: Union[Dict[str, str], str]) -> dict:
+def analyze_onpage(html_docs: Dict[str, str]) -> Dict[str, int]:
     """
-    Detailed SEO analysis of all HTML pages collected by the crawler.
-    Evaluates:
-      - Title tags (missing, duplicate, length issues)
-      - Meta descriptions (missing, duplicate)
-      - H1 tags (missing, multiple)
-      - Image alt attributes (missing)
-    Returns a metrics dictionary summarizing the SEO health.
+    Returns SEO metrics counts:
+    - missing_title
+    - missing_meta_description
+    - missing_h1
+    - images_missing_alt
+    - broken_links
     """
-    # If a single HTML string is passed, wrap it in a dict
-    if isinstance(html_docs, str):
-        html_docs = {"single_url": html_docs}
-
     metrics = {
-        'missing_title_tags': 0,
-        'duplicate_title_tags': 0,
-        'title_too_long': 0,
-        'title_too_short': 0,
-        'missing_meta_descriptions': 0,
-        'duplicate_meta_descriptions': 0,
-        'missing_h1': 0,
-        'multiple_h1': 0,
-        'image_missing_alt': 0,
+        "missing_title": 0,
+        "missing_meta_description": 0,
+        "missing_h1": 0,
+        "images_missing_alt": 0,
+        "broken_links": 0
     }
 
-    titles = []
-    metas = []
-
     for url, html in html_docs.items():
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html, "lxml")
 
-        # 1️⃣ Title Tag Analysis
-        title_tag = soup.title.string.strip() if soup.title and soup.title.string else None
-        if not title_tag:
-            metrics['missing_title_tags'] += 1
-        else:
-            titles.append(title_tag)
-            if len(title_tag) > 60:
-                metrics['title_too_long'] += 1
-            elif len(title_tag) < 10:
-                metrics['title_too_short'] += 1
+        # Title
+        if not soup.title or not soup.title.string or not soup.title.string.strip():
+            metrics["missing_title"] += 1
 
-        # 2️⃣ Meta Description Analysis
-        md = soup.find('meta', attrs={'name': 'description'})
-        if md and md.get('content') and md.get('content').strip():
-            metas.append(md['content'].strip())
-        else:
-            metrics['missing_meta_descriptions'] += 1
+        # Meta Description
+        if not soup.find("meta", attrs={"name": "description"}):
+            metrics["missing_meta_description"] += 1
 
-        # 3️⃣ H1 Tag Analysis
-        h1s = soup.find_all('h1')
-        if not h1s:
-            metrics['missing_h1'] += 1
-        elif len(h1s) > 1:
-            metrics['multiple_h1'] += 1
+        # H1
+        if not soup.find("h1"):
+            metrics["missing_h1"] += 1
 
-        # 4️⃣ Image Alt Attribute Analysis
-        for img in soup.find_all('img'):
-            if not img.get('alt') or not img.get('alt').strip():
-                metrics['image_missing_alt'] += 1
+        # Images Alt
+        for img in soup.find_all("img"):
+            if not img.get("alt"):
+                metrics["images_missing_alt"] += 1
 
-    # 5️⃣ Duplicate Analysis using Counter
-    title_counts = Counter(titles)
-    metrics['duplicate_title_tags'] = sum(1 for text, count in title_counts.items() if count > 1)
-
-    meta_counts = Counter(metas)
-    metrics['duplicate_meta_descriptions'] = sum(1 for text, count in meta_counts.items() if count > 1)
+        # Broken links
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if href.startswith("http"):
+                try:
+                    r = requests.head(href, timeout=5, verify=False)
+                    if r.status_code >= 400:
+                        metrics["broken_links"] += 1
+                except:
+                    metrics["broken_links"] += 1
 
     return metrics
