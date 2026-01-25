@@ -1,39 +1,67 @@
-def analyze_performance(url: str) -> Dict[str, Any]:
-    # ... existing code ...
+# app/audit/performance.py
+import time
+import asyncio
+import requests
+import urllib3
+from typing import Dict, Any
 
+from .psi import fetch_lighthouse
+from ..settings import get_settings
+
+# Disable SSL warnings to keep logs clean
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+async def analyze_performance(url: str) -> Dict[str, Any]:
+    """
+    Measures website performance:
+    - Tries Google PSI / Lighthouse first (if API key present)
+    - Falls back to simple request-based timing if PSI fails
+    Returns a dictionary with:
+        lcp_ms, fcp_ms, total_page_size_kb, server_response_time_ms, fallback_active
+    """
+    settings = get_settings()
+
+    mobile_result: Dict[str, Any] = {}
+    desktop_result: Dict[str, Any] = {}
+
+    # 1️⃣ Attempt Google PSI / Lighthouse asynchronously
     if settings.PSI_API_KEY:
         try:
-            desktop_result = fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="desktop")
-            mobile_result = fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="mobile")
-
-            # NEW: Check for this specific Lighthouse failure
-            if "error" in desktop_result and "FAILED_DOCUMENT_REQUEST" in str(desktop_result.get("error", "")):
-                print(f"[PSI] FAILED_DOCUMENT_REQUEST detected for {url} (desktop)")
-                desktop_result = {}
-            if "error" in mobile_result and "FAILED_DOCUMENT_REQUEST" in str(mobile_result.get("error", "")):
-                print(f"[PSI] FAILED_DOCUMENT_REQUEST detected for {url} (mobile)")
-                mobile_result = {}
-
+            mobile_result, desktop_result = await asyncio.gather(
+                fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="mobile"),
+                fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="desktop"),
+            )
         except Exception as e:
-            print(f"[Performance] PSI fetch failed: {e}")
-            desktop_result = mobile_result = {}
+            print(f"[Performance] Lighthouse async fetch failed: {e}")
 
-    # Prefer desktop
-    if desktop_result and desktop_result.get("lcp_ms"):  # check if meaningful data
-        desktop_result["fallback_active"] = False
-        return desktop_result
+    # Use desktop metrics first, else mobile
+    result: Dict[str, Any] = desktop_result or mobile_result
+    if result:
+        result['fallback_active'] = False
+        return result
 
-    if mobile_result and mobile_result.get("lcp_ms"):
-        mobile_result["fallback_active"] = False
-        return mobile_result
+    # 2️⃣ Fallback: measure response time & page size using requests
+    t0 = time.time()
+    try:
+        r = requests.get(
+            url,
+            timeout=15,
+            verify=False,  # SSL bypass
+            headers={"User-Agent": "Mozilla/5.0 (FFTech AI Auditor)"}
+        )
+        size = len(r.content)
+        ttfb = r.elapsed.total_seconds()  # Time to first byte
+    except Exception as e:
+        print(f"[Performance Fallback] Error for {url}: {e}")
+        size, ttfb = 0, 15  # Default values if request fails
 
-    # Fallback (already good)
-    # ... your existing requests fallback code ...
+    total_time = time.time() - t0
 
-    # NEW: Add note about PSI failure
-    fallback_result = {
-        # ... your fallback dict ...
-        "psi_failed": True,
-        "psi_error_reason": "FAILED_DOCUMENT_REQUEST (site may be blocking or very slow for Google's test servers)"
+    return {
+        "lcp_ms": min(4000, int(total_time * 1000)),           # fallback LCP
+        "fcp_ms": min(2500, int(ttfb * 1000)),                # fallback FCP
+        "total_page_size_kb": int(size / 1024),               # page size in KB
+        "server_response_time_ms": int(ttfb * 1000),          # TTFB in ms
+        "fallback_active": True
     }
-    return fallback_result
