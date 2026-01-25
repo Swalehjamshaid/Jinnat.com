@@ -1,36 +1,30 @@
-# app/settings.py
-from pydantic_settings import BaseSettings
+from pydantic import BaseSettings
 
 class Settings(BaseSettings):
-    # -----------------------------
-    # PostgreSQL / Database Settings
-    # -----------------------------
-    pguser: str = "postgres"
-    pgpassword: str = "OyukiGQaJmjLuEiXSOizcUEMleaTLBjtj"
-    pghost: str = "postgres.railway.internal"
-    pgport: int = 5432
-    postgres_db: str = "railway"
+    # Database
+    DATABASE_URL: str
+    PGHOST: str
+    PGPASSWORD: str
+    PGPORT: str = "5432"
+    PGUSER: str
+    POSTGRES_DB: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_USER: str
 
-    # -----------------------------
-    # General App Settings
-    # -----------------------------
-    max_crawl_pages: int = 50
-    brand_name: str = "FF Tech"
-    public_url: str = "https://example.com"
-    secret_key: str = "FF_TECH_SUPER_SECRET_TOKEN_2026"
-    ai_api_key: str = "AIzaSyDOLkFHWKT8cnva1SizcHgdAGmhUaf3KJ4"
+    # APIs
+    GEMINI_API_KEY: str
+    RESEND_API_KEY: str
+    PSI_API_KEY: str | None = None  # optional, default None
 
-    # -----------------------------
-    # Optional: allow extra keys without crashing
-    # -----------------------------
-    model_config = {
-        "extra": "allow"
-    }
+    # App
+    PUBLIC_URL: str
+    SECRET_KEY: str
+    BRAND_NAME: str
+    MAX_CRAWL_PAGES: int = 50
 
+    class Config:
+        env_file = ".env"  # load from .env if exists
+        env_file_encoding = "utf-8"
 
 def get_settings() -> Settings:
-    """
-    Returns a Settings instance.
-    Any extra environment variables are allowed but ignored.
-    """
     return Settings()
