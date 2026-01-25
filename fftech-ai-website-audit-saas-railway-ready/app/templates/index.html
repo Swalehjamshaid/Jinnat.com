@@ -1,3 +1,4 @@
+
 {% extends 'base.html' %}
 {% block content %}
 
@@ -54,7 +55,7 @@
           <span class="input-group-text bg-transparent"><i class="bi bi-globe2"></i></span>
           <input id="openUrl" type="url" inputmode="url" autocomplete="url"
                  class="form-control" placeholder="https://example.com" value="https://">
-          <button id="btnOpenAudit" class="btn btn-primary px-4">
+          <button id="btnOpenAudit" class="btn btn-primary px-4" aria-label="Run audit">
             <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span>
             <span id="btnText">Audit</span>
           </button>
@@ -207,29 +208,43 @@ function runAudit(url) {
   evtSource.onmessage = (e) => {
     let data;
     try { data = JSON.parse(e.data || "{}"); } catch { data = {}; }
+
+    // If server streams interim status, update progress
     if (!data.finished) {
-      updateProgress(Number(data.crawl_progress ?? 0), "Auditing…");
+      const msg = (typeof data.status === 'string' && data.status) ? data.status : "Auditing…";
+      const pct = Number(data.crawl_progress ?? 0);
+      updateProgress(pct, msg);
       return;
     }
+
+    // Finished or error
     evtSource.close();
+
+    if (data.error) {
+      console.error("Audit error:", data.error);
+      resetUI();
+      toast(`Audit failed: ${data.error}`, "danger");
+      return;
+    }
 
     document.getElementById('openResults').classList.remove("d-none");
     const breakdown = data.breakdown || {};
+
+    // Match backend keys: onpage, performance, coverage, confidence
+    const onpage = Number(breakdown.onpage ?? 0);
+    const perf   = Number(breakdown.performance ?? 0);
+    const cover  = Number(breakdown.coverage ?? 0);
+    const conf   = Number(breakdown.confidence ?? 0);
+
     document.getElementById('ovScore').textContent = data.overall_score ?? "-";
     document.getElementById('grade').textContent   = data.grade ?? "-";
-    document.getElementById('onpageScore').textContent = breakdown.seo ?? "-";
-    document.getElementById('perfScore').textContent   = breakdown.performance ?? "-";
-    document.getElementById('coverageScore').textContent= breakdown.links ?? "-";
-    const conf = breakdown.confidence ?? "-";
-    document.getElementById('confidence').textContent = (typeof conf==='number'? conf+"%" : conf);
+    document.getElementById('onpageScore').textContent = isFinite(onpage) ? onpage : "-";
+    document.getElementById('perfScore').textContent   = isFinite(perf) ? perf : "-";
+    document.getElementById('coverageScore').textContent= isFinite(cover) ? cover : "-";
+    document.getElementById('confidence').textContent   = isFinite(conf) ? (conf + "%") : "-";
 
     // Render chart safely
-    const chartData = [
-      Number(breakdown.seo ?? 0),
-      Number(breakdown.performance ?? 0),
-      Number(breakdown.links ?? 0),
-      Number(breakdown.confidence ?? 0)
-    ];
+    const chartData = [onpage, perf, cover, conf].map(v => (isFinite(v) ? v : 0));
     const ctx = document.getElementById('breakdownChart').getContext('2d');
     if (breakdownChartInstance) breakdownChartInstance.destroy();
     breakdownChartInstance = new Chart(ctx, {
@@ -238,9 +253,14 @@ function runAudit(url) {
         labels: ['SEO','Speed','Links','AI Confidence'],
         datasets:[{data:chartData,backgroundColor:["#0d6efd","#20c997","#ffc107","#dc3545"],borderRadius:6}]
       },
-      options:{maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100}},plugins:{legend:{display:false}}}
+      options:{
+        maintainAspectRatio:false,
+        scales:{y:{beginAtZero:true,max:100}},
+        plugins:{legend:{display:false}}
+      }
     });
 
+    // Optional download links (if your backend sets these)
     document.getElementById('downloadExcel').href = data.excel_path ?? "#";
     document.getElementById('downloadPPT').href   = data.pptx_path ?? "#";
 
@@ -258,7 +278,10 @@ function runAudit(url) {
 
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
   const url = normalizeUrl(document.getElementById('openUrl').value);
-  if (!url) { toast("Enter a valid URL.", "warning"); return; }
+  if (!url || !/^https?:\/\/.+\..+/.test(url)) {
+    toast("Enter a valid URL (e.g., https://example.com).", "warning");
+    return;
+  }
   runAudit(url);
 });
 
@@ -267,7 +290,6 @@ document.querySelectorAll('.demo-link').forEach(a => a.addEventListener('click',
   const url = normalizeUrl(a.getAttribute('data-url'));
   if (url) runAudit(url);
 }));
-
 </script>
 
 {% endblock %}
