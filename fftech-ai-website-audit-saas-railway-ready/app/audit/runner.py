@@ -1,6 +1,5 @@
-# app/audit/runner.py
 import asyncio
-from typing import Dict
+from typing import Dict, Union
 
 from .seo import analyze_onpage
 from .performance import analyze_performance
@@ -10,7 +9,6 @@ from .record import fetch_site_html
 from ..settings import get_settings
 
 settings = get_settings()
-
 
 async def run_audit(url: str) -> Dict:
     """
@@ -26,7 +24,11 @@ async def run_audit(url: str) -> Dict:
     audit_result = {}
 
     # 1️⃣ Fetch HTML pages
-    html_docs = await fetch_site_html(url)
+    html_docs: Union[Dict[str, str], str] = await fetch_site_html(url)
+
+    # Ensure html_docs is always a dictionary
+    if isinstance(html_docs, str):
+        html_docs = {url: html_docs}
 
     # 2️⃣ SEO Analysis
     seo_metrics = analyze_onpage(html_docs)
