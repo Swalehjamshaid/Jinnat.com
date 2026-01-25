@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     POSTGRES_USER: str
 
     # APIs
-    GEMINI_API_KEY: str
+    GEMINI_API_KEY: str  # <-- Add this
     RESEND_API_KEY: str
     PSI_API_KEY: str | None = None
 
@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # <-- Optional: ignore unknown variables
 
 def get_settings() -> Settings:
     return Settings()
