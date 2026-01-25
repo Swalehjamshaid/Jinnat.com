@@ -1,70 +1,67 @@
 # app/audit/runner.py
-
 import asyncio
-from typing import Any, Dict
+from typing import Dict
 
-from app.audit.crawler import crawl
-from app.audit.grader import compute_scores
-from app.audit.links import analyze_links
-from app.audit.performance import analyze_performance
-from app.audit.seo import analyze_onpage
+from .seo import analyze_onpage
+from .performance import analyze_performance
+from .links import analyze_links
+from .grader import grade_audit
+from .record import fetch_site_html
+from ..settings import get_settings
 
-async def run_audit(url: str) -> Dict[str, Any]:
+settings = get_settings()
+
+
+async def run_audit(url: str) -> Dict:
     """
-    Full Python-native audit:
-    - Crawl the website
-    - Analyze links, performance, SEO
-    - Compute overall scores using compute_scores
-    - Returns overall_score, grade, breakdown, and detailed metrics
+    Runs a full website audit asynchronously.
+    Steps:
+      1. Crawl site & fetch HTML
+      2. SEO analysis
+      3. Performance analysis
+      4. Links coverage analysis
+      5. Grade computation
+    Returns a unified audit report dictionary.
     """
-    try:
-        # --- Crawl the website ---
-        crawl_result = await crawl(url, max_pages=15)
+    audit_result = {}
 
-        # --- Analyze Links ---
-        link_metrics = analyze_links(crawl_result)
+    # 1️⃣ Fetch HTML pages
+    html_docs = await fetch_site_html(url)
 
-        # --- Analyze Performance ---
-        perf_metrics = analyze_performance(url)
+    # 2️⃣ SEO Analysis
+    seo_metrics = analyze_onpage(html_docs)
+    audit_result['seo'] = seo_metrics
 
-        # --- Analyze SEO ---
-        seo_metrics = analyze_onpage(crawl_result.pages)
+    # 3️⃣ Performance Analysis
+    perf_metrics = await analyze_performance(url)
+    audit_result['performance'] = perf_metrics
 
-        # --- Prepare stats for grader ---
-        crawl_stats = {
-            "pages": crawl_result.pages,  # dict: {url: html}
-            "broken_links": link_metrics["total_broken_links"],
-            "errors": crawl_result.status_counts.get(0, 0),
-            "internal_links": crawl_result.internal_links,
-            "external_links": crawl_result.external_links,
-        }
+    # 4️⃣ Links Coverage Analysis
+    link_metrics = analyze_links(html_docs)
+    audit_result['links'] = link_metrics
 
-        # --- Compute overall scores ---
-        overall_score, grade, breakdown = compute_scores(
-            lighthouse=None,  # Python-only, no PSI
-            crawl=crawl_stats
-        )
+    # 5️⃣ Grade & Overall Score
+    audit_result['overall_score'], audit_result['grade'], audit_result['breakdown'] = grade_audit(
+        seo_metrics, perf_metrics, link_metrics
+    )
 
-        return {
-            "finished": True,
-            "overall_score": overall_score,
-            "grade": grade,
-            "breakdown": breakdown,
-            "links": link_metrics,
-            "performance": perf_metrics,
-            "seo": seo_metrics,
-            "crawl_progress": 1.0
-        }
+    # 6️⃣ Executive Summary & Priorities
+    audit_result['executive_summary'] = (
+        f"Website {url} scored {audit_result['overall_score']} ({audit_result['grade']}). "
+        "SEO, Performance, and Links metrics analyzed. Focus on improving low-scoring areas first."
+    )
+    audit_result['priorities'] = [
+        "Fix broken links",
+        "Improve page speed (LCP < 2.5s)",
+        "Add missing meta descriptions",
+        "Optimize images",
+    ]
 
-    except Exception as e:
-        return {
-            "finished": True,
-            "error": str(e),
-            "overall_score": 0,
-            "grade": "F",
-            "breakdown": {},
-            "links": {},
-            "performance": {},
-            "seo": {},
-            "crawl_progress": 0
-        }
+    # 7️⃣ Issues Overview
+    audit_result['issues_overview'] = {
+        **seo_metrics,
+        **perf_metrics,
+        **link_metrics
+    }
+
+    return audit_result
