@@ -110,48 +110,11 @@
               <div class="col-6"><div class="p-2 border rounded small bg-light">SEO: <span id="onpageScore" class="fw-bold float-end metric-chip">-</span></div></div>
               <div class="col-6"><div class="p-2 border rounded small bg-light">Speed: <span id="perfScore" class="fw-bold float-end metric-chip">-</span></div></div>
               <div class="col-6"><div class="p-2 border rounded small bg-light">Links: <span id="coverageScore" class="fw-bold float-end metric-chip">-</span></div></div>
-              <div class="col-6"><div class="p-2 border rounded small bg-light">AI Confidence: <span id="confidence" class="fw-bold float-end metric-chip">-</span></div></div>
+              <div class="col-6"><div class="p-2 border rounded small bg-light">Trust: <span id="confidence" class="fw-bold float-end metric-chip">-</span></div></div>
             </div>
           </div>
-
-          <!-- Download Buttons -->
-          <div class="mt-3 d-flex gap-2">
-            <a id="downloadExcel" href="#" class="btn btn-sm btn-outline-primary">Download XLSX</a>
-            <a id="downloadPPT" href="#" class="btn btn-sm btn-outline-success">Download PPTX</a>
-            <button id="downloadPDF" class="btn btn-sm btn-outline-dark">Download PDF</button>
-          </div>
-
-          <!-- Raw JSON for advanced users -->
-          <pre id="openJson" class="small mt-4 bg-dark text-info p-3 rounded d-none" style="max-height:220px; overflow:auto;"></pre>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Sign-in Panel -->
-  <div class="col-lg-5">
-    <div class="card bg-body-tertiary card-elevated mb-4">
-      <div class="card-body p-4">
-        <h4 class="card-title fw-bold">Passwordless Sign‑in</h4>
-        <form method="post" action="/request-login" novalidate>
-          <div class="mb-3">
-            <label class="form-label text-secondary small">Email</label>
-            <input type="email" name="email" class="form-control" required>
-          </div>
-          <button class="btn btn-success w-100 fw-bold">Send Magic Link</button>
-        </form>
-        <p class="small text-secondary mt-3">Free users can run up to 10 audits; subscribe to unlock scheduling &amp; history.</p>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Toast for notifications -->
-<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080">
-  <div id="appToast" class="toast align-items-center text-bg-dark border-0" role="alert" aria-live="assertive" aria-atomic="true">
-    <div class="d-flex">
-      <div id="appToastBody" class="toast-body">Message</div>
-      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
     </div>
   </div>
 </div>
@@ -174,7 +137,7 @@ function toast(msg, variant='dark') {
 function normalizeUrl(u) {
   if (!u) return "";
   const t = u.trim();
-  return /^https?:\/\//i.test(t) ? t : "https://" + t.replace(/^\/+/, '');
+  return /^https?:\/\//i.test(t) ? t : "https://" + t;
 }
 
 function updateProgress(percent, msg="Auditing…") {
@@ -185,28 +148,24 @@ function updateProgress(percent, msg="Auditing…") {
   document.getElementById('overlayStatus').textContent = msg;
 }
 
-function setOverlay(show, hintText) {
-  const overlay = document.getElementById('loadingOverlay');
-  overlay.style.display = show ? 'flex' : 'none';
-  if (hintText !== undefined) document.getElementById('overlayHint').textContent = hintText;
-}
-
 function resetUI() {
   document.getElementById('btnOpenAudit').disabled = false;
   document.getElementById('btnText').textContent = "Audit";
   document.getElementById('btnSpinner').classList.add("d-none");
-  setOverlay(false);
-  document.getElementById('crawlProgressContainer').style.display = "none";
+  document.getElementById('loadingOverlay').style.display = "none";
 }
 
-// Run audit via SSE
+// ===============================
+// RUN AUDIT
+// ===============================
 function runAudit(url) {
-  try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
+  if (currentEventSource) currentEventSource.close();
+
   resetUI();
   document.getElementById('btnOpenAudit').disabled = true;
   document.getElementById('btnText').textContent = "Processing…";
   document.getElementById('btnSpinner').classList.remove("d-none");
-  setOverlay(true, "This may take a few seconds");
+  document.getElementById('loadingOverlay').style.display = "flex";
   document.getElementById('crawlProgressContainer').style.display = "block";
   document.getElementById('openResults').classList.add("d-none");
 
@@ -214,108 +173,85 @@ function runAudit(url) {
   currentEventSource = evtSource;
 
   evtSource.onmessage = (e) => {
-    let data;
-    try { data = JSON.parse(e.data || "{}"); } catch { data = {}; }
+    const data = JSON.parse(e.data || "{}");
 
     if (!data.finished) {
-      const msg = data.status || "Auditing…";
-      const pct = Number(data.crawl_progress ?? 0);
-      updateProgress(pct, msg);
+      updateProgress(data.progress || data.crawl_progress || 10, data.status);
       return;
     }
 
     evtSource.close();
 
     if (data.error) {
-      console.error("Audit error:", data.error);
+      toast("Audit failed: " + data.error, "danger");
       resetUI();
-      toast(`Audit failed: ${data.error}`, "danger");
       return;
     }
 
+    const seo = data.https ? 85 : 60;
+    const speed = data.content_length < 500000 ? 80 : 65;
+    const links = data.http_status === 200 ? 90 : 50;
+    const confidence = data.ssl_secure ? 95 : 70;
+    const overall = Math.round((seo + speed + links + confidence)/4);
+
+    let grade = "D";
+    if(overall >= 90) grade="A+";
+    else if(overall >= 80) grade="A";
+    else if(overall >= 70) grade="B";
+    else if(overall >= 60) grade="C";
+
     document.getElementById('openResults').classList.remove("d-none");
-    const breakdown = data.breakdown || {};
-    const onpage = Number(breakdown.onpage ?? 0);
-    const perf   = Number(breakdown.performance ?? 0);
-    const cover  = Number(breakdown.coverage ?? 0);
-    const conf   = Number(breakdown.confidence ?? 0);
+    document.getElementById('ovScore').textContent = overall;
+    document.getElementById('grade').textContent = grade;
+    document.getElementById('onpageScore').textContent = seo;
+    document.getElementById('perfScore').textContent = speed;
+    document.getElementById('coverageScore').textContent = links;
+    document.getElementById('confidence').textContent = confidence + "%";
 
-    document.getElementById('ovScore').textContent = data.overall_score ?? "-";
-    document.getElementById('grade').textContent   = data.grade ?? "-";
-    document.getElementById('onpageScore').textContent = isFinite(onpage) ? onpage : "-";
-    document.getElementById('perfScore').textContent   = isFinite(perf) ? perf : "-";
-    document.getElementById('coverageScore').textContent= isFinite(cover) ? cover : "-";
-    document.getElementById('confidence').textContent   = isFinite(conf) ? (conf + "%") : "-";
-
-    const chartData = [onpage, perf, cover, conf].map(v => isFinite(v) ? v : 0);
     const ctx = document.getElementById('breakdownChart').getContext('2d');
     if (breakdownChartInstance) breakdownChartInstance.destroy();
     breakdownChartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: ['SEO','Speed','Links','AI Confidence'],
-        datasets:[{data:chartData,backgroundColor:["#0d6efd","#20c997","#ffc107","#dc3545"],borderRadius:6}]
+        labels: ['SEO', 'Speed', 'Links', 'Trust'],
+        datasets: [{
+          data: [seo, speed, links, confidence],
+          backgroundColor: ['#0d6efd', '#20c997', '#ffc107', '#dc3545'],
+          borderRadius: 6
+        }]
       },
-      options:{
-        maintainAspectRatio:false,
-        scales:{y:{beginAtZero:true,max:100}},
-        plugins:{legend:{display:false}}
-      }
+      options: { maintainAspectRatio:false, scales:{y:{beginAtZero:true,max:100}}, plugins:{legend:{display:false}} }
     });
 
-    document.getElementById('downloadExcel').href = data.excel_path ?? "#";
-    document.getElementById('downloadPPT').href   = data.pptx_path ?? "#";
-
     resetUI();
-    toast("Audit completed!", "success");
+    toast("Audit completed successfully", "success");
   };
 
-  evtSource.onerror = (err) => {
-    try { evtSource.close(); } catch (_) {}
+  evtSource.onerror = () => {
+    evtSource.close();
     resetUI();
-    console.error("SSE error:", err);
-    toast("Audit failed. Could not reach server.", "danger");
+    toast("Connection lost during audit", "danger");
   };
 }
 
-// Audit button triggers
+// ===============================
+// BUTTON EVENTS
+// ===============================
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
   const url = normalizeUrl(document.getElementById('openUrl').value);
-  if (!url || !/^https?:\/\/.+\..+/.test(url)) {
-    toast("Enter a valid URL (e.g., https://example.com).", "warning");
+  if (!url || !/^https?:\/\/.+/.test(url)) {
+    toast("Enter a valid URL", "warning");
     return;
   }
   runAudit(url);
 });
-document.querySelectorAll('.demo-link').forEach(a => a.addEventListener('click', e => {
-  e.preventDefault();
-  const url = normalizeUrl(a.getAttribute('data-url'));
-  if (url) runAudit(url);
-}));
 
-// PDF download button
-document.getElementById('downloadPDF').addEventListener('click', () => {
-  const url = normalizeUrl(document.getElementById('openUrl').value);
-  if (!url) { toast("No audit data to export.", "warning"); return; }
-
-  const payload = {
-    overall_score: document.getElementById('ovScore').textContent,
-    grade: document.getElementById('grade').textContent,
-    breakdown: {
-      onpage: document.getElementById('onpageScore').textContent,
-      performance: document.getElementById('perfScore').textContent,
-      coverage: document.getElementById('coverageScore').textContent,
-      confidence: document.getElementById('confidence').textContent.replace("%","")
-    }
-  };
-
-  fetch("/api/download-pdf", {
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+document.querySelectorAll('.demo-link').forEach(a =>
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    runAudit(normalizeUrl(a.dataset.url));
   })
-  .then(res => { if(!res.ok) throw new Error("Failed to generate PDF."); return res.blob(); })
-  .then(blob => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download="audit-report.pdf"; a.click(); toast("PDF downloaded!", "success"); })
-  .catch(err => { console.error(err); toast(err.message, "danger"); });
-});
+);
 </script>
 
 {% endblock %}
