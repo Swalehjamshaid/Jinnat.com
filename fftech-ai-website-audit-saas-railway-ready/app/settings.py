@@ -5,7 +5,8 @@ import logging
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import BaseSettings, Field, validator
+from pydantic_settings import BaseSettings
+from pydantic import Field, validator
 
 logger = logging.getLogger(__name__)
 
