@@ -29,7 +29,6 @@
 </style>
 
 <div class="row gy-4">
-
   <!-- Audit Panel -->
   <div class="col-lg-7">
     <div class="card bg-body-tertiary card-elevated mb-4 position-relative" id="auditCard">
@@ -92,7 +91,6 @@
                 <div id="grade" class="h4 fw-bold mt-1">-</div>
               </div>
             </div>
-
             <div class="col-md-8">
               <div class="p-2 border rounded h-100">
                 <canvas id="breakdownChart" height="160"></canvas>
@@ -138,7 +136,6 @@
       </div>
     </div>
   </div>
-
 </div>
 
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080">
@@ -157,19 +154,20 @@
 let breakdownChartInstance = null;
 let currentEventSource = null;
 
-// Utilities
-function toast(msg, variant = 'dark') {
+function toast(msg, variant='dark') {
   const el = document.getElementById('appToast');
   const body = document.getElementById('appToastBody');
   el.className = `toast align-items-center text-bg-${variant} border-0`;
   body.textContent = msg;
   new bootstrap.Toast(el, { delay: 4000 }).show();
 }
+
 function normalizeUrl(u) {
   if (!u) return "";
   const t = u.trim();
   return /^https?:\/\//i.test(t) ? t : "https://" + t.replace(/^\/+/, '');
 }
+
 function updateProgress(percent, msg="Auditing…") {
   percent = Math.max(0, Math.min(100, Number(percent) || 0));
   document.getElementById('crawlProgressBar').style.width = percent + '%';
@@ -177,11 +175,13 @@ function updateProgress(percent, msg="Auditing…") {
   document.getElementById('statusLabel').textContent = msg;
   document.getElementById('overlayStatus').textContent = msg;
 }
+
 function setOverlay(show, hintText) {
   const overlay = document.getElementById('loadingOverlay');
   overlay.style.display = show ? 'flex' : 'none';
   if (hintText !== undefined) document.getElementById('overlayHint').textContent = hintText;
 }
+
 function resetUI() {
   document.getElementById('btnOpenAudit').disabled = false;
   document.getElementById('btnText').textContent = "Audit";
@@ -205,27 +205,30 @@ function runAudit(url) {
   currentEventSource = evtSource;
 
   evtSource.onmessage = (e) => {
-    const data = JSON.parse(e.data || "{}");
+    let data;
+    try { data = JSON.parse(e.data || "{}"); } catch { data = {}; }
     if (!data.finished) {
       updateProgress(Number(data.crawl_progress ?? 0), "Auditing…");
       return;
     }
     evtSource.close();
+
     document.getElementById('openResults').classList.remove("d-none");
+    const breakdown = data.breakdown || {};
     document.getElementById('ovScore').textContent = data.overall_score ?? "-";
     document.getElementById('grade').textContent   = data.grade ?? "-";
-    document.getElementById('onpageScore').textContent = data.breakdown?.seo ?? "-";
-    document.getElementById('perfScore').textContent   = data.breakdown?.performance ?? "-";
-    document.getElementById('coverageScore').textContent= data.breakdown?.links ?? "-";
-    const conf = (data.breakdown?.confidence ?? "-");
+    document.getElementById('onpageScore').textContent = breakdown.seo ?? "-";
+    document.getElementById('perfScore').textContent   = breakdown.performance ?? "-";
+    document.getElementById('coverageScore').textContent= breakdown.links ?? "-";
+    const conf = breakdown.confidence ?? "-";
     document.getElementById('confidence').textContent = (typeof conf==='number'? conf+"%" : conf);
 
-    // Render chart
+    // Render chart safely
     const chartData = [
-      Number(data.breakdown?.seo ?? 0),
-      Number(data.breakdown?.performance ?? 0),
-      Number(data.breakdown?.links ?? 0),
-      Number(data.breakdown?.confidence ?? 0)
+      Number(breakdown.seo ?? 0),
+      Number(breakdown.performance ?? 0),
+      Number(breakdown.links ?? 0),
+      Number(breakdown.confidence ?? 0)
     ];
     const ctx = document.getElementById('breakdownChart').getContext('2d');
     if (breakdownChartInstance) breakdownChartInstance.destroy();
@@ -238,7 +241,6 @@ function runAudit(url) {
       options:{maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100}},plugins:{legend:{display:false}}}
     });
 
-    // Download links
     document.getElementById('downloadExcel').href = data.excel_path ?? "#";
     document.getElementById('downloadPPT').href   = data.pptx_path ?? "#";
 
