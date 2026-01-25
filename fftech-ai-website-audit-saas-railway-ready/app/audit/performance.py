@@ -1,88 +1,39 @@
-# app/audit/performance.py
-import time
-import requests
-import urllib3
-from typing import Dict, Any
-from .psi import fetch_lighthouse           # assuming this is already synchronous
-from ..settings import get_settings
-
-# Disable SSL warnings to keep logs clean
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-
 def analyze_performance(url: str) -> Dict[str, Any]:
-    """
-    Real-world website performance audit (synchronous version):
-    1. Uses Google PageSpeed Insights if PSI_API_KEY exists.
-    2. Falls back to actual HTTP request timing (LCP ~ load time, FCP ~ TTFB)
-    3. Returns:
-       - lcp_ms
-       - fcp_ms
-       - total_page_size_kb
-       - server_response_time_ms
-       - fallback_active
-    """
-    settings = get_settings()
-
-    # Step 1: Try Google PSI / Lighthouse (sequential calls – no gather needed)
-    desktop_result = {}
-    mobile_result = {}
+    # ... existing code ...
 
     if settings.PSI_API_KEY:
         try:
-            # Call synchronously – one after the other
-            desktop_result = fetch_lighthouse(
-                url,
-                api_key=settings.PSI_API_KEY,
-                strategy="desktop"
-            )
-            mobile_result = fetch_lighthouse(
-                url,
-                api_key=settings.PSI_API_KEY,
-                strategy="mobile"
-            )
-        except Exception as e:
-            print(f"[Performance] PSI/Lighthouse fetch failed: {e}")
+            desktop_result = fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="desktop")
+            mobile_result = fetch_lighthouse(url, api_key=settings.PSI_API_KEY, strategy="mobile")
 
-    # Prefer desktop metrics if available and non-empty
-    if desktop_result:
+            # NEW: Check for this specific Lighthouse failure
+            if "error" in desktop_result and "FAILED_DOCUMENT_REQUEST" in str(desktop_result.get("error", "")):
+                print(f"[PSI] FAILED_DOCUMENT_REQUEST detected for {url} (desktop)")
+                desktop_result = {}
+            if "error" in mobile_result and "FAILED_DOCUMENT_REQUEST" in str(mobile_result.get("error", "")):
+                print(f"[PSI] FAILED_DOCUMENT_REQUEST detected for {url} (mobile)")
+                mobile_result = {}
+
+        except Exception as e:
+            print(f"[Performance] PSI fetch failed: {e}")
+            desktop_result = mobile_result = {}
+
+    # Prefer desktop
+    if desktop_result and desktop_result.get("lcp_ms"):  # check if meaningful data
         desktop_result["fallback_active"] = False
         return desktop_result
 
-    if mobile_result:
+    if mobile_result and mobile_result.get("lcp_ms"):
         mobile_result["fallback_active"] = False
         return mobile_result
 
-    # Step 2: Fallback to live request measurements
-    t0 = time.time()
-    size = 0
-    ttfb = 0
+    # Fallback (already good)
+    # ... your existing requests fallback code ...
 
-    try:
-        with requests.get(
-            url,
-            timeout=20,
-            verify=False,
-            stream=True,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; FFTech AI Auditor/2.0)"}
-        ) as r:
-            r.raise_for_status()
-            ttfb = r.elapsed.total_seconds() * 1000  # already in seconds → convert to ms
-
-            # Count actual page size (read full content)
-            content = r.content
-            size = len(content)
-    except requests.exceptions.RequestException as e:
-        print(f"[Performance Fallback] Request error for {url}: {e}")
-        size = 0
-        ttfb = 15000  # default 15 seconds in ms
-
-    total_time_ms = int((time.time() - t0) * 1000)
-
-    return {
-        "lcp_ms": max(100, min(10000, total_time_ms)),              # LCP ≈ full load time
-        "fcp_ms": max(50, min(5000, int(ttfb))),                    # FCP ≈ TTFB
-        "total_page_size_kb": int(size / 1024),
-        "server_response_time_ms": int(ttfb),
-        "fallback_active": True
+    # NEW: Add note about PSI failure
+    fallback_result = {
+        # ... your fallback dict ...
+        "psi_failed": True,
+        "psi_error_reason": "FAILED_DOCUMENT_REQUEST (site may be blocking or very slow for Google's test servers)"
     }
+    return fallback_result
