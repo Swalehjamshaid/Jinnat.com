@@ -3,14 +3,14 @@ import json
 import logging
 import time
 from urllib.parse import urlparse
-from typing import Generator
+from typing import Generator, AsyncGenerator
 
 from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.audit.runner import run_audit  # synchronous Python-only audit
+from app.audit.runner import run_audit_async  # updated async SSL-verified audit
 
 # ─────────────────────────────────────
 # Logging setup
@@ -24,7 +24,7 @@ logging.basicConfig(
 # ─────────────────────────────────────
 # FastAPI app initialization
 # ─────────────────────────────────────
-app = FastAPI(title="FF Tech Python-Only Audit", version="2.0")
+app = FastAPI(title="FF Tech SSL-Verified Audit", version="3.0")
 
 # Static files & templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -34,11 +34,7 @@ templates = Jinja2Templates(directory="app/templates")
 # Utility Functions
 # ─────────────────────────────────────
 def _normalize_url(u: str) -> str:
-    """
-    Normalize URL for audit:
-    - Adds https:// if missing
-    - Keeps only scheme + netloc + path (no query or fragment)
-    """
+    """Normalize URL for audit: add https:// if missing, keep scheme + netloc + path only."""
     if not u:
         raise ValueError("Empty URL")
     candidate = u if "://" in u else f"https://{u}"
@@ -52,38 +48,40 @@ def _normalize_url(u: str) -> str:
 # ─────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    """
-    Render main audit homepage.
-    """
+    """Render main audit homepage."""
     return templates.TemplateResponse("index.html", {"request": request})
 
 # ─────────────────────────────────────
-# SSE Generator for audit progress
+# Async SSE Generator for audit progress
 # ─────────────────────────────────────
-def audit_event_generator(url: str) -> Generator[str, None, None]:
+async def audit_event_generator_async(url: str) -> AsyncGenerator[str, None]:
     """
     Yield Server-Sent Events (SSE) strings with progress updates and final audit result.
-    Fully synchronous.
+    Fully async using SSL-verified HTTP requests.
     """
     try:
         # Start
         yield f"data: {json.dumps({'crawl_progress': 0, 'status': 'Initializing audit...', 'finished': False})}\n\n"
-        time.sleep(0.2)
+        await asyncio.sleep(0.2)
 
         # Fetching pages
         yield f"data: {json.dumps({'crawl_progress': 10, 'status': 'Fetching pages...', 'finished': False})}\n\n"
-        time.sleep(0.3)
+        await asyncio.sleep(0.3)
 
-        # Run full audit
-        result = run_audit(url)
+        # Run full async audit
+        result_html = await run_audit_async(url)
 
         # Processing & final steps
         yield f"data: {json.dumps({'crawl_progress': 80, 'status': 'Analyzing SEO, performance & links...', 'finished': False})}\n\n"
-        time.sleep(0.2)
+        await asyncio.sleep(0.2)
 
         # Final result
-        result['finished'] = True
-        yield f"data: {json.dumps(result)}\n\n"
+        result_payload = {
+            "finished": True,
+            "status": "Audit completed successfully.",
+            "length": len(result_html)
+        }
+        yield f"data: {json.dumps(result_payload)}\n\n"
 
     except Exception as e:
         logger.exception("Audit failed for %s", url)
@@ -102,9 +100,9 @@ def audit_event_generator(url: str) -> Generator[str, None, None]:
 # SSE Endpoint
 # ─────────────────────────────────────
 @app.get("/api/open-audit-progress")
-def open_audit_progress(url: str = Query(..., description="Website URL to audit")):
+async def open_audit_progress(url: str = Query(..., description="Website URL to audit")):
     """
-    SSE endpoint that streams audit progress + final result.
+    Async SSE endpoint that streams SSL-verified audit progress + final result.
     Returns: StreamingResponse with text/event-stream
     """
     try:
@@ -113,7 +111,7 @@ def open_audit_progress(url: str = Query(..., description="Website URL to audit"
         raise HTTPException(status_code=400, detail=str(ve))
 
     return StreamingResponse(
-        audit_event_generator(normalized_url),
+        audit_event_generator_async(normalized_url),
         media_type="text/event-stream"
     )
 
