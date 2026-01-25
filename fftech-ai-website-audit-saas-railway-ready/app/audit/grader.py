@@ -7,12 +7,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 def _sum_numeric_leaves(obj: Any) -> float:
     """
     Recursively traverse dicts/lists/tuples/sets and sum numeric leaves.
-    - Ignores None, strings, booleans, and other non-numeric types.
-    - Prevents True/False from counting as 1/0 by excluding bool explicitly.
+    Ignores None, strings, booleans, and other non-numeric types.
     """
     if obj is None:
         return 0.0
@@ -30,7 +28,6 @@ def _sum_numeric_leaves(obj: Any) -> float:
         for v in obj:
             total += _sum_numeric_leaves(v)
         return total
-    # Ignore other non-numeric leaf types (e.g., str)
     return 0.0
 
 
@@ -52,10 +49,6 @@ def grade_audit(
     """
 
     def score_from_metrics(metrics: Dict[str, Any]) -> int:
-        """
-        Robust scoring:
-          score = round(max(0, 100 - sum_of_all_numeric_leaves(metrics)))
-        """
         base = 100.0
         penalty = _sum_numeric_leaves(metrics)
         score = max(0.0, base - penalty)
@@ -91,25 +84,21 @@ def grade_audit(
     else:
         grade = "D"
 
-    # 4) Breakdown for charts (keys match your UI: onpage/performance/coverage/confidence)
+    # 4) Breakdown for charts
     breakdown = {
         "onpage": seo_score,
         "performance": perf_score,
         "coverage": links_score,
-        "confidence": overall_score  # keep for UI charts
+        "confidence": overall_score
     }
 
     return overall_score, grade, breakdown
 
 
-# -----------------------------
-# Backward-compatible wrapper for callers expecting compute_scores
-# -----------------------------
 def compute_scores(seo_metrics: Dict[str, Any],
                    perf_metrics: Dict[str, Any],
                    link_metrics: Dict[str, Any]) -> Tuple[int, str, Dict[str, int]]:
     """
-    Wrapper function to maintain import compatibility.
+    Backward-compatible wrapper.
     """
     return grade_audit(seo_metrics, perf_metrics, link_metrics)
-``
