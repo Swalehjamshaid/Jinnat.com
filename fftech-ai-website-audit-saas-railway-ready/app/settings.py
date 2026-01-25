@@ -1,3 +1,4 @@
+# app/settings.py
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -11,21 +12,30 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str
     POSTGRES_USER: str
 
-    # APIs
-    GEMINI_API_KEY: str  # <-- Add this
+    # API Keys
+    AI_API_KEY: str
+    GEMINI_API_KEY: str
     RESEND_API_KEY: str
-    PSI_API_KEY: str | None = None
+    PSI_API_KEY: str
 
-    # App
+    # Public & secrets
     PUBLIC_URL: str
     SECRET_KEY: str
     BRAND_NAME: str
+
+    # App config
     MAX_CRAWL_PAGES: int = 50
 
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-        extra = "ignore"  # <-- Optional: ignore unknown variables
+        extra = "ignore"  # ignore any unexpected env variables
+
+# Singleton access
+_settings_instance: Settings | None = None
 
 def get_settings() -> Settings:
-    return Settings()
+    global _settings_instance
+    if not _settings_instance:
+        _settings_instance = Settings()
+    return _settings_instance
