@@ -1,4 +1,4 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Database
@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # APIs
     GEMINI_API_KEY: str
     RESEND_API_KEY: str
-    PSI_API_KEY: str | None = None  # optional, default None
+    PSI_API_KEY: str | None = None
 
     # App
     PUBLIC_URL: str
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     MAX_CRAWL_PAGES: int = 50
 
     class Config:
-        env_file = ".env"  # load from .env if exists
+        env_file = ".env"
         env_file_encoding = "utf-8"
 
 def get_settings() -> Settings:
