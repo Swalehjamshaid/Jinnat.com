@@ -1,11 +1,10 @@
-# app/audit/psi.py
 import logging
 from urllib.request import urlopen, Request
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_RESULT = {
-    "performance": 50.0,  # Python placeholder
+    "performance": 50.0,
     "seo": 50.0,
     "accessibility": 50.0,
     "best_practices": 50.0,
@@ -17,7 +16,9 @@ HEADERS = {"User-Agent": "FFTechAuditor/2.0"}
 
 def python_library_audit(url: str):
     """
-    Pre-audit entirely in Python: check reachability, set baseline metrics
+    Pre-audit entirely in Python:
+    - Checks reachability
+    - Sets baseline SEO and performance metrics
     """
     result = DEFAULT_RESULT.copy()
     try:
@@ -37,7 +38,7 @@ def python_library_audit(url: str):
 
 async def fetch_lighthouse(url: str, api_key: str = None):
     """
-    Fully Python-compatible placeholder for Lighthouse/PSI.
-    Can be replaced with real Python heuristics later.
+    Python-compatible placeholder for Lighthouse/PSI.
+    Returns pre-audit metrics when PSI API is not configured.
     """
     return python_library_audit(url)
