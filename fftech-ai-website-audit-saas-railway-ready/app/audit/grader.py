@@ -1,4 +1,3 @@
-
 # app/audit/grader.py
 from typing import Dict, Tuple, Optional, Any, Mapping, Iterable
 import re
@@ -11,7 +10,6 @@ GRADE_BANDS = (
     (0,  "D"),
 )
 
-# Default weights for each component
 WEIGHTS = {
     "performance": 0.35,
     "seo": 0.30,
@@ -20,8 +18,8 @@ WEIGHTS = {
     "stability": 0.10,
 }
 
-MAX_PAGES = 20          # used for coverage percentage
-MAX_HTML_BYTES = 200_000  # cap per page to avoid heavy regex work
+MAX_PAGES = 20
+MAX_HTML_BYTES = 200_000
 
 def clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
     try:
@@ -35,7 +33,6 @@ def grade(score: float) -> str:
             return letter
     return "D"
 
-# Real HTML tag patterns (not &lt; &gt;)
 TAG_TITLE = re.compile(r"<title[^>]*>.*?</title>", re.IGNORECASE | re.DOTALL)
 TAG_META_DESC = re.compile(
     r'<meta\s+name=["\']description["\']\s+content=["\'].*?["\']',
@@ -45,22 +42,15 @@ TAG_META_DESC = re.compile(
 def _to_html(x: Any) -> str:
     if isinstance(x, (bytes, bytearray)):
         return x[:MAX_HTML_BYTES].decode("utf-8", "ignore")
-    s = str(x)
-    return s[:MAX_HTML_BYTES]
+    return str(x)[:MAX_HTML_BYTES]
 
 def _iter_pages(raw_pages: Any) -> Iterable[str]:
-    """
-    Accepts dict-of-html, list-of-html, or anything iterable of HTML-ish items.
-    """
     if isinstance(raw_pages, Mapping):
         for v in raw_pages.values():
             yield _to_html(v)
     elif isinstance(raw_pages, (list, tuple, set)):
         for v in raw_pages:
             yield _to_html(v)
-    else:
-        # Unknown shape; nothing to iterate
-        return
 
 def _count_pages(raw_pages: Any) -> int:
     if isinstance(raw_pages, Mapping):
@@ -70,116 +60,83 @@ def _count_pages(raw_pages: Any) -> int:
     return 0
 
 def _as_count(x: Any) -> int:
-    """
-    Convert broken_links/errors to counts if they are list/dict/etc.
-    """
-    try:
-        if isinstance(x, (list, tuple, set, dict)):
-            return len(x)
-        if isinstance(x, (int, float)):
-            return int(x)
-        if x is None:
-            return 0
-        # e.g., string "3"
-        return int(str(x).strip() or 0)
-    except Exception:
-        return 0
+    if isinstance(x, (list, tuple, set, dict)):
+        return len(x)
+    if isinstance(x, (int, float)):
+        return int(x)
+    return 0
 
 def _sum_internal_links(internal_links: Any) -> int:
-    """
-    Accept dict-of-lists/sets, list/tuple, dict-of-counts, or a single int.
-    """
-    try:
-        if isinstance(internal_links, Mapping):
-            total = 0
-            for v in internal_links.values():
-                if isinstance(v, (list, tuple, set)):
-                    total += len(v)
-                elif isinstance(v, Mapping):
-                    total += len(v)
-                elif isinstance(v, (int, float)):
-                    total += int(v)
-                elif isinstance(v, str):
-                    total += 1 if v else 0
-            return total
-        if isinstance(internal_links, (list, tuple, set)):
-            return len(internal_links)
-        if isinstance(internal_links, (int, float)):
-            return int(internal_links)
-        return 0
-    except Exception:
-        return 0
+    if isinstance(internal_links, Mapping):
+        return sum(len(v) for v in internal_links.values() if isinstance(v, (list, set, tuple)))
+    if isinstance(internal_links, (list, set, tuple)):
+        return len(internal_links)
+    if isinstance(internal_links, int):
+        return internal_links
+    return 0
+
 
 def compute_scores(
-    lighthouse: Optional[Dict[str, Optional[float]]],  # unused here; Python-only mode
+    lighthouse: Optional[Dict[str, Optional[float]]],
     crawl: Dict[str, Any],
 ) -> Tuple[float, str, Dict[str, Optional[float]]]:
-    """
-    Compute website audit using Python heuristics only.
-    Inputs:
-      - crawl: {
-          pages, broken_links, errors, internal_links, external_links, html_content (optional)
-        }
-    Returns:
-      - overall (0..100)
-      - letter grade
-      - detailed breakdown for dashboards
-    """
+
     try:
-        # --- SEO score (titles + meta descriptions presence) ---
-        raw_pages = crawl.get("pages") or {}
-        total_for_seo = 0
+        pages = crawl.get("pages", {})
+        errors = _as_count(crawl.get("errors", []))
+
+        # ✅ FIX: support both old and new crawler keys
+        broken_links = _as_count(
+            crawl.get("broken_links")
+            or crawl.get("broken_internal")
+            or []
+        )
+
+        # --- SEO ---
+        total_pages = 0
         title_count = 0
         desc_count = 0
-        for html in _iter_pages(raw_pages):
-            total_for_seo += 1
+
+        for html in _iter_pages(pages):
+            total_pages += 1
             if TAG_TITLE.search(html):
                 title_count += 1
             if TAG_META_DESC.search(html):
                 desc_count += 1
 
-        total_for_seo = total_for_seo or 1  # avoid zero-div
-        seo_score = ((title_count / total_for_seo) * 50.0 +
-                     (desc_count / total_for_seo) * 50.0)
-        seo_score = clamp(seo_score)
+        total_pages = total_pages or 1
+        seo_score = clamp(
+            (title_count / total_pages) * 50 +
+            (desc_count / total_pages) * 50
+        )
 
-        # --- Performance score (heuristic: fewer broken links -> better) ---
-        broken_links = _as_count(crawl.get("broken_links", 0))
-        perf_score = clamp(100.0 - broken_links * 5.0)
+        # --- Performance ---
+        performance = clamp(100 - broken_links * 5)
 
         # --- Coverage ---
-        discovered_pages = _count_pages(raw_pages)
-        coverage = clamp((discovered_pages / MAX_PAGES) * 100.0)
+        coverage = clamp((_count_pages(pages) / MAX_PAGES) * 100)
 
-        # --- Technical health (heuristic: internal link richness) ---
-        internal_total = _sum_internal_links(crawl.get("internal_links", {}))
-        ideal_links = max(1, (total_for_seo) * 10)  # 10 links/page ideal
-        internal_link_ratio = internal_total / ideal_links
-        technical = clamp(internal_link_ratio * 100.0)
+        # --- Technical ---
+        internal_links = crawl.get("internal_links", {})
+        internal_total = _sum_internal_links(internal_links)
+        ideal_links = max(1, total_pages * 10)
+        technical = clamp((internal_total / ideal_links) * 100)
 
-        # --- Stability (heuristic: fewer crawl errors -> better) ---
-        errors = _as_count(crawl.get("errors", 0))
-        stability = clamp(100.0 - errors * 5.0)
+        # --- Stability ---
+        stability = clamp(100 - errors * 5)
 
-        # --- Weighted overall score ---
-        components = [perf_score, seo_score, coverage, technical, stability]
-        weights = [
-            WEIGHTS["performance"],
-            WEIGHTS["seo"],
-            WEIGHTS["coverage"],
-            WEIGHTS["technical"],
-            WEIGHTS["stability"],
-        ]
-        weighted_sum = sum(c * w for c, w in zip(components, weights))
-        overall = clamp(weighted_sum / max(1e-9, sum(weights)))
+        # --- Weighted score ---
+        weighted = (
+            performance * WEIGHTS["performance"] +
+            seo_score * WEIGHTS["seo"] +
+            coverage * WEIGHTS["coverage"] +
+            technical * WEIGHTS["technical"] +
+            stability * WEIGHTS["stability"]
+        )
+        overall = clamp(round(weighted, 1))
 
-        # --- Penalties ---
-        broken_penalty = min(15.0, broken_links * 2.0)
-        error_penalty  = min(20.0, errors * 5.0)
-        overall = clamp(round(overall - broken_penalty - error_penalty, 1))
-
-        breakdown: Dict[str, Optional[float]] = {
-            "performance": round(perf_score, 1),
+        breakdown = {
+            "performance": round(performance, 1),
             "seo": round(seo_score, 1),
             "coverage": round(coverage, 1),
             "technical": round(technical, 1),
@@ -187,26 +144,31 @@ def compute_scores(
             "broken_links": broken_links,
             "errors": errors,
             "missing": {
-                "performance": False, "seo": False, "coverage": False,
-                "technical": False, "stability": False
+                "performance": False,
+                "seo": False,
+                "coverage": False,
+                "technical": False,
+                "stability": False,
             },
         }
+
         return overall, grade(overall), breakdown
 
     except Exception as e:
-        # NEVER bubble up -> return safe defaults so the API returns and the UI doesn't spin
-        breakdown: Dict[str, Optional[float]] = {
-            "performance": 0.0,
-            "seo": 0.0,
-            "coverage": 0.0,
-            "technical": 0.0,
-            "stability": 0.0,
+        return 0.0, "D", {
+            "performance": 0,
+            "seo": 0,
+            "coverage": 0,
+            "technical": 0,
+            "stability": 0,
             "broken_links": 0,
             "errors": 0,
             "missing": {
-                "performance": True, "seo": True, "coverage": True,
-                "technical": True, "stability": True
+                "performance": True,
+                "seo": True,
+                "coverage": True,
+                "technical": True,
+                "stability": True,
             },
-            "reason": f"grader_error: {type(e).__name__}",
+            "reason": str(e),
         }
-        return 0.0, "D", breakdown
