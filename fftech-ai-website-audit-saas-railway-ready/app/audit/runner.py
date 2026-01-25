@@ -11,6 +11,21 @@ from ..settings import get_settings
 
 settings = get_settings()
 
+
+def sanitize_resource(resource: dict) -> dict:
+    """Keep only essential fields from resource to avoid duplicates and huge JSON."""
+    keys_to_keep = ["url", "statusCode", "resourceType", "transferSize", "resourceSize", "finished"]
+    return {k: resource.get(k) for k in keys_to_keep if k in resource}
+
+
+def sanitize_page_elements(elements: dict) -> dict:
+    """Flatten page element info, remove duplicates, keep positions only."""
+    sanitized = {}
+    for k, v in elements.items():
+        sanitized[k] = {key: v[key] for key in ["top", "bottom", "left", "right", "width", "height"] if key in v}
+    return sanitized
+
+
 async def run_audit(url: str) -> Dict:
     """
     Runs a full website audit asynchronously.
@@ -37,6 +52,13 @@ async def run_audit(url: str) -> Dict:
 
     # 3️⃣ Performance Analysis
     perf_metrics = await analyze_performance(url)
+
+    # Sanitize performance result to remove unnecessary duplicates
+    if "resources" in perf_metrics:
+        perf_metrics["resources"] = [sanitize_resource(r) for r in perf_metrics["resources"]]
+    if "page_elements" in perf_metrics:
+        perf_metrics["page_elements"] = sanitize_page_elements(perf_metrics["page_elements"])
+
     audit_result["performance"] = perf_metrics
 
     # 4️⃣ Links Coverage Analysis
