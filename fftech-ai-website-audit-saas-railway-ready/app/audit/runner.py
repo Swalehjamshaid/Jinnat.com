@@ -1,6 +1,7 @@
+
 # app/audit/runner.py
 import asyncio
-from typing import Dict, Union
+from typing import Dict, Union, Any
 
 from .seo import analyze_onpage
 from .performance import analyze_performance
@@ -8,11 +9,13 @@ from .links import analyze_links
 from .grader import grade_audit
 from .record import fetch_site_html
 from ..settings import get_settings
+import logging
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
-async def run_audit(url: str) -> Dict:
-    audit_result = {}
+async def run_audit(url: str) -> Dict[str, Any]:
+    audit_result: Dict[str, Any] = {}
 
     # 1️⃣ Fetch HTML
     html_docs: Union[Dict[str, str], str] = await fetch_site_html(url)
@@ -20,21 +23,32 @@ async def run_audit(url: str) -> Dict:
         html_docs = {url: html_docs}
 
     # 2️⃣ SEO Analysis
-    seo_metrics = analyze_onpage(html_docs)
+    seo_metrics: Dict[str, Any] = analyze_onpage(html_docs)
     audit_result['seo'] = seo_metrics
 
     # 3️⃣ Performance Analysis (await properly)
-    perf_metrics = await analyze_performance(url)
+    perf_metrics: Dict[str, Any] = await analyze_performance(url)
     audit_result['performance'] = perf_metrics
 
     # 4️⃣ Links Analysis
-    link_metrics = analyze_links(html_docs)
+    link_metrics: Dict[str, Any] = analyze_links(html_docs)
     audit_result['links'] = link_metrics
 
-    # 5️⃣ Grade
-    audit_result['overall_score'], audit_result['grade'], audit_result['breakdown'] = grade_audit(
-        seo_metrics, perf_metrics, link_metrics
-    )
+    # 5️⃣ Grade (defensive)
+    try:
+        overall, grade, breakdown = grade_audit(seo_metrics, perf_metrics, link_metrics)
+    except Exception as e:
+        logger.exception("Grading failed: %s", e)
+        # Fallback: minimal safe values so UI keeps working
+        overall, grade, breakdown = 0, "D", {
+            "onpage": 0,
+            "performance": 0,
+            "coverage": 0,
+            "confidence": 0
+        }
+    audit_result['overall_score'] = overall
+    audit_result['grade'] = grade
+    audit_result['breakdown'] = breakdown
 
     # 6️⃣ Executive Summary
     audit_result['executive_summary'] = (
@@ -48,7 +62,11 @@ async def run_audit(url: str) -> Dict:
         "Optimize images",
     ]
 
-    # 7️⃣ Issues Overview
-    audit_result['issues_overview'] = {**seo_metrics, **perf_metrics, **link_metrics}
+    # 7️⃣ Issues Overview (namespaced to avoid key collisions)
+    audit_result['issues_overview'] = {
+        "seo": seo_metrics,
+        "performance": perf_metrics,
+        "links": link_metrics
+    }
 
     return audit_result
