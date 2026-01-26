@@ -1,3 +1,4 @@
+
 {% extends 'base.html' %}
 {% block content %}
 
@@ -7,31 +8,19 @@
                 radial-gradient(900px 500px at 90% 0%, rgba(32, 201, 151, 0.08), transparent);
     background-attachment: fixed;
   }
-  .card-elevated {
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-    backdrop-filter: blur(6px);
-  }
-  #loadingOverlay {
-    position: absolute; inset: 0;
-    background: rgba(0,0,0,0.60); z-index: 10; border-radius: 0.5rem;
-    display: none; align-items: center; justify-content: center; flex-direction: column;
-  }
+  .card-elevated { border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 30px rgba(0,0,0,0.08); backdrop-filter: blur(6px); }
+  #loadingOverlay { position: absolute; inset: 0; background: rgba(0,0,0,0.60); z-index: 10; border-radius: 0.5rem; display: none; align-items: center; justify-content: center; flex-direction: column; }
   .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: .5rem; }
-  .status-warn { background-color: #ffc107; }
-  .status-ok   { background-color: #20c997; }
-  .status-err  { background-color: #dc3545; }
+  .status-ok { background-color: #20c997; }
   .ls-widest { letter-spacing: .08em; }
   #crawlProgressBar { transition: width .3s ease; }
   .metric-chip { font-variant-numeric: tabular-nums; }
-  .demo-links a { text-decoration: none; }
-  .demo-links a:hover { text-decoration: underline; }
-  .chart-container { position: relative; width: 100%; height: 300px; }
+  .chart-container { position: relative; width: 100%; height: 320px; }
 </style>
 
 <div class="row gy-4">
   <!-- Audit Panel -->
-  <div class="col-lg-7">
+  <div class="col-lg-12">
     <div class="card bg-body-tertiary card-elevated mb-4 position-relative" id="auditCard">
 
       <!-- Loading Overlay -->
@@ -53,15 +42,14 @@
 
         <div class="input-group mb-2">
           <span class="input-group-text bg-transparent"><i class="bi bi-globe2"></i></span>
-          <input id="openUrl" type="url" inputmode="url" autocomplete="url"
-                 class="form-control" placeholder="https://example.com" value="https://">
+          <input id="openUrl" type="url" inputmode="url" autocomplete="url" class="form-control" placeholder="https://example.com" value="https://">
           <button id="btnOpenAudit" class="btn btn-primary px-4" aria-label="Run audit">
             <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span>
             <span id="btnText">Audit</span>
           </button>
         </div>
 
-        <div class="demo-links small text-secondary mb-4">
+        <div class="small text-secondary mb-4">
           Try:&nbsp;
           <a href="#" class="me-2 demo-link" data-url="https://example.com">example.com</a>
           <a href="#" class="me-2 demo-link" data-url="https://www.wikipedia.org">wikipedia.org</a>
@@ -75,18 +63,16 @@
             <span id="progressLabel" class="text-secondary small">0%</span>
           </div>
           <div class="progress" style="height:12px; border-radius:10px;">
-            <div id="crawlProgressBar"
-                 class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
-                 role="progressbar" style="width:0%"></div>
+            <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width:0%"></div>
           </div>
         </div>
 
         <!-- Audit Results -->
         <div id="openResults" class="mt-3 d-none">
           <h5 class="mb-3">Audit Results</h5>
-          
-          <!-- Overall Score & Grade -->
-          <div class="row g-3 mb-4">
+
+          <!-- Top row: Score + Bar -->
+          <div class="row g-3 mb-3">
             <div class="col-md-4">
               <div class="p-4 rounded bg-dark-subtle text-center h-100 border">
                 <b class="text-uppercase small ls-widest text-secondary">Overall Score</b>
@@ -94,8 +80,6 @@
                 <div id="grade" class="h4 fw-bold mt-1">-</div>
               </div>
             </div>
-            
-            <!-- Breakdown Chart -->
             <div class="col-md-8">
               <div class="p-2 border rounded h-100 chart-container">
                 <canvas id="breakdownChart"></canvas>
@@ -103,7 +87,21 @@
             </div>
           </div>
 
-          <!-- Metric Details -->
+          <!-- Second row: Radar + Doughnut -->
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="p-2 border rounded h-100 chart-container">
+                <canvas id="radarChart"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="p-2 border rounded h-100 chart-container">
+                <canvas id="issuesChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metric Tiles -->
           <div class="mt-4">
             <h6 class="fw-bold">Metric Details</h6>
             <div class="row g-2">
@@ -114,6 +112,7 @@
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </div>
@@ -123,12 +122,13 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
-let breakdownChartInstance = null;
+let barChart = null, radarChart = null, doughnutChart = null;
 let currentEventSource = null;
 
 function toast(msg, variant='dark') {
   const el = document.getElementById('appToast');
   const body = document.getElementById('appToastBody');
+  if (!el || !body) return;
   el.className = `toast align-items-center text-bg-${variant} border-0`;
   body.textContent = msg;
   new bootstrap.Toast(el, { delay: 4000 }).show();
@@ -137,35 +137,94 @@ function toast(msg, variant='dark') {
 function normalizeUrl(u) {
   if (!u) return "";
   const t = u.trim();
-  return /^https?:\/\//i.test(t) ? t : "https://" + t;
+  return /^https?:\/\//i.test(t) ? t : "https://" + t.replace(/^\/+/, '');
 }
 
 function updateProgress(percent, msg="Auditing…") {
   percent = Math.max(0, Math.min(100, Number(percent) || 0));
   document.getElementById('crawlProgressBar').style.width = percent + '%';
   document.getElementById('progressLabel').textContent = percent + '%';
-  document.getElementById('statusLabel').textContent = msg;
-  document.getElementById('overlayStatus').textContent = msg;
+  document.getElementById('statusLabel').textContent = msg || 'Auditing…';
+  document.getElementById('overlayStatus').textContent = msg || 'Auditing…';
+}
+
+function setOverlay(show, hint) {
+  const overlay = document.getElementById('loadingOverlay');
+  overlay.style.display = show ? 'flex' : 'none';
+  if (hint !== undefined) document.getElementById('overlayHint').textContent = hint;
 }
 
 function resetUI() {
   document.getElementById('btnOpenAudit').disabled = false;
   document.getElementById('btnText').textContent = "Audit";
   document.getElementById('btnSpinner').classList.add("d-none");
-  document.getElementById('loadingOverlay').style.display = "none";
+  setOverlay(false);
+  document.getElementById('crawlProgressContainer').style.display = "none";
 }
 
-// ===============================
-// RUN AUDIT
-// ===============================
-function runAudit(url) {
-  if (currentEventSource) currentEventSource.close();
+function renderCharts(payload) {
+  const bd = payload.breakdown || {};
+  const cd = payload.chart_data || {};
 
+  // === Bar (scores) ===
+  let barLabels = ['SEO','Speed','Links','Trust'];
+  let barData   = [bd.onpage ?? 0, bd.performance ?? 0, bd.coverage ?? 0, bd.confidence ?? 0];
+  let barColors = ['#0d6efd','#20c997','#ffc107','#dc3545'];
+  if (cd.bar && Array.isArray(cd.bar.labels) && Array.isArray(cd.bar.data)) {
+    barLabels = cd.bar.labels;
+    barData   = cd.bar.data;
+    if (Array.isArray(cd.bar.colors)) barColors = cd.bar.colors;
+  }
+
+  const barCtx = document.getElementById('breakdownChart').getContext('2d');
+  if (barChart) barChart.destroy();
+  barChart = new Chart(barCtx, {
+    type: 'bar',
+    data: { labels: barLabels, datasets: [{ data: barData, backgroundColor: barColors, borderRadius: 6 }] },
+    options: { maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, max:100 } }, plugins:{ legend:{ display:false } } }
+  });
+
+  // === Radar (sub-metrics) ===
+  let radarLabels = ['Title Quality','Meta Description','H1 Structure','Speed','Page Weight','Internal Linking','External Linking'];
+  let radarData   = [0,0,0,0,0,0,0];
+  if (cd.radar && Array.isArray(cd.radar.labels) && Array.isArray(cd.radar.data)) {
+    radarLabels = cd.radar.labels;
+    radarData   = cd.radar.data;
+  }
+  const radarCtx = document.getElementById('radarChart').getContext('2d');
+  if (radarChart) radarChart.destroy();
+  radarChart = new Chart(radarCtx, {
+    type: 'radar',
+    data: { labels: radarLabels, datasets: [{ label: 'Quality', data: radarData, fill: true, backgroundColor: 'rgba(13,110,253,0.2)', borderColor: '#0d6efd', pointBackgroundColor: '#0d6efd' }] },
+    options: { maintainAspectRatio:false, scales:{ r:{ suggestedMin:0, suggestedMax:100 } }, plugins:{ legend:{ display:false } } }
+  });
+
+  // === Doughnut (issues) ===
+  let doughLabels = ['SEO issues','Performance issues','Links issues'];
+  let doughData   = [0,0,0];
+  let doughColors = ['#6f42c1', '#fd7e14', '#0dcaf0'];
+  if (cd.doughnut && Array.isArray(cd.doughnut.labels) && Array.isArray(cd.doughnut.data)) {
+    doughLabels = cd.doughnut.labels;
+    doughData   = cd.doughnut.data;
+    if (Array.isArray(cd.doughnut.colors)) doughColors = cd.doughnut.colors;
+  }
+  const doughCtx = document.getElementById('issuesChart').getContext('2d');
+  if (doughnutChart) doughnutChart.destroy();
+  doughnutChart = new Chart(doughCtx, {
+    type: 'doughnut',
+    data: { labels: doughLabels, datasets: [{ data: doughData, backgroundColor: doughColors }] },
+    options: { maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+  });
+}
+
+// Run audit via SSE
+function runAudit(url) {
+  try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
   resetUI();
   document.getElementById('btnOpenAudit').disabled = true;
   document.getElementById('btnText').textContent = "Processing…";
   document.getElementById('btnSpinner').classList.remove("d-none");
-  document.getElementById('loadingOverlay').style.display = "flex";
+  setOverlay(true, "This may take a few seconds");
   document.getElementById('crawlProgressContainer').style.display = "block";
   document.getElementById('openResults').classList.add("d-none");
 
@@ -173,85 +232,62 @@ function runAudit(url) {
   currentEventSource = evtSource;
 
   evtSource.onmessage = (e) => {
-    const data = JSON.parse(e.data || "{}");
-
+    let data = {};
+    try { data = JSON.parse(e.data || "{}"); } catch {}
     if (!data.finished) {
-      updateProgress(data.progress || data.crawl_progress || 10, data.status);
+      updateProgress(Number(data.crawl_progress ?? 0), data.status || "Auditing…");
       return;
     }
 
     evtSource.close();
 
     if (data.error) {
-      toast("Audit failed: " + data.error, "danger");
+      console.error("Audit error:", data.error);
       resetUI();
+      toast("Audit failed: " + data.error, "danger");
       return;
     }
 
-    // ✅ Use real results from backend
-    const seo = data.breakdown?.onpage ?? 0;
-    const speed = data.breakdown?.performance ?? 0;
-    const links = data.breakdown?.coverage ?? 0;
-    const confidence = data.breakdown?.confidence ?? 0;
-    const overall = data.overall_score ?? 0;
-    const grade = data.grade ?? "-";
-
+    // Tiles
     document.getElementById('openResults').classList.remove("d-none");
-    document.getElementById('ovScore').textContent = overall;
-    document.getElementById('grade').textContent = grade;
-    document.getElementById('onpageScore').textContent = seo;
-    document.getElementById('perfScore').textContent = speed;
-    document.getElementById('coverageScore').textContent = links;
-    document.getElementById('confidence').textContent = confidence + "%";
+    document.getElementById('ovScore').textContent = data.overall_score ?? "-";
+    document.getElementById('grade').textContent   = data.grade ?? "-";
 
-    const ctx = document.getElementById('breakdownChart').getContext('2d');
-    if (breakdownChartInstance) breakdownChartInstance.destroy();
-    breakdownChartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: ['SEO', 'Speed', 'Links', 'Trust'],
-        datasets: [{
-          data: [seo, speed, links, confidence],
-          backgroundColor: ['#0d6efd', '#20c997', '#ffc107', '#dc3545'],
-          borderRadius: 6
-        }]
-      },
-      options: {
-        maintainAspectRatio:false,
-        scales:{y:{beginAtZero:true,max:100}},
-        plugins:{legend:{display:false}}
-      }
-    });
+    const bd = data.breakdown || {};
+    document.getElementById('onpageScore').textContent   = bd.onpage ?? "-";
+    document.getElementById('perfScore').textContent     = bd.performance ?? "-";
+    document.getElementById('coverageScore').textContent = bd.coverage ?? "-";
+    document.getElementById('confidence').textContent    = (typeof bd.confidence === 'number' ? (bd.confidence + "%") : "-");
+
+    // Charts
+    renderCharts(data);
 
     resetUI();
-    toast("Audit completed successfully", "success");
+    toast("Audit completed!", "success");
   };
 
-  evtSource.onerror = () => {
-    evtSource.close();
+  evtSource.onerror = (err) => {
+    try { evtSource.close(); } catch (_) {}
     resetUI();
-    toast("Connection lost during audit", "danger");
+    console.error("SSE error:", err);
+    toast("Audit failed. Could not reach server.", "danger");
   };
 }
 
-// ===============================
-// BUTTON EVENTS
-// ===============================
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
   const url = normalizeUrl(document.getElementById('openUrl').value);
-  if (!url || !/^https?:\/\/.+/.test(url)) {
-    toast("Enter a valid URL", "warning");
+  if (!url || !/^https?:\/\/.+\..+/.test(url)) {
+    toast("Enter a valid URL (e.g., https://example.com).", "warning");
     return;
   }
   runAudit(url);
 });
 
-document.querySelectorAll('.demo-link').forEach(a =>
-  a.addEventListener('click', e => {
-    e.preventDefault();
-    runAudit(normalizeUrl(a.dataset.url));
-  })
-);
+document.querySelectorAll('.demo-link').forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  const url = normalizeUrl(a.getAttribute('data-url'));
+  if (url) runAudit(url);
+}));
 </script>
 
 {% endblock %}
