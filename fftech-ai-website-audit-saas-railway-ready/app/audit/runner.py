@@ -1,13 +1,33 @@
+# app/audit/runner.py
+import asyncio
+import logging
+from typing import Optional, Callable, Dict, Any
+from .crawler import crawl
+from .seo import analyze_onpage
+from .links import analyze_links_async
+from .performance import analyze_performance
+from .record import fetch_site_html
+from .psi import fetch_lighthouse
+
+logger = logging.getLogger("audit_engine")
+
+class WebsiteAuditRunner:
+    def __init__(self, url: str, psi_api_key: Optional[str] = None, max_pages: int = 50):
+        self.url = url
+        self.psi_api_key = psi_api_key
+        self.max_pages = max_pages
+        self.html_docs: Dict[str, Any] = {}
+        self.report: Dict[str, Any] = {}
+
     async def run_audit(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Run the full audit asynchronously with real-time progress updates."""
         start_time = asyncio.get_event_loop().time()
 
-        # 1. Crawl site (no progress_callback here – the crawler handles it itself)
+        # 1. Crawl site
         if progress_callback:
             await progress_callback({"status": "Starting site crawl...", "crawl_progress": 0, "finished": False})
-
         logger.info(f"Starting crawl for {self.url}")
-        crawl_result = await crawl(self.url, max_pages=self.max_pages, progress_callback=progress_callback)
+        crawl_result = await crawl(self.url, max_pages=self.max_pages)
 
         self.html_docs = {r["url"]: r.get("seo", {}) for r in crawl_result.get("report", [])}
 
@@ -33,14 +53,14 @@
 
             if progress_callback:
                 done = len(perf_metrics)
-                pct = round(done / len(self.html_docs) * 30 + 40, 1)  # 40–70% range
+                pct = round(done / len(self.html_docs) * 30 + 40, 1)
                 await progress_callback({
                     "crawl_progress": pct,
-                    "status": f"Performance: {done}/{len(self.html_docs)} pages",
+                    "status": f"Performance analyzed: {done}/{len(self.html_docs)} pages",
                     "finished": False
                 })
 
-        # 6. PSI / Lighthouse – parallel if key exists
+        # 6. PSI / Lighthouse – parallel
         psi_metrics = {}
         if self.psi_api_key:
             psi_tasks = [asyncio.to_thread(fetch_lighthouse, page_url, self.psi_api_key) for page_url in self.html_docs.keys()]
@@ -51,7 +71,7 @@
 
                 if progress_callback:
                     done = len(psi_metrics)
-                    pct = round(done / len(self.html_docs) * 30 + 70, 1)  # 70–100% range
+                    pct = round(done / len(self.html_docs) * 30 + 70, 1)
                     await progress_callback({
                         "crawl_progress": pct,
                         "status": f"PageSpeed Insights: {done}/{len(self.html_docs)} pages",
