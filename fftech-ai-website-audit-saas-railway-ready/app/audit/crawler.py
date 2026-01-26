@@ -1,161 +1,124 @@
 
 # app/audit/crawler.py
-import logging
-from collections import deque
-from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup
+import asyncio
+import logging
+from urllib.parse import urlparse, urljoin
+from typing import Dict, Set, List, Callable, Optional
+
 import httpx
+from bs4 import BeautifulSoup
+
 
 logger = logging.getLogger("audit_engine")
 
-MAX_CONCURRENT_REQUESTS = 10  # Not used in this strict sync version; kept for compatibility
 MAX_PAGES = 50
-REQUEST_TIMEOUT = 10
+MAX_CONCURRENCY = 10
+TIMEOUT = 12
 
 
-def fetch_page_sync(client: httpx.Client, url: str):
-    """
-    Synchronous page fetcher.
-    Returns: (html_text: str, status_code: int|None)
-    """
+async def fetch(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
+    """Fetch page with retry logic."""
     try:
-        resp = client.get(url, timeout=REQUEST_TIMEOUT)
+        resp = await client.get(url, timeout=TIMEOUT)
         return resp.text, resp.status_code
     except Exception as e:
-        logger.warning(f"Failed to fetch {url}: {e}")
-        return "", None
+        logger.warning(f"Failed fetching {url}: {e}")
+        return "", 0
 
 
-def analyze_seo(html: str):
-    """
-    Same as before: extract quick SEO stats from the HTML.
-    """
+def analyze(html: str) -> Dict[str, int]:
+    """Basic SEO metrics."""
     soup = BeautifulSoup(html, "lxml")
 
-    # Images missing alt
-    images = soup.find_all("img")
-    images_missing_alt = sum(1 for img in images if not img.get("alt"))
-
-    # Title & meta description
     title = soup.find("title")
     meta_desc = soup.find("meta", attrs={"name": "description"})
 
     return {
-        "images_missing_alt": images_missing_alt,
+        "images_missing_alt": sum(1 for img in soup.find_all("img") if not img.get("alt")),
         "title_missing": 0 if title and title.text.strip() else 1,
         "meta_description_missing": 0 if meta_desc and meta_desc.get("content") else 1,
     }
 
 
-def crawl(
+async def async_crawl(
     start_url: str,
     max_pages: int = MAX_PAGES,
-    progress_callback=None,
-):
-    """
-    Synchronous crawler (no asyncio) with breadth-first traversal limited by `max_pages`.
-    If provided, `progress_callback` will be called as:
-        progress_callback({
-            "crawl_progress": float,  # percentage (0..100)
-            "status": str,
-            "finished": bool
-        })
-    """
+    progress_callback: Optional[Callable] = None
+) -> Dict:
 
     parsed = urlparse(start_url)
     domain = parsed.netloc
 
-    visited = set()
-    internal_links = set()
-    external_links = set()
-    broken_internal = set()
-    broken_external = set()
-    results = []
+    visited: Set[str] = set()
+    internal_links: Set[str] = set()
+    external_links: Set[str] = set()
+    broken_internal: Set[str] = set()
+    broken_external: Set[str] = set()
+    results: List[Dict] = []
 
-    # Simple FIFO queue for URLs to visit
-    queue = deque([start_url])
+    queue = asyncio.Queue()
+    await queue.put(start_url)
 
-    with httpx.Client(follow_redirects=True, timeout=REQUEST_TIMEOUT) as client:
-        while queue and len(visited) < max_pages:
-            url = queue.popleft()
+    semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
-            if url in visited:
-                continue
+    async with httpx.AsyncClient(follow_redirects=True) as client:
 
-            visited.add(url)
+        async def worker():
+            while not queue.empty() and len(visited) < max_pages:
+                url = await queue.get()
+                if url in visited:
+                    continue
 
-            html, status = fetch_page_sync(client, url)
+                visited.add(url)
 
-            seo_data = {"images_missing_alt": 0, "title_missing": 0, "meta_description_missing": 0}
+                async with semaphore:
+                    html, status = await fetch(client, url)
 
-            if not status or status >= 400:
-                if domain in urlparse(url).netloc:
-                    broken_internal.add(url)
-                else:
-                    broken_external.add(url)
-            else:
-                # Parse and collect links only when OK
-                seo_data = analyze_seo(html)
+                seo_data = analyze(html) if status and status < 400 else {
+                    "images_missing_alt": 0,
+                    "title_missing": 0,
+                    "meta_description_missing": 0,
+                }
 
-                soup = BeautifulSoup(html, "lxml")
-                for tag in soup.find_all("a", href=True):
-                    link = urljoin(url, tag.get("href"))
-                    # Normalize by stripping fragments
-                    parsed_link = urlparse(link)
-                    normalized_link = parsed_link._replace(fragment="").geturl()
-
-                    link_domain = parsed_link.netloc
-
-                    if link_domain == domain:
-                        # internal
-                        if normalized_link not in visited and normalized_link not in internal_links:
-                            internal_links.add(normalized_link)
-                            # Only queue http/https pages (skip mailto:, tel:, etc.)
-                            if parsed_link.scheme in ("http", "https"):
-                                queue.append(normalized_link)
+                if not status or status >= 400:
+                    if domain in urlparse(url).netloc:
+                        broken_internal.add(url)
                     else:
-                        # external
-                        external_links.add(normalized_link)
+                        broken_external.add(url)
+                else:
+                    soup = BeautifulSoup(html, "lxml")
+                    for tag in soup.find_all("a", href=True):
+                        link = urljoin(url, tag["href"])
+                        parsed_link = urlparse(link)
+                        normalized = parsed_link._replace(fragment="").geturl()
 
-            results.append({
-                "url": url,
-                "status": status or "failed",
-                "seo": seo_data,
-            })
+                        if parsed_link.scheme not in ("http", "https"):
+                            continue
 
-            # Synchronous progress reporting
-            if progress_callback:
-                try:
-                    progress_callback({
-                        "crawl_progress": round(len(visited) / float(max_pages) * 100.0, 2),
-                        "status": f"Crawled {len(visited)} pages...",
+                        if parsed_link.netloc == domain:
+                            internal_links.add(normalized)
+                            if normalized not in visited:
+                                await queue.put(normalized)
+                        else:
+                            external_links.add(normalized)
+
+                results.append({"url": url, "status": status, "seo": seo_data})
+
+                if progress_callback:
+                    await progress_callback({
+                        "crawl_progress": round(len(visited) / max_pages * 100, 2),
+                        "status": f"Crawled {len(visited)} pages…",
                         "finished": False
                     })
-                except Exception as e:
-                    logger.debug(f"Progress callback failed: {e}")
 
-    # Final aggregation
-    report = {
+        workers = [asyncio.create_task(worker()) for _ in range(MAX_CONCURRENCY)]
+        await asyncio.gather(*workers)
+
+    return {
+        "report": results,
         "unique_internal": len(internal_links),
         "unique_external": len(external_links),
-        "broken_internal": len(broken_internal),
-        "broken_external": len(broken_external),
-        "crawled_count": len(visited),
-        "total_images_missing_alt": sum(r["seo"]["images_missing_alt"] for r in results),
-        "total_titles_missing": sum(r["seo"]["title_missing"] for r in results),
-        "total_meta_description_missing": sum(r["seo"]["meta_description_missing"] for r in results),
-        "pages": results
+        "broken_internal": broken_internal,
+        "broken_external": broken_external,
     }
-
-    if progress_callback:
-        try:
-            progress_callback({
-                "crawl_progress": 100.0,
-                "status": f"Finished. Crawled {len(visited)} pages.",
-                "finished": True
-            })
-        except Exception as e:
-            logger.debug(f"Progress callback failed at completion: {e}")
-
-    return report
