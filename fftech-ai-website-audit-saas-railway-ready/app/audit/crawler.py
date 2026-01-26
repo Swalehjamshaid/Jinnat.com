@@ -1,65 +1,110 @@
 # app/audit/crawler.py
-import time, requests
+import logging
+import time
 from urllib.parse import urljoin, urlparse
+import requests
 from bs4 import BeautifulSoup
+from dataclasses import dataclass, field
+from typing import Set, List
 from concurrent.futures import ThreadPoolExecutor
 
-class CrawlResult:
-    def __init__(self):
-        self.unique_internal = 0
-        self.unique_external = 0
-        self.broken_internal = []
-        self.broken_external = []
-        self.crawled_count = 0
-        self.total_crawl_time = 0
+logger = logging.getLogger('audit_engine')
 
-def crawl(url: str, max_pages: int = 10, delay: float = 0.01) -> CrawlResult:
-    """
-    Fast website crawler optimized for speed
-    """
-    start_time = time.time()
-    visited = set()
-    to_visit = [url]
+
+@dataclass
+class CrawlResult:
+    crawled_count: int = 0
+    unique_internal: int = 0
+    unique_external: int = 0
+    broken_internal: List[str] = field(default_factory=list)
+    broken_external: List[str] = field(default_factory=list)
+    total_crawl_time: float = 0.0
+
+
+def fetch_url(url: str, base_domain: str):
+    """Fetch a URL and return links"""
     internal_links = set()
     external_links = set()
-    broken_internal = []
+    broken_links = []
 
-    session = requests.Session()
-    session.headers.update({'User-Agent':'FFTech-AuditBot/4.0'})
+    try:
+        resp = requests.get(url, timeout=5)
+        if resp.status_code != 200:
+            broken_links.append(url)
+            return internal_links, external_links, broken_links
 
-    def fetch_links(u):
-        try:
-            resp = session.get(u, timeout=5, verify=False)
-            if resp.status_code >= 400:
-                broken_internal.append(u)
-            soup = BeautifulSoup(resp.text, "html.parser")
-            links = [urljoin(u, a.get("href")) for a in soup.find_all("a", href=True)]
-            return links
-        except:
-            broken_internal.append(u)
-            return []
-
-    while to_visit and len(visited) < max_pages:
-        current = to_visit.pop(0)
-        if current in visited:
-            continue
-        visited.add(current)
-        links = fetch_links(current)
-        for link in links:
-            parsed = urlparse(link)
-            if parsed.netloc == urlparse(url).netloc:
-                internal_links.add(link)
-                if link not in visited and len(visited)+len(to_visit) < max_pages:
-                    to_visit.append(link)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for a in soup.find_all("a", href=True):
+            href = a.get("href")
+            if not href or href.startswith("mailto:") or href.startswith("javascript:"):
+                continue
+            full_url = urljoin(url, href)
+            domain = urlparse(full_url).netloc
+            if domain == base_domain:
+                internal_links.add(full_url)
             else:
-                external_links.add(link)
-        time.sleep(delay)
+                external_links.add(full_url)
+    except Exception:
+        broken_links.append(url)
 
-    result = CrawlResult()
-    result.unique_internal = len(internal_links)
-    result.unique_external = len(external_links)
-    result.broken_internal = broken_internal
-    result.broken_external = []  # skip external check for speed
-    result.crawled_count = len(visited)
-    result.total_crawl_time = round(time.time()-start_time, 2)
+    return internal_links, external_links, broken_links
+
+
+def crawl(start_url: str, max_pages: int = 50, delay: float = 0.05) -> CrawlResult:
+    """
+    Crawl site for internal/external/broken links
+    Optimized for speed: multi-threaded, minimal delay
+    """
+    start_time = time.time()
+    parsed = urlparse(start_url)
+    base_domain = parsed.netloc
+
+    visited: Set[str] = set()
+    to_visit: Set[str] = set([start_url])
+    internal_links_all: Set[str] = set()
+    external_links_all: Set[str] = set()
+    broken_internal: List[str] = []
+    broken_external: List[str] = []
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        while to_visit and len(visited) < max_pages:
+            futures = {}
+            for url in list(to_visit)[:max_pages - len(visited)]:
+                futures[executor.submit(fetch_url, url, base_domain)] = url
+                to_visit.remove(url)
+
+            for future in futures:
+                try:
+                    internal_links, external_links, broken = future.result()
+                    url = futures[future]
+                    visited.add(url)
+
+                    # Classify broken links
+                    for b in broken:
+                        if urlparse(b).netloc == base_domain:
+                            broken_internal.append(b)
+                        else:
+                            broken_external.append(b)
+
+                    # Add new links
+                    for link in internal_links:
+                        if link not in visited:
+                            to_visit.add(link)
+                    internal_links_all.update(internal_links)
+                    external_links_all.update(external_links)
+
+                except Exception as e:
+                    logger.error("Crawl error: %s", e)
+            if delay > 0:
+                time.sleep(delay)
+
+    total_crawl_time = round(time.time() - start_time, 2)
+    result = CrawlResult(
+        crawled_count=len(visited),
+        unique_internal=len(internal_links_all),
+        unique_external=len(external_links_all),
+        broken_internal=broken_internal,
+        broken_external=broken_external,
+        total_crawl_time=total_crawl_time
+    )
     return result
