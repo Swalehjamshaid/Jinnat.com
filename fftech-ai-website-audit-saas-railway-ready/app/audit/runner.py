@@ -14,6 +14,7 @@ from .psi import fetch_lighthouse
 logger = logging.getLogger("audit_engine")
 logging.basicConfig(level=logging.INFO)
 
+
 class WebsiteAuditRunner:
     def __init__(self, url: str, psi_api_key: Optional[str] = None):
         self.url = url
@@ -34,16 +35,16 @@ class WebsiteAuditRunner:
         if progress_callback:
             await progress_callback({"status": "Crawl complete, fetching HTML...", "crawl_progress": 0, "finished": False})
 
-        # 2️⃣ Fetch full HTML for in-depth analysis (titles, H1, meta, images)
+        # 2️⃣ Fetch full HTML for in-depth analysis
         self.html_docs = fetch_site_html(self.url, max_pages=50)
 
         # 3️⃣ On-page SEO Analysis
         seo_metrics = await analyze_onpage(self.html_docs, progress_callback=progress_callback)
 
-        # 4️⃣ Link Analysis (internal, external, broken)
+        # 4️⃣ Link Analysis
         links_metrics = await analyze_links_async(self.html_docs, self.url, progress_callback=progress_callback)
 
-        # 5️⃣ Performance Analysis (page load time, TTFB)
+        # 5️⃣ Performance Analysis
         perf_metrics = {}
         for page_url in self.html_docs.keys():
             perf_metrics[page_url] = analyze_performance(page_url)
@@ -81,20 +82,9 @@ class WebsiteAuditRunner:
 
         return self.report
 
-# Example usage
-if __name__ == "__main__":
-    import json
 
-    async def progress_cb(data):
-        print(f"[{data['crawl_progress']}%] {data['status']}")
-
-    url_to_audit = "https://example.com"
-    psi_key = "YOUR_GOOGLE_PSI_API_KEY"
-
-    runner = WebsiteAuditRunner(url_to_audit, psi_api_key=psi_key)
-    report = asyncio.run(runner.run_audit(progress_callback=progress_cb))
-    
-    with open("audit_report.json", "w") as f:
-        json.dump(report, f, indent=2)
-    
-    print("Audit completed! Report saved as audit_report.json")
+# ────────────── Helper function for legacy imports ──────────────
+def run_audit(url: str, psi_api_key: Optional[str] = None, progress_callback: Optional[Callable] = None):
+    """Module-level function for backward compatibility."""
+    runner = WebsiteAuditRunner(url, psi_api_key=psi_api_key)
+    return asyncio.run(runner.run_audit(progress_callback=progress_callback))
