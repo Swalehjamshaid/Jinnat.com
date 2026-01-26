@@ -11,8 +11,8 @@
     :root {
       --bg: #0a0e17;
       --card: #111827;
-      --glass: rgba(17, 24, 39, 0.75);
-      --border: rgba(255, 215, 0, 0.18); /* golden border */
+      --glass: rgba(17, 24, 39, 0.78);
+      --border: rgba(255, 215, 0, 0.18);
       --gold: #ffd700;
       --gold-dark: #d4af37;
       --primary: #3b82f6;
@@ -27,15 +27,15 @@
       min-height: 100vh;
       font-family: system-ui, sans-serif;
     }
-    .main-container { max-width: 1400px; margin: 0 auto; padding: 2.5rem 1rem; }
+    .main-container { max-width: 1400px; margin: 0 auto; padding: 3rem 1rem; }
     .header-title {
-      font-size: 2.8rem;
+      font-size: 3rem;
       font-weight: 800;
       background: linear-gradient(90deg, var(--gold), var(--gold-dark), #fff);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      text-shadow: 0 2px 10px rgba(255,215,0,0.3);
-      margin-bottom: 2.5rem;
+      text-shadow: 0 2px 12px rgba(255,215,0,0.4);
+      margin-bottom: 3rem;
       text-align: center;
     }
     .card-glass {
@@ -48,18 +48,18 @@
       transition: transform 0.3s, box-shadow 0.3s;
     }
     .card-glass:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 25px 60px rgba(255,215,0,0.15);
+      transform: translateY(-10px);
+      box-shadow: 0 25px 60px rgba(255,215,0,0.2);
     }
     #loadingOverlay {
-      position: fixed; inset: 0; background: rgba(10,14,23,0.95);
+      position: fixed; inset: 0; background: rgba(10,14,23,0.96);
       color: var(--gold); display: none; flex-direction: column;
       justify-content: center; align-items: center; z-index: 9999;
     }
-    .progress { height: 12px; background: rgba(255,215,0,0.08); border-radius: 999px; overflow: hidden; }
+    .progress { height: 12px; background: rgba(255,215,0,0.1); border-radius: 999px; overflow: hidden; }
     .progress-bar { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); }
     .metric-box {
-      background: rgba(17,24,39,0.7);
+      background: rgba(17,24,39,0.75);
       border: 1px solid rgba(255,215,0,0.15);
       border-radius: 1.25rem;
       padding: 1.8rem;
@@ -69,29 +69,29 @@
     .metric-box:hover {
       transform: translateY(-8px);
       border-color: var(--gold);
-      box-shadow: 0 15px 35px rgba(255,215,0,0.15);
+      box-shadow: 0 15px 35px rgba(255,215,0,0.2);
     }
     .metric-value { 
-      font-size: 3.2rem; 
+      font-size: 3.5rem; 
       font-weight: 800; 
       color: var(--gold); 
-      text-shadow: 0 2px 10px rgba(255,215,0,0.4);
+      text-shadow: 0 2px 12px rgba(255,215,0,0.5);
     }
-    .metric-label { font-size: 1rem; color: var(--muted); margin-bottom: 0.6rem; font-weight: 500; }
+    .metric-label { font-size: 1.1rem; color: var(--muted); margin-bottom: 0.8rem; font-weight: 500; }
     .section-title {
-      font-size: 1.8rem;
+      font-size: 1.9rem;
       font-weight: 700;
       color: var(--gold);
-      text-shadow: 0 1px 6px rgba(255,215,0,0.3);
-      margin-bottom: 1.5rem;
+      text-shadow: 0 1px 8px rgba(255,215,0,0.4);
+      margin-bottom: 1.8rem;
       text-align: center;
     }
     .chart-container {
-      background: rgba(17,24,39,0.6);
+      background: rgba(17,24,39,0.65);
       border: 1px solid rgba(255,215,0,0.12);
       border-radius: 1.5rem;
       padding: 1.8rem;
-      height: 420px;
+      height: 440px;
     }
     .auth-sidebar {
       background: var(--glass);
@@ -105,28 +105,32 @@
       border: none;
       color: #0f172a;
       font-weight: 700;
+      transition: all 0.3s;
     }
-    .btn-gold:hover { opacity: 0.9; transform: scale(1.05); }
+    .btn-gold:hover {
+      transform: scale(1.05);
+      opacity: 0.92;
+    }
   </style>
 </head>
 <body>
 
   <!-- Loading Overlay -->
   <div id="loadingOverlay">
-    <div class="spinner-border text-warning mb-4" style="width:5rem;height:5rem;"></div>
+    <div class="spinner-border text-warning mb-5" style="width:5rem;height:5rem;"></div>
     <h4 class="fw-bold mb-3" style="color: var(--gold);">Running Professional Audit</h4>
-    <p id="statusLabel" class="lead mb-2">Analyzing website...</p>
+    <p id="statusLabel" class="lead mb-3">Analyzing website structure...</p>
     <small class="text-muted">Estimated time: 45–90 seconds</small>
   </div>
 
   <div class="main-container">
     <h1 class="header-title">FF Tech Site Auditor</h1>
 
-    <div class="row g-4">
+    <div class="row g-5">
 
       <!-- Main Audit Panel -->
       <div class="col-lg-8">
-        <div class="card-glass p-4 p-lg-5">
+        <div class="card-glass p-5">
           <div class="input-group input-group-lg mb-5">
             <input id="openUrl" type="url" class="form-control" placeholder="https://www.example.com" value="https://">
             <button id="btnOpenAudit" class="btn btn-gold px-5 fw-bold">ANALYZE</button>
@@ -134,11 +138,11 @@
 
           <!-- Progress -->
           <div id="crawlProgressContainer" class="d-none mb-5">
-            <div class="progress mb-2">
+            <div class="progress mb-3">
               <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
             </div>
             <div class="d-flex justify-content-between small text-muted">
-              <span id="statusLabel">Waiting to start...</span>
+              <span id="statusLabel">Initializing...</span>
               <span id="progressLabel">0%</span>
             </div>
           </div>
@@ -149,9 +153,9 @@
             <div class="row justify-content-center mb-5">
               <div class="col-md-6 col-lg-5 text-center">
                 <div class="p-5 bg-dark rounded-4 border border-warning border-opacity-50 shadow-lg">
-                  <small class="text-muted fw-bold text-uppercase d-block mb-3">OVERALL SCORE</small>
+                  <small class="text-muted fw-bold text-uppercase d-block mb-4">OVERALL SCORE</small>
                   <div id="ovScore" class="display-1 fw-black" style="color: var(--gold);">—</div>
-                  <div id="grade" class="fs-3 fw-bold text-success mt-2">—</div>
+                  <div id="grade" class="fs-3 fw-bold text-success mt-3">—</div>
                 </div>
               </div>
             </div>
@@ -250,7 +254,7 @@
 
         <div class="auth-sidebar">
           <h5 class="mb-3" style="color: var(--gold);">Magic Link Login</h5>
-          <p class="text-muted small mb-4">No password — instant secure login</p>
+          <p class="text-muted small mb-4">No password – instant secure login</p>
           <form id="magicForm" action="/request-magic-link" method="POST">
             <div class="mb-4">
               <input type="email" name="email" class="form-control bg-dark text-white border-secondary" placeholder="email@company.com" required>
@@ -266,7 +270,7 @@
 
 <script>
 // ──────────────────────────────────────────────
-// Audit logic (unchanged)
+// Audit logic – connected to main.py WebSocket
 // ──────────────────────────────────────────────
 console.log("Audit script loaded");
 let currentWs = null;
@@ -286,10 +290,10 @@ function showError(msg="Audit failed") {
   document.getElementById('crawlProgressContainer').style.display = 'none';
   document.getElementById('btnOpenAudit').disabled = false;
   const results = document.getElementById('openResults');
-  results.innerHTML = `<div class="alert alert-danger p-4 text-center">
-    <h4>Error</h4>
+  results.innerHTML = `<div class="alert alert-danger p-5 text-center rounded-4">
+    <h4 class="mb-3">Error</h4>
     <p>${msg}</p>
-    <button class="btn btn-outline-light mt-2" onclick="location.reload()">Retry</button>
+    <button class="btn btn-outline-light mt-3 px-4" onclick="location.reload()">Retry</button>
   </div>`;
   results.classList.remove('d-none');
 }
@@ -305,11 +309,11 @@ function initCharts(data) {
   barChart = new Chart(ctxBar, {
     type: 'bar',
     data: {
-      labels: data.chart_data.bar.labels,
+      labels: data.chart_data?.bar?.labels || ['SEO', 'Performance', 'Coverage', 'Confidence'],
       datasets: [{
         label: 'Scores',
-        data: data.chart_data.bar.data,
-        backgroundColor: data.chart_data.bar.colors
+        data: data.chart_data?.bar?.data || [0,0,0,0],
+        backgroundColor: data.chart_data?.bar?.colors || ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
       }]
     },
     options: { responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,max:100}} }
@@ -318,8 +322,14 @@ function initCharts(data) {
   radarChart = new Chart(ctxRadar, {
     type: 'radar',
     data: {
-      labels: data.chart_data.radar.labels,
-      datasets: [{ label:'Metrics', data: data.chart_data.radar.data, backgroundColor:'rgba(255,215,0,0.3)', borderColor:var(--gold), borderWidth:2 }]
+      labels: data.chart_data?.radar?.labels || ['SEO', 'Performance', 'Coverage', 'Confidence'],
+      datasets: [{ 
+        label:'Metrics', 
+        data: data.chart_data?.radar?.data || [0,0,0,0], 
+        backgroundColor:'rgba(255,215,0,0.25)', 
+        borderColor:var(--gold), 
+        borderWidth:2 
+      }]
     },
     options: { responsive:true, scales:{r:{min:0,max:100,beginAtZero:true}} }
   });
@@ -327,8 +337,11 @@ function initCharts(data) {
   doughnutChart = new Chart(ctxDough, {
     type:'doughnut',
     data:{
-      labels:data.chart_data.doughnut.labels,
-      datasets:[{ data:data.chart_data.doughnut.data, backgroundColor:data.chart_data.doughnut.colors }]
+      labels: data.chart_data?.doughnut?.labels || ['Good', 'Warning', 'Critical'],
+      datasets:[{ 
+        data: data.chart_data?.doughnut?.data || [0,0,0], 
+        backgroundColor: ['#10b981', '#f59e0b', '#ef4444'] 
+      }]
     },
     options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
   });
@@ -341,7 +354,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (auditButton && urlInput) {
     auditButton.addEventListener('click', () => {
       const url = urlInput.value.trim();
-      if(!url) { alert("Enter a valid URL"); return; }
+      if(!url || !url.startsWith('http')) { 
+        alert("Enter a valid URL starting with http:// or https://"); 
+        return; 
+      }
       runAudit(url);
     });
 
@@ -359,22 +375,31 @@ function runAudit(url) {
   document.getElementById('btnOpenAudit').disabled = true;
 
   const protocol = location.protocol==='https:'?'wss:':'ws:';
-  const ws = new WebSocket(`${protocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
+  const wsUrl = `${protocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
+  const ws = new WebSocket(wsUrl);
   currentWs = ws;
   let receivedAny = false;
 
-  ws.onopen = ()=>console.log("WebSocket connected");
+  ws.onopen = () => {
+    console.log("WebSocket connected to main.py");
+  };
 
-  ws.onmessage = (event)=>{
+  ws.onmessage = (event) => {
     receivedAny = true;
     let data;
-    try{ data = JSON.parse(event.data); }catch(e){ console.error(e); return; }
-    if(!data.finished){
-      updateProgress(data.crawl_progress||0, data.status||"Analyzing…");
+    try { data = JSON.parse(event.data); } catch (e) { console.error("Invalid JSON:", e); return; }
+
+    if (!data.finished) {
+      updateProgress(data.crawl_progress || 0, data.status || "Analyzing...");
       return;
     }
+
     ws.close();
-    if(data.error){ showError(data.error); return; }
+
+    if (data.error) {
+      showError(data.error);
+      return;
+    }
 
     // Fill all visible attributes
     document.getElementById('ovScore').textContent = data.overall_score ?? '—';
@@ -398,12 +423,15 @@ function runAudit(url) {
     document.getElementById('openResults').classList.remove('d-none');
   };
 
-  ws.onerror = ()=>{
+  ws.onerror = () => {
     ws.close();
-    showError(receivedAny ? "Connection lost" : "Cannot connect to server");
+    showError(receivedAny ? "Connection lost during audit" : "Cannot connect to audit service");
   };
 
-  ws.onclose = ()=>{ currentWs = null; };
+  ws.onclose = () => {
+    currentWs = null;
+    console.log("WebSocket closed");
+  };
 }
 </script>
 </body>
