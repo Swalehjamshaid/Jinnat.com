@@ -1,293 +1,298 @@
-
 {% extends 'base.html' %}
 {% block content %}
 
 <style>
-  body {
-    background: radial-gradient(1200px 600px at 20% -10%, rgba(13, 110, 253, 0.08), transparent),
-                radial-gradient(900px 500px at 90% 0%, rgba(32, 201, 151, 0.08), transparent);
-    background-attachment: fixed;
+  :root {
+    --glass-bg: rgba(25, 25, 25, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.1);
   }
-  .card-elevated { border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 30px rgba(0,0,0,0.08); backdrop-filter: blur(6px); }
-  #loadingOverlay { position: absolute; inset: 0; background: rgba(0,0,0,0.60); z-index: 10; border-radius: 0.5rem; display: none; align-items: center; justify-content: center; flex-direction: column; }
+
+  body {
+    background: radial-gradient(1200px 600px at 20% -10%, rgba(13, 110, 253, 0.1), transparent),
+                radial-gradient(900px 500px at 90% 0%, rgba(32, 201, 151, 0.1), transparent);
+    background-attachment: fixed;
+    color: #e0e0e0;
+  }
+
+  .card-saas {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 1rem;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+  }
+
+  #loadingOverlay {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.8); z-index: 100; border-radius: 1rem;
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+  }
+
   .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: .5rem; }
-  .status-ok { background-color: #20c997; }
-  .ls-widest { letter-spacing: .08em; }
-  #crawlProgressBar { transition: width .3s ease; }
-  .metric-chip { font-variant-numeric: tabular-nums; }
-  .chart-container { position: relative; width: 100%; height: 320px; }
+  .status-ok { background-color: #20c997; box-shadow: 0 0 10px #20c997; }
+  .status-warn { background-color: #ffc107; box-shadow: 0 0 10px #ffc107; }
+
+  .chart-container { position: relative; width: 100%; height: 280px; }
+  
+  .metric-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    transition: all 0.3s ease;
+  }
+  .metric-card:hover { background: rgba(255,255,255,0.08); transform: translateY(-2px); }
+
+  .btn-magic {
+    background: linear-gradient(45deg, #0d6efd, #0dcaf0);
+    border: none; font-weight: 700;
+  }
 </style>
 
 <div class="row gy-4">
-  <!-- Audit Panel -->
-  <div class="col-lg-12">
-    <div class="card bg-body-tertiary card-elevated mb-4 position-relative" id="auditCard">
+  <div class="col-lg-8">
+    <div class="card card-saas mb-4 position-relative" id="auditCard">
 
-      <!-- Loading Overlay -->
-      <div id="loadingOverlay" aria-live="polite" aria-busy="true">
-        <div class="text-center text-white px-3">
-          <div class="spinner-border text-primary" style="width:3rem; height:3rem;" role="status" aria-label="Loading"></div>
-          <div class="mt-3 fw-bold h5" id="overlayStatus">Initializing Audit…</div>
-          <div class="small text-white-50" id="overlayHint">This may take a few seconds</div>
+      <div id="loadingOverlay" aria-live="polite">
+        <div class="text-center">
+          <div class="spinner-grow text-primary" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+          <h5 class="mt-4 fw-bold" id="overlayStatus">Initializing FFTech Bot…</h5>
+          <p class="text-white-50 small" id="overlayHint">Parsing DOM & Calculating Network Latency</p>
         </div>
       </div>
 
-      <!-- Audit Input -->
       <div class="card-body p-4">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <h4 class="card-title fw-bold mb-0">Open Access Audit</h4>
-          <span class="text-secondary small"><span class="status-dot status-ok"></span>Status: Ready</span>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="fw-bold mb-0">Website Health Audit</h4>
+          <span class="badge bg-dark border border-secondary py-2 px-3" id="systemStatus">
+            <span class="status-dot status-ok"></span>Engine Ready
+          </span>
         </div>
-        <p class="text-secondary mb-3">Quickly audit any URL — no sign-in required.</p>
 
-        <div class="input-group mb-2">
-          <span class="input-group-text bg-transparent"><i class="bi bi-globe2"></i></span>
-          <input id="openUrl" type="url" inputmode="url" autocomplete="url" class="form-control" placeholder="https://example.com" value="https://">
-          <button id="btnOpenAudit" class="btn btn-primary px-4" aria-label="Run audit">
-            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span>
-            <span id="btnText">Audit</span>
+        <div class="input-group input-group-lg mb-4">
+          <span class="input-group-text bg-transparent border-secondary text-secondary"><i class="bi bi-search"></i></span>
+          <input id="openUrl" type="url" class="form-control bg-dark text-white border-secondary" 
+                 placeholder="Enter website URL (e.g. apple.com)" value="https://">
+          <button id="btnOpenAudit" class="btn btn-primary px-4 fw-bold">
+            <span id="btnSpinner" class="spinner-border spinner-border-sm d-none"></span>
+            <span id="btnText">ANALYZE</span>
           </button>
         </div>
 
-        <div class="small text-secondary mb-4">
-          Try:&nbsp;
-          <a href="#" class="me-2 demo-link" data-url="https://example.com">example.com</a>
-          <a href="#" class="me-2 demo-link" data-url="https://www.wikipedia.org">wikipedia.org</a>
-          <a href="#" class="demo-link" data-url="https://developer.mozilla.org">developer.mozilla.org</a>
-        </div>
-
-        <!-- Progress Bar -->
-        <div id="crawlProgressContainer" class="mb-4" style="display:none;">
-          <div class="d-flex justify-content-between mb-1">
-            <span class="text-primary small fw-bold" id="statusLabel">Initializing…</span>
-            <span id="progressLabel" class="text-secondary small">0%</span>
+        <div id="crawlProgressContainer" class="mb-5" style="display:none;">
+          <div class="d-flex justify-content-between mb-2 small fw-bold text-uppercase ls-widest">
+            <span class="text-primary" id="statusLabel">Starting…</span>
+            <span id="progressLabel" class="text-secondary">0%</span>
           </div>
-          <div class="progress" style="height:12px; border-radius:10px;">
-            <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width:0%"></div>
+          <div class="progress" style="height: 6px; background: rgba(255,255,255,0.05);">
+            <div id="crawlProgressBar" class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
           </div>
         </div>
 
-        <!-- Audit Results -->
-        <div id="openResults" class="mt-3 d-none">
-          <h5 class="mb-3">Audit Results</h5>
-
-          <!-- Top row: Score + Bar -->
-          <div class="row g-3 mb-3">
+        <div id="openResults" class="d-none">
+          <div class="row g-3 mb-4">
             <div class="col-md-4">
-              <div class="p-4 rounded bg-dark-subtle text-center h-100 border">
-                <b class="text-uppercase small ls-widest text-secondary">Overall Score</b>
-                <div id="ovScore" class="display-5 fw-bold text-primary mt-2 metric-chip">-</div>
-                <div id="grade" class="h4 fw-bold mt-1">-</div>
+              <div class="p-4 rounded-4 bg-primary bg-opacity-10 border border-primary border-opacity-25 text-center h-100">
+                <small class="text-uppercase text-primary fw-bold ls-widest">Overall Grade</small>
+                <div id="ovScore" class="display-3 fw-bold my-2 text-white">-</div>
+                <div id="grade" class="h4 fw-bold text-primary">-</div>
               </div>
             </div>
             <div class="col-md-8">
-              <div class="p-2 border rounded h-100 chart-container">
+              <div class="p-3 border rounded-4 h-100 chart-container">
                 <canvas id="breakdownChart"></canvas>
               </div>
             </div>
           </div>
 
-          <!-- Second row: Radar + Doughnut -->
-          <div class="row g-3">
+          <div class="row g-3 mb-4">
             <div class="col-md-6">
-              <div class="p-2 border rounded h-100 chart-container">
+              <div class="p-3 border rounded-4 h-100 chart-container">
                 <canvas id="radarChart"></canvas>
               </div>
             </div>
             <div class="col-md-6">
-              <div class="p-2 border rounded h-100 chart-container">
+              <div class="p-3 border rounded-4 h-100 chart-container">
                 <canvas id="issuesChart"></canvas>
               </div>
             </div>
           </div>
 
-          <!-- Metric Tiles -->
-          <div class="mt-4">
-            <h6 class="fw-bold">Metric Details</h6>
-            <div class="row g-2">
-              <div class="col-6"><div class="p-2 border rounded small bg-light">SEO: <span id="onpageScore" class="fw-bold float-end metric-chip">-</span></div></div>
-              <div class="col-6"><div class="p-2 border rounded small bg-light">Speed: <span id="perfScore" class="fw-bold float-end metric-chip">-</span></div></div>
-              <div class="col-6"><div class="p-2 border rounded small bg-light">Links: <span id="coverageScore" class="fw-bold float-end metric-chip">-</span></div></div>
-              <div class="col-6"><div class="p-2 border rounded small bg-light">Trust: <span id="confidence" class="fw-bold float-end metric-chip">-</span></div></div>
+          <div class="row g-2">
+            <div class="col-6 col-md-3">
+              <div class="p-3 rounded-3 metric-card text-center">
+                <div class="text-secondary small">SEO Score</div>
+                <div id="onpageScore" class="h5 fw-bold mb-0">-</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3 rounded-3 metric-card text-center">
+                <div class="text-secondary small">Performance</div>
+                <div id="perfScore" class="h5 fw-bold mb-0">-</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3 rounded-3 metric-card text-center">
+                <div class="text-secondary small">Connectivity</div>
+                <div id="coverageScore" class="h5 fw-bold mb-0">-</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3 rounded-3 metric-card text-center">
+                <div class="text-secondary small">SSL Trust</div>
+                <div id="confidence" class="h5 fw-bold mb-0">-</div>
+              </div>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
 
+  <div class="col-lg-4">
+    <div class="card card-saas mb-4">
+      <div class="card-body p-4 text-center">
+        <h5 class="fw-bold mb-1">Instant Access</h5>
+        <p class="text-secondary small mb-4">No passwords. We'll send a magic link to your inbox.</p>
+        
+        <form action="/request-login" method="POST">
+          <input type="email" name="email" class="form-control bg-dark text-white border-secondary mb-3" placeholder="your@email.com" required>
+          <button type="submit" class="btn btn-magic w-100 py-2">SEND MAGIC LINK</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card card-saas">
+      <div class="card-body p-4">
+        <h6 class="fw-bold mb-3"><i class="bi bi-star-fill text-warning me-2"></i>PRO FEATURES</h6>
+        <div class="small text-secondary">
+          <div class="mb-2"><i class="bi bi-check-lg text-success me-2"></i>Download PDF & PPTX Reports</div>
+          <div class="mb-2"><i class="bi bi-check-lg text-success me-2"></i>Track Unlimited Domains</div>
+          <div class="mb-2"><i class="bi bi-check-lg text-success me-2"></i>API Access & Webhooks</div>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm w-100 mt-4">VIEW PRICING</button>
       </div>
     </div>
   </div>
 </div>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
 let barChart = null, radarChart = null, doughnutChart = null;
 let currentEventSource = null;
 
-function toast(msg, variant='dark') {
-  const el = document.getElementById('appToast');
-  const body = document.getElementById('appToastBody');
-  if (!el || !body) return;
-  el.className = `toast align-items-center text-bg-${variant} border-0`;
-  body.textContent = msg;
-  new bootstrap.Toast(el, { delay: 4000 }).show();
-}
-
-function normalizeUrl(u) {
-  if (!u) return "";
-  const t = u.trim();
-  return /^https?:\/\//i.test(t) ? t : "https://" + t.replace(/^\/+/, '');
-}
-
-function updateProgress(percent, msg="Auditing…") {
-  percent = Math.max(0, Math.min(100, Number(percent) || 0));
+function updateProgress(percent, msg) {
+  percent = Math.max(5, Math.min(100, percent));
   document.getElementById('crawlProgressBar').style.width = percent + '%';
   document.getElementById('progressLabel').textContent = percent + '%';
-  document.getElementById('statusLabel').textContent = msg || 'Auditing…';
-  document.getElementById('overlayStatus').textContent = msg || 'Auditing…';
+  document.getElementById('statusLabel').textContent = msg;
+  document.getElementById('overlayStatus').textContent = msg;
 }
 
-function setOverlay(show, hint) {
-  const overlay = document.getElementById('loadingOverlay');
-  overlay.style.display = show ? 'flex' : 'none';
-  if (hint !== undefined) document.getElementById('overlayHint').textContent = hint;
-}
+function renderAuditCharts(data) {
+  const cd = data.chart_data || {};
 
-function resetUI() {
-  document.getElementById('btnOpenAudit').disabled = false;
-  document.getElementById('btnText').textContent = "Audit";
-  document.getElementById('btnSpinner').classList.add("d-none");
-  setOverlay(false);
-  document.getElementById('crawlProgressContainer').style.display = "none";
-}
-
-function renderCharts(payload) {
-  const bd = payload.breakdown || {};
-  const cd = payload.chart_data || {};
-
-  // === Bar (scores) ===
-  let barLabels = ['SEO','Speed','Links','Trust'];
-  let barData   = [bd.onpage ?? 0, bd.performance ?? 0, bd.coverage ?? 0, bd.confidence ?? 0];
-  let barColors = ['#0d6efd','#20c997','#ffc107','#dc3545'];
-  if (cd.bar && Array.isArray(cd.bar.labels) && Array.isArray(cd.bar.data)) {
-    barLabels = cd.bar.labels;
-    barData   = cd.bar.data;
-    if (Array.isArray(cd.bar.colors)) barColors = cd.bar.colors;
-  }
-
+  // Score Bar Chart
   const barCtx = document.getElementById('breakdownChart').getContext('2d');
   if (barChart) barChart.destroy();
   barChart = new Chart(barCtx, {
     type: 'bar',
-    data: { labels: barLabels, datasets: [{ data: barData, backgroundColor: barColors, borderRadius: 6 }] },
-    options: { maintainAspectRatio:false, scales:{ y:{ beginAtZero:true, max:100 } }, plugins:{ legend:{ display:false } } }
+    data: {
+      labels: cd.bar.labels,
+      datasets: [{ data: cd.bar.data, backgroundColor: cd.bar.colors, borderRadius: 8, barThickness: 30 }]
+    },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }
   });
 
-  // === Radar (sub-metrics) ===
-  let radarLabels = ['Title Quality','Meta Description','H1 Structure','Speed','Page Weight','Internal Linking','External Linking'];
-  let radarData   = [0,0,0,0,0,0,0];
-  if (cd.radar && Array.isArray(cd.radar.labels) && Array.isArray(cd.radar.data)) {
-    radarLabels = cd.radar.labels;
-    radarData   = cd.radar.data;
-  }
+  // Radar Detailed Chart
   const radarCtx = document.getElementById('radarChart').getContext('2d');
   if (radarChart) radarChart.destroy();
   radarChart = new Chart(radarCtx, {
     type: 'radar',
-    data: { labels: radarLabels, datasets: [{ label: 'Quality', data: radarData, fill: true, backgroundColor: 'rgba(13,110,253,0.2)', borderColor: '#0d6efd', pointBackgroundColor: '#0d6efd' }] },
-    options: { maintainAspectRatio:false, scales:{ r:{ suggestedMin:0, suggestedMax:100 } }, plugins:{ legend:{ display:false } } }
+    data: {
+      labels: cd.radar.labels,
+      datasets: [{ label: 'Score', data: cd.radar.data, backgroundColor: 'rgba(13, 110, 253, 0.2)', borderColor: '#0d6efd' }]
+    },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { r: { suggestedMax: 100 } } }
   });
 
-  // === Doughnut (issues) ===
-  let doughLabels = ['SEO issues','Performance issues','Links issues'];
-  let doughData   = [0,0,0];
-  let doughColors = ['#6f42c1', '#fd7e14', '#0dcaf0'];
-  if (cd.doughnut && Array.isArray(cd.doughnut.labels) && Array.isArray(cd.doughnut.data)) {
-    doughLabels = cd.doughnut.labels;
-    doughData   = cd.doughnut.data;
-    if (Array.isArray(cd.doughnut.colors)) doughColors = cd.doughnut.colors;
-  }
+  // Issues Doughnut
   const doughCtx = document.getElementById('issuesChart').getContext('2d');
   if (doughnutChart) doughnutChart.destroy();
   doughnutChart = new Chart(doughCtx, {
     type: 'doughnut',
-    data: { labels: doughLabels, datasets: [{ data: doughData, backgroundColor: doughColors }] },
-    options: { maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+    data: {
+      labels: cd.doughnut.labels,
+      datasets: [{ data: cd.doughnut.data, backgroundColor: cd.doughnut.colors }]
+    },
+    options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#888', font: { size: 10 } } } } }
   });
 }
 
-// Run audit via SSE
 function runAudit(url) {
-  try { if (currentEventSource) currentEventSource.close(); } catch (_) {}
-  resetUI();
+  if (currentEventSource) currentEventSource.close();
+  
+  // UI Setup
   document.getElementById('btnOpenAudit').disabled = true;
-  document.getElementById('btnText').textContent = "Processing…";
-  document.getElementById('btnSpinner').classList.remove("d-none");
-  setOverlay(true, "This may take a few seconds");
-  document.getElementById('crawlProgressContainer').style.display = "block";
-  document.getElementById('openResults').classList.add("d-none");
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  document.getElementById('crawlProgressContainer').style.display = 'block';
+  document.getElementById('openResults').classList.add('d-none');
 
   const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
   currentEventSource = evtSource;
 
   evtSource.onmessage = (e) => {
-    let data = {};
-    try { data = JSON.parse(e.data || "{}"); } catch {}
+    const data = JSON.parse(e.data || "{}");
+    
     if (!data.finished) {
-      updateProgress(Number(data.crawl_progress ?? 0), data.status || "Auditing…");
+      updateProgress(data.crawl_progress, data.status);
       return;
     }
 
     evtSource.close();
-
     if (data.error) {
-      console.error("Audit error:", data.error);
-      resetUI();
-      toast("Audit failed: " + data.error, "danger");
-      return;
+        alert("Error: " + data.error);
+        location.reload();
+        return;
     }
 
-    // Tiles
-    document.getElementById('openResults').classList.remove("d-none");
-    document.getElementById('ovScore').textContent = data.overall_score ?? "-";
-    document.getElementById('grade').textContent   = data.grade ?? "-";
+    // Populate Fields
+    document.getElementById('openResults').classList.remove('d-none');
+    document.getElementById('ovScore').textContent = data.overall_score;
+    document.getElementById('grade').textContent = "Grade: " + data.grade;
+    document.getElementById('onpageScore').textContent = data.breakdown.onpage;
+    document.getElementById('perfScore').textContent = data.breakdown.performance;
+    document.getElementById('coverageScore').textContent = data.breakdown.coverage;
+    document.getElementById('confidence').textContent = data.breakdown.confidence + "%";
 
-    const bd = data.breakdown || {};
-    document.getElementById('onpageScore').textContent   = bd.onpage ?? "-";
-    document.getElementById('perfScore').textContent     = bd.performance ?? "-";
-    document.getElementById('coverageScore').textContent = bd.coverage ?? "-";
-    document.getElementById('confidence').textContent    = (typeof bd.confidence === 'number' ? (bd.confidence + "%") : "-");
+    renderAuditCharts(data);
+    
+    // Status Logic
+    const systemStatus = document.getElementById('systemStatus');
+    if (!data.ssl_secure) {
+        systemStatus.innerHTML = '<span class="status-dot status-warn"></span>SSL Warning';
+    } else {
+        systemStatus.innerHTML = '<span class="status-dot status-ok"></span>Audit Ready';
+    }
 
-    // Charts
-    renderCharts(data);
-
-    resetUI();
-    toast("Audit completed!", "success");
-  };
-
-  evtSource.onerror = (err) => {
-    try { evtSource.close(); } catch (_) {}
-    resetUI();
-    console.error("SSE error:", err);
-    toast("Audit failed. Could not reach server.", "danger");
+    document.getElementById('loadingOverlay').style.display = 'none';
+    document.getElementById('btnOpenAudit').disabled = false;
   };
 }
 
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
-  const url = normalizeUrl(document.getElementById('openUrl').value);
-  if (!url || !/^https?:\/\/.+\..+/.test(url)) {
-    toast("Enter a valid URL (e.g., https://example.com).", "warning");
-    return;
-  }
-  runAudit(url);
+  let val = document.getElementById('openUrl').value.trim();
+  if (!val.startsWith('http')) val = 'https://' + val;
+  runAudit(val);
 });
 
-document.querySelectorAll('.demo-link').forEach(a => a.addEventListener('click', e => {
-  e.preventDefault();
-  const url = normalizeUrl(a.getAttribute('data-url'));
-  if (url) runAudit(url);
-}));
+document.querySelectorAll('.demo-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const url = 'https://' + link.dataset.url;
+        document.getElementById('openUrl').value = url;
+        runAudit(url);
+    });
+});
 </script>
 
 {% endblock %}
