@@ -10,6 +10,7 @@ from .links import analyze_links_async
 from .performance import analyze_performance
 from .record import fetch_site_html
 from .psi import fetch_lighthouse
+from .grader import grade_website  # ✅ Integrate the grader
 
 logger = logging.getLogger("audit_engine")
 logging.basicConfig(level=logging.INFO)
@@ -33,18 +34,18 @@ class WebsiteAuditRunner:
         self.html_docs = {r["url"]: r.get("seo", {}) for r in crawl_result.get("report", [])}
 
         if progress_callback:
-            await progress_callback({"status": "Crawl complete, fetching HTML...", "crawl_progress": 0, "finished": False})
+            await progress_callback({"status": "Crawl complete, fetching full HTML...", "crawl_progress": 0, "finished": False})
 
-        # 2️⃣ Fetch full HTML for in-depth analysis
+        # 2️⃣ Fetch full HTML for in-depth analysis (titles, H1, meta, images)
         self.html_docs = fetch_site_html(self.url, max_pages=50)
 
         # 3️⃣ On-page SEO Analysis
         seo_metrics = await analyze_onpage(self.html_docs, progress_callback=progress_callback)
 
-        # 4️⃣ Link Analysis
+        # 4️⃣ Link Analysis (internal, external, broken)
         links_metrics = await analyze_links_async(self.html_docs, self.url, progress_callback=progress_callback)
 
-        # 5️⃣ Performance Analysis
+        # 5️⃣ Performance Analysis (page load time, TTFB)
         perf_metrics = {}
         for page_url in self.html_docs.keys():
             perf_metrics[page_url] = analyze_performance(page_url)
@@ -67,7 +68,18 @@ class WebsiteAuditRunner:
                         "finished": False
                     })
 
-        # 7️⃣ Compile final report
+        # 7️⃣ Page Grading using grader.py
+        graded_pages = {}
+        for page_url, html in self.html_docs.items():
+            graded_pages[page_url] = grade_website(html, page_url)
+            if progress_callback:
+                await progress_callback({
+                    "crawl_progress": round(len(graded_pages) / len(self.html_docs) * 100, 2),
+                    "status": f"Page graded for {len(graded_pages)}/{len(self.html_docs)} pages...",
+                    "finished": False
+                })
+
+        # 8️⃣ Compile final report
         self.report = {
             "url": self.url,
             "crawl": crawl_result,
@@ -75,6 +87,7 @@ class WebsiteAuditRunner:
             "links": links_metrics,
             "performance": perf_metrics,
             "psi": psi_metrics,
+            "graded_pages": graded_pages,  # ✅ Add per-page grades
         }
 
         if progress_callback:
@@ -83,8 +96,22 @@ class WebsiteAuditRunner:
         return self.report
 
 
-# ────────────── Helper function for legacy imports ──────────────
-def run_audit(url: str, psi_api_key: Optional[str] = None, progress_callback: Optional[Callable] = None):
-    """Module-level function for backward compatibility."""
-    runner = WebsiteAuditRunner(url, psi_api_key=psi_api_key)
-    return asyncio.run(runner.run_audit(progress_callback=progress_callback))
+# ---------------------
+# Example Usage
+# ---------------------
+if __name__ == "__main__":
+    import json
+
+    async def progress_cb(data):
+        print(f"[{data['crawl_progress']}%] {data['status']}")
+
+    url_to_audit = "https://example.com"
+    psi_key = "YOUR_GOOGLE_PSI_API_KEY"
+
+    runner = WebsiteAuditRunner(url_to_audit, psi_api_key=psi_key)
+    report = asyncio.run(runner.run_audit(progress_callback=progress_cb))
+
+    with open("audit_report.json", "w") as f:
+        json.dump(report, f, indent=2)
+
+    print("Audit completed! Report saved as audit_report.json")
