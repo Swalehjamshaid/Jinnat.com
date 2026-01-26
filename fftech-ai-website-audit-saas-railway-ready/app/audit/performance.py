@@ -1,12 +1,11 @@
+# fftech-ai-website-audit-saas-railway-ready/app/audit/performance.py
 
 import requests
 import time
 from typing import Dict
 
 def analyze_performance(url: str) -> Dict[str, int]:
-    """Lightweight timing using requests: total time, ttfb, size.
-    Not used directly by runner, but available for future enhancements.
-    """
+    """Lightweight timing using requests: total time, ttfb, size."""
     headers = {'User-Agent': 'FFTech AI Auditor'}
     t0 = time.time()
     try:
