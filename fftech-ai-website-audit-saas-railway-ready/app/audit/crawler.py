@@ -1,5 +1,4 @@
-
-# app/audit/crawler.py
+# fftech-ai-website-audit-saas-railway-ready/app/audit/crawler.py
 
 import asyncio
 import logging
@@ -8,7 +7,6 @@ from typing import Dict, Set, List, Callable, Optional
 
 import httpx
 from bs4 import BeautifulSoup
-
 
 logger = logging.getLogger("audit_engine")
 
@@ -30,10 +28,8 @@ async def fetch(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
 def analyze(html: str) -> Dict[str, int]:
     """Basic SEO metrics."""
     soup = BeautifulSoup(html, "lxml")
-
     title = soup.find("title")
     meta_desc = soup.find("meta", attrs={"name": "description"})
-
     return {
         "images_missing_alt": sum(1 for img in soup.find_all("img") if not img.get("alt")),
         "title_missing": 0 if title and title.text.strip() else 1,
@@ -59,7 +55,6 @@ async def async_crawl(
 
     queue = asyncio.Queue()
     await queue.put(start_url)
-
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
@@ -69,7 +64,6 @@ async def async_crawl(
                 url = await queue.get()
                 if url in visited:
                     continue
-
                 visited.add(url)
 
                 async with semaphore:
@@ -119,6 +113,6 @@ async def async_crawl(
         "report": results,
         "unique_internal": len(internal_links),
         "unique_external": len(external_links),
-        "broken_internal": broken_internal,
-        "broken_external": broken_external,
+        "broken_internal": list(broken_internal),
+        "broken_external": list(broken_external),
     }
