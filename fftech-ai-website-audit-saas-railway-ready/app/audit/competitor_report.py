@@ -1,9 +1,10 @@
+# fftech-ai-website-audit-saas-railway-ready/app/audit/competitor_report.py
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
 def build_competitor_pdf(comp_result: dict, out_path: str):
-    """Tiny PDF example; not used by runner. Keep minimal."""
+    """Tiny PDF example; can expand later."""
     doc = SimpleDocTemplate(out_path)
     story = []
     styles = getSampleStyleSheet()
