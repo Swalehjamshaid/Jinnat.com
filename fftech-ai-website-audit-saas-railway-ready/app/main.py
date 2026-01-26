@@ -1,17 +1,18 @@
 # app/main.py
 
-import logging
 import time
+import logging
 from typing import Any, Dict
 from urllib.parse import urlparse
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from contextlib import asynccontextmanager
 
-from app.audit.runner import WebsiteAuditRunner  # updated runner class
+from app.audit.runner import WebsiteAuditRunner
+
 
 # ---------------------------------------------------------
 # Logging Setup
@@ -25,7 +26,7 @@ logger = logging.getLogger("audit_engine")
 
 
 # ---------------------------------------------------------
-# FastAPI App
+# FastAPI Lifespan
 # ---------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,9 +35,12 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 FF Tech International Audit Engine shutting down...")
 
 
+# ---------------------------------------------------------
+# FastAPI App
+# ---------------------------------------------------------
 app = FastAPI(
     title="FF Tech International Audit Engine",
-    version="4.0",
+    version="4.1",
     docs_url=None,
     redoc_url=None,
     lifespan=lifespan,
@@ -51,7 +55,7 @@ templates = Jinja2Templates(directory="app/templates")
 # ---------------------------------------------------------
 def normalize_url(url: str) -> str:
     if not url:
-        raise ValueError("URL cannot be empty.")
+        raise ValueError("URL cannot be empty")
 
     url = url.strip()
     if "://" not in url:
@@ -59,7 +63,7 @@ def normalize_url(url: str) -> str:
 
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
-        raise ValueError("Invalid URL format.")
+        raise ValueError("Invalid URL format")
 
     return parsed.geturl()
 
@@ -73,62 +77,65 @@ async def home(request: Request):
 
 
 # ---------------------------------------------------------
-# WebSocket Real‑Time Audit Endpoint
+# WebSocket Audit Endpoint
 # ---------------------------------------------------------
 @app.websocket("/ws/audit-progress")
 async def websocket_audit(websocket: WebSocket):
-
     await websocket.accept()
-    url = websocket.query_params.get("url")
 
+    url = websocket.query_params.get("url")
     if not url:
         await websocket.send_json({"error": "URL is required"})
         await websocket.close(code=1008)
         return
 
     try:
-        normalized = normalize_url(url)
+        normalized_url = normalize_url(url)
     except ValueError as e:
         await websocket.send_json({"error": str(e)})
         await websocket.close()
         return
 
     async def stream_progress(update: Dict[str, Any]):
-        """Send progress events to WebSocket safely."""
         try:
             await websocket.send_json(update)
         except RuntimeError:
-            logger.warning("Client disconnected early; stopping stream.")
+            logger.warning("WebSocket disconnected early")
             raise WebSocketDisconnect()
 
     try:
-        # Send initial progress
-        await stream_progress({"status": "Starting audit…", "crawl_progress": 5})
+        logger.info(f"Starting crawl for {normalized_url}")
 
-        # ✅ Use max_pages parameter for quicker audits
-        runner = WebsiteAuditRunner(normalized, psi_api_key=None, max_pages=10)
+        await stream_progress({
+            "status": "Initializing audit…",
+            "crawl_progress": 5,
+            "finished": False
+        })
 
-        # Run the audit asynchronously, streaming progress back
+        runner = WebsiteAuditRunner(
+            url=normalized_url,
+            psi_api_key=None,
+            max_pages=10
+        )
+
         audit_output = await runner.run_audit(progress_callback=stream_progress)
 
-        # Send final result
         await stream_progress({
             **audit_output,
-            "finished": True,
+            "status": "Audit completed ✔",
             "crawl_progress": 100,
-            "status": "Audit completed ✔"
+            "finished": True
         })
 
     except WebSocketDisconnect:
-        logger.info("Client disconnected from audit WebSocket.")
+        logger.info("Client disconnected from WebSocket")
     except Exception as e:
-        logger.exception("Audit failed: %s", e)
+        logger.exception("Audit failed")
         await stream_progress({
             "error": str(e),
-            "finished": True,
-            "status": "Audit failed."
+            "status": "Audit failed",
+            "finished": True
         })
-
     finally:
         await websocket.close()
 
@@ -142,6 +149,6 @@ async def health():
     return {
         "status": "ok",
         "engine": "FF Tech Audit Engine",
-        "version": "4.0",
+        "version": "4.1",
         "time": time.time()
     }
