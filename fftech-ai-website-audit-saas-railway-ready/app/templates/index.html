@@ -3,8 +3,10 @@
 
 <style>
   :root {
-    --glass-bg: rgba(20, 20, 20, 0.7);
+    --glass-bg: rgba(20, 20, 20, 0.8);
     --glass-border: rgba(255, 255, 255, 0.08);
+    --accent-blue: #0d6efd;
+    --accent-green: #20c997;
   }
 
   body {
@@ -13,6 +15,7 @@
                 #0b0b0b;
     background-attachment: fixed;
     color: #f0f0f0;
+    font-family: 'Inter', sans-serif;
   }
 
   .saas-card {
@@ -20,14 +23,14 @@
     backdrop-filter: blur(16px);
     border: 1px solid var(--glass-border);
     border-radius: 1.25rem;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4);
   }
 
-  .chart-container {
+  .chart-wrapper {
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 1rem;
-    padding: 1.25rem;
+    padding: 1.5rem;
     position: relative;
     height: 320px;
     width: 100%;
@@ -41,7 +44,7 @@
   }
 
   .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: .5rem; }
-  .status-ok { background-color: #20c997; box-shadow: 0 0 10px #20c997; }
+  .status-ok { background-color: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
   .status-warn { background-color: #ffc107; box-shadow: 0 0 10px #ffc107; }
 
   .metric-tile {
@@ -52,106 +55,121 @@
     transition: transform 0.2s ease;
   }
   .metric-tile:hover { transform: translateY(-3px); background: rgba(255,255,255,0.06); }
+
+  .btn-magic {
+    background: var(--accent-green);
+    border: none;
+    color: #000;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .btn-magic:hover {
+    background: #1db98a;
+    color: #000;
+  }
 </style>
 
-<div class="row g-4">
-  <div class="col-lg-8">
-    <div class="card saas-card position-relative">
-      
-      <div id="loadingOverlay">
-        <div class="spinner-grow text-primary" style="width: 3rem; height: 3rem;"></div>
-        <h5 class="mt-4 fw-bold" id="overlayStatus">Initializing FFTech Bot…</h5>
-        <p class="text-white-50 small" id="overlayHint">Analyzing Network & SSL Chain</p>
-      </div>
-
-      <div class="card-body p-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-          <h3 class="fw-bold mb-0">Site<span class="text-primary">Auditor</span></h3>
-          <span class="badge bg-dark border border-secondary py-2 px-3" id="engineStatus">
-            <span class="status-dot status-ok"></span>Engine Active
-          </span>
+<div class="container py-5">
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card saas-card position-relative">
+        
+        <div id="loadingOverlay">
+          <div class="spinner-grow text-primary" style="width: 3rem; height: 3rem;"></div>
+          <h5 class="mt-4 fw-bold" id="overlayStatus">Initializing Audit…</h5>
+          <p class="text-white-50 small" id="overlayHint">Analyzing Network & Security Headers</p>
         </div>
 
-        <div class="input-group input-group-lg mb-4">
-          <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
-          <input id="openUrl" type="url" class="form-control bg-dark text-white border-secondary" placeholder="https://example.com" value="https://">
-          <button id="btnOpenAudit" class="btn btn-primary px-4 fw-bold">ANALYZE</button>
-        </div>
-
-        <div id="crawlProgressContainer" class="mb-5" style="display:none;">
-          <div class="d-flex justify-content-between mb-2 small fw-bold text-uppercase">
-            <span class="text-primary" id="statusLabel">Starting…</span>
-            <span id="progressLabel" class="text-secondary">0%</span>
+        <div class="card-body p-4">
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3 class="fw-bold mb-0">Site<span class="text-primary">Auditor</span></h3>
+            <span class="badge bg-dark border border-secondary py-2 px-3" id="engineStatus">
+              <span class="status-dot status-ok"></span>Engine Active
+            </span>
           </div>
-          <div class="progress" style="height: 6px; background: rgba(255,255,255,0.05);">
-            <div id="crawlProgressBar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
-          </div>
-        </div>
 
-        <div id="openResults" class="d-none">
-          <div class="row g-3 mb-4">
-            <div class="col-md-4">
-              <div class="p-4 rounded-4 bg-primary bg-opacity-10 border border-primary border-opacity-25 text-center h-100 d-flex flex-column justify-content-center">
-                <small class="text-uppercase text-secondary fw-bold">Health Score</small>
-                <div id="ovScore" class="display-1 fw-bold my-2 text-white">-</div>
-                <div id="grade" class="h4 fw-bold text-primary">-</div>
-              </div>
+          <div class="input-group input-group-lg mb-4">
+            <input id="openUrl" type="url" class="form-control bg-dark text-white border-secondary" placeholder="https://www.haier.com.pk" value="https://">
+            <button id="btnOpenAudit" class="btn btn-primary px-5 fw-bold text-uppercase">Analyze</button>
+          </div>
+
+          <div id="crawlProgressContainer" class="mb-5" style="display:none;">
+            <div class="d-flex justify-content-between mb-2 small fw-bold text-uppercase">
+              <span class="text-primary" id="statusLabel">Starting…</span>
+              <span id="progressLabel" class="text-secondary">0%</span>
             </div>
-            <div class="col-md-8">
-              <div class="chart-container">
-                <canvas id="barChart"></canvas>
-              </div>
+            <div class="progress" style="height: 6px; background: rgba(255,255,255,0.05);">
+              <div id="crawlProgressBar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
             </div>
           </div>
 
-          <div class="row g-3 mb-4">
-            <div class="col-md-6">
-              <div class="chart-container">
-                <h6 class="text-center small text-uppercase text-secondary mb-3">Technical Depth</h6>
-                <canvas id="radarChart"></canvas>
+          <div id="openResults" class="d-none animate-fade-in">
+            <div class="row g-3 mb-4">
+              <div class="col-md-4">
+                <div class="p-4 rounded-4 bg-primary bg-opacity-10 border border-primary border-opacity-25 text-center h-100 d-flex flex-column justify-content-center">
+                  <small class="text-uppercase text-secondary fw-bold ls-widest">Overall Score</small>
+                  <div id="ovScore" class="display-1 fw-bold my-2 text-white">-</div>
+                  <div id="grade" class="h4 fw-bold text-primary">-</div>
+                </div>
+              </div>
+              <div class="col-md-8">
+                <div class="chart-wrapper">
+                  <canvas id="barChart"></canvas>
+                </div>
               </div>
             </div>
-            <div class="col-md-6">
-              <div class="chart-container">
-                <h6 class="text-center small text-uppercase text-secondary mb-3">Issue Breakdown</h6>
-                <canvas id="doughnutChart"></canvas>
-              </div>
-            </div>
-          </div>
 
-          <div class="row g-2">
-            <div class="col-6 col-md-3"><div class="metric-tile text-center"><small class="text-secondary">SEO</small><div id="onpageScore" class="h5 fw-bold mb-0">-</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-tile text-center"><small class="text-secondary">Performance</small><div id="perfScore" class="h5 fw-bold mb-0">-</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-tile text-center"><small class="text-secondary">Security</small><div id="coverageScore" class="h5 fw-bold mb-0">-</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-tile text-center"><small class="text-secondary">Trust</small><div id="confidence" class="h5 fw-bold mb-0">-</div></div></div>
+            <div class="row g-3 mb-4">
+              <div class="col-md-6">
+                <div class="chart-wrapper">
+                  <h6 class="text-center small text-uppercase text-secondary mb-3">Technical Depth</h6>
+                  <canvas id="radarChart"></canvas>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="chart-wrapper">
+                  <h6 class="text-center small text-uppercase text-secondary mb-3">Issue Distribution</h6>
+                  <canvas id="doughnutChart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-6 col-md-3"><div class="metric-tile text-center"><small class="text-secondary text-uppercase">SEO</small><div id="onpageScore" class="h5 fw-bold mb-0 text-white">-</div></div></div>
+              <div class="col-6 col-md-3"><div class="metric-tile text-center"><small class="text-secondary text-uppercase">Speed</small><div id="perfScore" class="h5 fw-bold mb-0 text-white">-</div></div></div>
+              <div class="col-6 col-md-3"><div class="metric-tile text-center"><small class="text-secondary text-uppercase">Security</small><div id="coverageScore" class="h5 fw-bold mb-0 text-white">-</div></div></div>
+              <div class="col-6 col-md-3"><div class="metric-tile text-center"><small class="text-secondary text-uppercase">AI Trust</small><div id="confidence" class="h5 fw-bold mb-0 text-white">-</div></div></div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-lg-4">
-    <div class="card saas-card mb-4">
-      <div class="card-body p-4">
-        <h5 class="fw-bold mb-2">Magic Link Login</h5>
-        <p class="text-secondary small mb-4">Register your email to save audit history and download PDF reports.</p>
-        <form action="/request-login" method="POST">
-          <input type="email" name="email" class="form-control bg-dark text-white border-secondary mb-3" placeholder="email@company.com" required>
-          <button type="submit" class="btn btn-success w-100 fw-bold">SEND MAGIC LINK</button>
-        </form>
       </div>
     </div>
 
-    <div class="card saas-card">
-      <div class="card-body p-4">
-        <h6 class="fw-bold mb-3">Pro Subscription</h6>
-        <ul class="list-unstyled small text-secondary">
-          <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i> Custom White-label PDFs</li>
-          <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i> Weekly SEO Monitoring</li>
-          <li><i class="bi bi-check-circle-fill text-primary me-2"></i> API Access (V2.1)</li>
-        </ul>
-        <hr class="opacity-10">
-        <button class="btn btn-outline-primary btn-sm w-100">UPGRADE NOW</button>
+    <div class="col-lg-4">
+      <div class="card saas-card mb-4">
+        <div class="card-body p-4">
+          <h5 class="fw-bold mb-2">Magic Link Login</h5>
+          <p class="text-secondary small mb-4">Register your email to save audit history and download PDF reports.</p>
+          <form action="/request-login" method="POST">
+            <div class="mb-3">
+              <input type="email" name="email" class="form-control bg-dark text-white border-secondary" placeholder="email@company.com" required>
+            </div>
+            <button type="submit" class="btn btn-magic w-100 py-2">SEND MAGIC LINK</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card saas-card">
+        <div class="card-body p-4">
+          <h6 class="fw-bold mb-3 text-uppercase small ls-widest">Pro Subscription</h6>
+          <div class="small text-secondary mb-4">
+            <div class="mb-2"><i class="bi bi-patch-check text-primary me-2"></i> Custom White-label PDFs</div>
+            <div class="mb-2"><i class="bi bi-patch-check text-primary me-2"></i> Weekly SEO Monitoring</div>
+            <div class="mb-2"><i class="bi bi-patch-check text-primary me-2"></i> API Access (V2.1)</div>
+          </div>
+          <button class="btn btn-outline-primary btn-sm w-100 fw-bold">UPGRADE NOW</button>
+        </div>
       </div>
     </div>
   </div>
@@ -172,28 +190,58 @@ function updateProgress(pct, msg) {
 function initDashboard(data) {
   const cd = data.chart_data;
 
-  // 1. BAR
+  // 1. BAR CHART
   if(charts.bar) charts.bar.destroy();
   charts.bar = new Chart(document.getElementById('barChart'), {
     type: 'bar',
-    data: { labels: cd.bar.labels, datasets: [{ data: cd.bar.data, backgroundColor: cd.bar.colors, borderRadius: 8, barThickness: 30 }] },
-    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }
+    data: { 
+      labels: cd.bar.labels, 
+      datasets: [{ data: cd.bar.data, backgroundColor: cd.bar.colors, borderRadius: 8, barThickness: 30 }] 
+    },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.05)' } } } }
   });
 
-  // 2. RADAR
+  // 2. RADAR CHART
   if(charts.radar) charts.radar.destroy();
   charts.radar = new Chart(document.getElementById('radarChart'), {
     type: 'radar',
-    data: { labels: cd.radar.labels, datasets: [{ label: 'Score', data: cd.radar.data, backgroundColor: 'rgba(13, 110, 253, 0.2)', borderColor: '#0d6efd' }] },
-    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { r: { suggestedMax: 100, ticks: { display: false } } } }
+    data: { 
+      labels: cd.radar.labels, 
+      datasets: [{ label: 'Score', data: cd.radar.data, backgroundColor: 'rgba(13, 110, 253, 0.2)', borderColor: '#0d6efd', pointBackgroundColor: '#0d6efd' }] 
+    },
+    options: { 
+        maintainAspectRatio: false, 
+        plugins: { legend: { display: false } }, 
+        scales: { 
+            r: { 
+                suggestedMax: 100, 
+                ticks: { display: false },
+                grid: { color: 'rgba(255,255,255,0.1)' },
+                angleLines: { color: 'rgba(255,255,255,0.1)' },
+                pointLabels: { color: '#888' }
+            } 
+        } 
+    }
   });
 
-  // 3. DOUGHNUT
+  // 3. DOUGHNUT CHART
   if(charts.doughnut) charts.doughnut.destroy();
   charts.doughnut = new Chart(document.getElementById('doughnutChart'), {
     type: 'doughnut',
-    data: { labels: cd.doughnut.labels, datasets: [{ data: cd.doughnut.data, backgroundColor: cd.doughnut.colors, borderWidth: 0 }] },
-    options: { maintainAspectRatio: false, cutout: '75%', plugins: { legend: { position: 'bottom', labels: { color: '#888', font: { size: 10 } } } } }
+    data: { 
+      labels: cd.doughnut.labels, 
+      datasets: [{ data: cd.doughnut.data, backgroundColor: cd.doughnut.colors, borderWidth: 0 }] 
+    },
+    options: { 
+        maintainAspectRatio: false, 
+        cutout: '75%', 
+        plugins: { 
+            legend: { 
+                position: 'bottom', 
+                labels: { color: '#888', font: { size: 10 }, padding: 15 } 
+            } 
+        } 
+    }
   });
 }
 
@@ -210,25 +258,32 @@ function runAudit(url) {
 
   evtSource.onmessage = (e) => {
     const data = JSON.parse(e.data || "{}");
+    
     if (!data.finished) {
       updateProgress(data.crawl_progress, data.status);
       return;
     }
+
     evtSource.close();
 
     // Fill UI Metrics
     document.getElementById('ovScore').textContent = data.overall_score;
     document.getElementById('grade').textContent = "Grade: " + data.grade;
-    document.getElementById('onpageScore').textContent = data.breakdown.onpage;
-    document.getElementById('perfScore').textContent = data.breakdown.performance;
-    document.getElementById('coverageScore').textContent = data.breakdown.coverage;
-    document.getElementById('confidence').textContent = data.breakdown.confidence + "%";
+    
+    const bd = data.breakdown || {};
+    document.getElementById('onpageScore').textContent = bd.onpage;
+    document.getElementById('perfScore').textContent = bd.performance;
+    document.getElementById('coverageScore').textContent = bd.coverage;
+    document.getElementById('confidence').textContent = bd.confidence + "%";
 
     // Handle SSL Status Indicator
     const engineStatus = document.getElementById('engineStatus');
+    const statusDot = engineStatus.querySelector('.status-dot');
     if (data.ssl_secure === false) {
+        statusDot.className = 'status-dot status-warn';
         engineStatus.innerHTML = '<span class="status-dot status-warn"></span>SSL Warning';
     } else {
+        statusDot.className = 'status-dot status-ok';
         engineStatus.innerHTML = '<span class="status-dot status-ok"></span>Engine Ready';
     }
 
@@ -239,11 +294,17 @@ function runAudit(url) {
     document.getElementById('btnOpenAudit').disabled = false;
     document.getElementById('openResults').classList.remove('d-none');
   };
+
+  evtSource.onerror = () => {
+    evtSource.close();
+    document.getElementById('loadingOverlay').style.display = 'none';
+    document.getElementById('btnOpenAudit').disabled = false;
+  };
 }
 
 document.getElementById('btnOpenAudit').addEventListener('click', () => {
   let val = document.getElementById('openUrl').value.trim();
-  if(!val.startsWith('http')) val = 'https://' + val;
+  if(!val) return;
   runAudit(val);
 });
 </script>
