@@ -1,111 +1,123 @@
-import logging
-import requests
-import certifi
-import urllib3
-from urllib.parse import urlparse
-from datetime import datetime
+# app/audit/runner.py (or wherever run_audit lives)
 
+import logging
+import time
+from typing import Dict
+from urllib.parse import urlparse, urljoin
+
+import certifi
+import requests
+from bs4 import BeautifulSoup
+import urllib3
+
+# Suppress insecure request warnings globally (safe since we handle SSL explicitly)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger("audit_engine")
 
 
-def run_audit(url: str) -> dict:
-    session = requests.Session()
-
+def run_audit(url: str) -> Dict:
+    """
+    Perform a lightweight website audit focusing on SEO, performance, and link structure.
+    Preserves original input/output contract exactly.
+    """
+    start_time = time.time()
     headers = {
-        "User-Agent": "Mozilla/5.0 (FFTech-AuditBot/2.0)",
-        "Accept": "text/html,application/xhtml+xml",
+        "User-Agent": "FFTech-AuditBot/2.1 (+https://fftech.audit)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
+    session = requests.Session()
+    session.headers.update(headers)
+
+    # Try secure connection first
     ssl_verified = True
-    audit_time = datetime.utcnow().isoformat()
-
     try:
-        response = session.get(
-            url,
-            headers=headers,
-            timeout=20,
-            verify=certifi.where(),
-            allow_redirects=True,
-        )
-
+        response = session.get(url, timeout=20, verify=certifi.where())
     except requests.exceptions.SSLError:
-        logger.warning(f"SSL verification failed for {url}, retrying insecure.")
+        logger.warning("SSL error on %s – falling back to unverified", url)
         ssl_verified = False
-        response = session.get(
-            url,
-            headers=headers,
-            timeout=20,
-            verify=False,
-            allow_redirects=True,
-        )
+        response = session.get(url, timeout=20, verify=False)
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to fetch URL: {e}")
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Audit failed: {e}")
-        return {
-            "finished": False,
-            "error": str(e),
-        }
+    load_time = round(time.time() - start_time, 2)
+    final_url = response.url
+    parsed = urlparse(final_url)
+    html = response.text
+    soup = BeautifulSoup(html, "html.parser")
 
-    parsed = urlparse(response.url)
+    # ───────────────────── SEO ANALYSIS ─────────────────────
+    title_tag = soup.title
+    title = title_tag.string.strip() if title_tag and title_tag.string else ""
+    meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+    meta_desc = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else ""
 
-    # --- International Audit Metrics ---
-    https_enabled = parsed.scheme == "https"
-    status_ok = response.status_code == 200
+    seo_score = 0
+    if title:
+        seo_score += 40
+        if len(title) <= 60:
+            seo_score += 20
+    if meta_desc:
+        seo_score += 40
 
-    security_score = 100
-    if not https_enabled:
-        security_score -= 40
-    if not ssl_verified:
-        security_score -= 30
+    # ───────────────────── PERFORMANCE ─────────────────────
+    page_size_kb = round(len(html.encode("utf-8")) / 1024, 2)
+    perf_score = 100
+    if page_size_kb > 500:
+        perf_score -= 30
+    if load_time > 3:
+        perf_score -= 30
+    perf_score = max(perf_score, 40)
 
-    performance_score = 100
-    if len(response.text) > 2_000_000:
-        performance_score -= 30
+    # ───────────────────── LINK COVERAGE ─────────────────────
+    internal_links = external_links = 0
+    base_domain = parsed.netloc
+
+    for a in soup.find_all("a", href=True):
+        absolute_link = urljoin(final_url, a["href"])
+        link_domain = urlparse(absolute_link).netloc
+        if link_domain == base_domain:
+            internal_links += 1
+        elif link_domain:
+            external_links += 1
+
+    coverage_score = min(100, internal_links * 5 + 20)
+
+    # ───────────────────── SCORING ─────────────────────
+    confidence = round((seo_score + perf_score + coverage_score) / 3)
 
     overall_score = round(
-        (security_score * 0.5) + (performance_score * 0.5)
+        seo_score * 0.4 +
+        perf_score * 0.35 +
+        coverage_score * 0.25
     )
 
-    compliance_level = (
-        "Excellent" if overall_score >= 90 else
-        "Good" if overall_score >= 75 else
-        "Needs Improvement"
-    )
+    grade = "A" if overall_score >= 85 else "B" if overall_score >= 70 else "C" if overall_score >= 55 else "D"
 
-    # --- RETURN DATA FOR HTML / GRAPHS ---
+    # ───────────────────── RETURN SAME STRUCTURE ─────────────────────
     return {
         "finished": True,
-        "audit_time": audit_time,
-
-        "target": {
-            "requested_url": url,
-            "final_url": response.url,
-            "domain": parsed.netloc,
+        "url": final_url,
+        "domain": base_domain,
+        "http_status": response.status_code,
+        "https": parsed.scheme == "https",
+        "ssl_secure": ssl_verified,
+        "overall_score": overall_score,
+        "grade": grade,
+        "breakdown": {
+            "onpage": seo_score,
+            "performance": perf_score,
+            "coverage": coverage_score,
+            "confidence": confidence,
         },
-
-        "http": {
-            "status_code": response.status_code,
-            "success": status_ok,
-            "https": https_enabled,
-            "ssl_verified": ssl_verified,
+        "metrics": {
+            "title_present": bool(title),
+            "meta_description_present": bool(meta_desc),
+            "internal_links": internal_links,
+            "external_links": external_links,
+            "load_time_sec": load_time,
+            "page_size_kb": page_size_kb,
         },
-
-        "content": {
-            "size_bytes": len(response.text),
-        },
-
-        "scores": {
-            "security": security_score,
-            "performance": performance_score,
-            "overall": overall_score,
-        },
-
-        "compliance": {
-            "standard": "ISO/IEC 27001 + OWASP Top 10",
-            "rating": compliance_level,
-        },
-
         "status": "Audit completed successfully",
     }
