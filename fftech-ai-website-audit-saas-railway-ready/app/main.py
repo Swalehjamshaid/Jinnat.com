@@ -1,19 +1,17 @@
-
 # app/main.py
 
-import asyncio
 import logging
 import time
 from typing import Any, Dict
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
-from app.audit.runner import run_audit
+from app.audit.runner import WebsiteAuditRunner  # ✅ updated import
 
 
 # ---------------------------------------------------------
@@ -35,6 +33,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 FF Tech International Audit Engine initializing...")
     yield
     logger.info("🛑 FF Tech International Audit Engine shutting down...")
+
 
 app = FastAPI(
     title="FF Tech International Audit Engine",
@@ -108,8 +107,9 @@ async def websocket_audit(websocket: WebSocket):
         # Send initial progress
         await stream_progress({"status": "Starting audit…", "crawl_progress": 5})
 
-        # Run the audit asynchronously, streaming progress back
-        audit_output = await run_audit(normalized, progress_callback=stream_progress)
+        # ✅ Run the audit using WebsiteAuditRunner
+        runner = WebsiteAuditRunner(normalized, psi_api_key=None)  # Add your PSI key if available
+        audit_output = await runner.run_audit(progress_callback=stream_progress)
 
         # Send final result
         await stream_progress({
