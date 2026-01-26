@@ -1,19 +1,15 @@
 # app/audit/runner.py
-
 import asyncio
 import logging
 from typing import Optional, Callable, Dict, Any
-
-from .crawler import async_crawl
+from .crawler import crawl                 # ← fixed: use 'crawl' (not async_crawl)
 from .seo import analyze_onpage
-from .links import analyze_links_async  # updated import
+from .links import analyze_links_async
 from .performance import analyze_performance
 from .record import fetch_site_html
 from .psi import fetch_lighthouse
 
 logger = logging.getLogger("audit_engine")
-logging.basicConfig(level=logging.INFO)
-
 
 class WebsiteAuditRunner:
     def __init__(self, url: str, psi_api_key: Optional[str] = None, max_pages: int = 50):
@@ -25,50 +21,80 @@ class WebsiteAuditRunner:
 
     async def run_audit(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Run the full audit asynchronously with real-time progress updates."""
+        start_time = asyncio.get_event_loop().time()
 
-        # 1️⃣ Crawl site asynchronously
+        # 1. Crawl site
         if progress_callback:
             await progress_callback({"status": "Starting site crawl...", "crawl_progress": 0, "finished": False})
         logger.info(f"Starting crawl for {self.url}")
-        crawl_result = await async_crawl(self.url, progress_callback=progress_callback)
+        crawl_result = await crawl(self.url, max_pages=self.max_pages, progress_callback=progress_callback)
+
         self.html_docs = {r["url"]: r.get("seo", {}) for r in crawl_result.get("report", [])}
 
         if progress_callback:
-            await progress_callback({"status": "Crawl complete, fetching HTML...", "crawl_progress": 0, "finished": False})
+            await progress_callback({"status": "Crawl complete → fetching full HTML...", "crawl_progress": 20, "finished": False})
 
-        # 2️⃣ Fetch full HTML for in-depth analysis
-        self.html_docs = fetch_site_html(self.url, max_pages=self.max_pages)
+        # 2. Fetch full HTML (sync → run in thread)
+        self.html_docs = await asyncio.to_thread(fetch_site_html, self.url, max_pages=self.max_pages)
 
-        # 3️⃣ On-page SEO Analysis
+        # 3. On-page SEO (async)
         seo_metrics = await analyze_onpage(self.html_docs, progress_callback=progress_callback)
 
-        # 4️⃣ Link Analysis (internal, external, broken)
+        # 4. Link analysis (async)
         links_metrics = await analyze_links_async(self.html_docs, self.url, progress_callback=progress_callback)
 
-        # 5️⃣ Performance Analysis
+        # 5. Performance analysis – parallel for speed
         perf_metrics = {}
-        for page_url in self.html_docs.keys():
-            perf_metrics[page_url] = analyze_performance(page_url)
+        perf_tasks = [
+            asyncio.to_thread(analyze_performance, page_url)
+            for page_url in self.html_docs.keys()
+        ]
+        perf_results = await asyncio.gather(*perf_tasks, return_exceptions=True)
+
+        for page_url, result in zip(self.html_docs.keys(), perf_results):
+            if isinstance(result, Exception):
+                logger.error(f"Perf failed for {page_url}: {result}")
+                perf_metrics[page_url] = {}
+            else:
+                perf_metrics[page_url] = result
+
             if progress_callback:
+                done = len(perf_metrics)
+                total = len(self.html_docs)
+                pct = round(done / total * 40 + 40, 2)  # 40–80% range
                 await progress_callback({
-                    "crawl_progress": round(len(perf_metrics) / len(self.html_docs) * 100, 2),
-                    "status": f"Performance analyzed for {len(perf_metrics)}/{len(self.html_docs)} pages...",
+                    "crawl_progress": pct,
+                    "status": f"Performance analyzed: {done}/{total} pages",
                     "finished": False
                 })
 
-        # 6️⃣ Optional PSI / Lighthouse metrics
+        # 6. Optional PSI/Lighthouse – parallel
         psi_metrics = {}
         if self.psi_api_key:
-            for page_url in self.html_docs.keys():
-                psi_metrics[page_url] = fetch_lighthouse(page_url, self.psi_api_key)
+            psi_tasks = [
+                asyncio.to_thread(fetch_lighthouse, page_url, self.psi_api_key)
+                for page_url in self.html_docs.keys()
+            ]
+            psi_results = await asyncio.gather(*psi_tasks, return_exceptions=True)
+
+            for page_url, result in zip(self.html_docs.keys(), psi_results):
+                if isinstance(result, Exception):
+                    logger.error(f"PSI failed for {page_url}: {result}")
+                    psi_metrics[page_url] = {}
+                else:
+                    psi_metrics[page_url] = result
+
                 if progress_callback:
+                    done = len(psi_metrics)
+                    total = len(self.html_docs)
+                    pct = round(done / total * 20 + 80, 2)  # 80–100% range
                     await progress_callback({
-                        "crawl_progress": round(len(psi_metrics) / len(self.html_docs) * 100, 2),
-                        "status": f"PageSpeed Insights fetched for {len(psi_metrics)}/{len(self.html_docs)} pages...",
+                        "crawl_progress": pct,
+                        "status": f"PageSpeed Insights: {done}/{total} pages",
                         "finished": False
                     })
 
-        # 7️⃣ Compile final report
+        # 7. Final report
         self.report = {
             "url": self.url,
             "crawl": crawl_result,
@@ -76,9 +102,14 @@ class WebsiteAuditRunner:
             "links": links_metrics,
             "performance": perf_metrics,
             "psi": psi_metrics,
+            "audit_duration_seconds": round(asyncio.get_event_loop().time() - start_time, 2),
         }
 
         if progress_callback:
-            await progress_callback({"status": "Audit complete!", "crawl_progress": 100, "finished": True})
+            await progress_callback({
+                "status": "Audit completed successfully!",
+                "crawl_progress": 100,
+                "finished": True
+            })
 
         return self.report
