@@ -1,70 +1,76 @@
+
 # app/audit/runner.py
+
 import logging
+from typing import Callable, Optional, Dict
+
 from app.audit.crawler import async_crawl
 
 logger = logging.getLogger("audit_engine")
 
-async def run_audit(url: str):
+
+async def run_audit(
+    url: str,
+    progress_callback: Optional[Callable] = None
+) -> Dict:
     """
-    Run a full website audit.
-    Returns a dictionary formatted for charts and the dashboard.
+    Run the full async audit and return final structured report.
     """
-    try:
-        result = await async_crawl(url, max_pages=20)
 
-        # Aggregate SEO metrics safely
-        total_images_missing_alt = sum(r.get("seo", {}).get("images_missing_alt", 0) for r in result["report"])
-        total_title_missing = sum(r.get("seo", {}).get("title_missing", 0) for r in result["report"])
-        total_meta_missing = sum(r.get("seo", {}).get("meta_description_missing", 0) for r in result["report"])
+    result = await async_crawl(url, max_pages=20, progress_callback=progress_callback)
 
-        # Simple scoring logic (0–100)
-        onpage_score = max(0, 100 - total_images_missing_alt*2 - total_title_missing*3 - total_meta_missing*2)
-        performance_score = max(0, 100 - len(result["broken_internal"])*2)
-        coverage_score = max(0, 100 - len(result["broken_external"])*1)
-        confidence = int((onpage_score + performance_score + coverage_score) / 3)
-        overall_score = int((onpage_score + performance_score + coverage_score + confidence)/4)
-        grade = "A" if overall_score > 85 else "B" if overall_score > 70 else "C" if overall_score > 50 else "D"
+    # Aggregate SEO
+    total_img = sum(r["seo"]["images_missing_alt"] for r in result["report"])
+    total_title = sum(r["seo"]["title_missing"] for r in result["report"])
+    total_meta = sum(r["seo"]["meta_description_missing"] for r in result["report"])
 
-        # Prepare chart-ready data
-        chart_data = {
+    onpage = max(0, 100 - (total_img * 2 + total_title * 3 + total_meta * 2))
+    performance = max(0, 100 - len(result["broken_internal"]) * 2)
+    coverage = max(0, 100 - len(result["broken_external"]) * 1)
+
+    confidence = int((onpage + performance + coverage) / 3)
+    overall = int((onpage + performance + coverage + confidence) / 4)
+
+    grade = (
+        "A" if overall > 85 else
+        "B" if overall > 70 else
+        "C" if overall > 50 else
+        "D"
+    )
+
+    return {
+        "url": url,
+        "overall_score": overall,
+        "grade": grade,
+        "breakdown": {
+            "onpage": onpage,
+            "performance": performance,
+            "coverage": coverage,
+            "confidence": confidence,
+        },
+        "chart_data": {
             "bar": {
-                "labels": ["On-page SEO", "Performance", "Link Coverage", "AI Confidence"],
-                "data": [onpage_score, performance_score, coverage_score, confidence],
-                "colors": ["#0d6efd", "#10b981", "#f59e0b", "#ef4444"]
+                "labels": ["On‑page SEO", "Performance", "Coverage", "AI Confidence"],
+                "data": [onpage, performance, coverage, confidence],
+                "colors": ["#2563eb", "#059669", "#d97706", "#dc2626"]
             },
             "radar": {
-                "labels": ["Images Alt", "Title", "Meta Desc", "Internal Links", "External Links"],
-                "data": [total_images_missing_alt, total_title_missing, total_meta_missing,
-                         len(result["unique_internal"]), len(result["unique_external"])]
+                "labels": ["Images Alt Missing", "Title Missing", "Meta Missing",
+                           "Internal Links", "External Links"],
+                "data": [total_img, total_title, total_meta,
+                         result["unique_internal"], result["unique_external"]]
             },
             "doughnut": {
                 "labels": ["Broken Internal", "Broken External"],
                 "data": [len(result["broken_internal"]), len(result["broken_external"])],
-                "colors": ["#ef4444", "#f59e0b"]
+                "colors": ["#dc2626", "#d97706"]
             }
+        },
+        "report": result["report"],
+        "metrics": {
+            "internal_links": result["unique_internal"],
+            "external_links": result["unique_external"],
+            "broken_internal_links": len(result["broken_internal"]),
+            "broken_external_links": len(result["broken_external"])
         }
-
-        return {
-            "url": url,
-            "overall_score": overall_score,
-            "grade": grade,
-            "breakdown": {
-                "onpage": onpage_score,
-                "performance": performance_score,
-                "coverage": coverage_score,
-                "confidence": confidence
-            },
-            "metrics": {
-                "internal_links": len(result["report"]),
-                "external_links": len(result["report"]),
-                "broken_internal_links": len(result["broken_internal"]),
-                "broken_external_links": len(result["broken_external"])
-            },
-            "chart_data": chart_data,
-            "report": result["report"],
-            "crawl_progress": int(len(result["report"])/max(1,20)*100)
-        }
-
-    except Exception as e:
-        logger.exception(f"Audit failed for {url}: {e}")
-        return {"error": str(e), "finished": True, "status": "Audit failed."}
+    }
