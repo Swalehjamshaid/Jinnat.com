@@ -1,76 +1,100 @@
+# fftech-ai-website-audit-saas-railway-ready/app/audit/runner.py
 
-# app/audit/runner.py
-
+import asyncio
 import logging
-from typing import Callable, Optional, Dict
+from typing import Optional, Callable, Dict, Any
 
-from app.audit.crawler import async_crawl
+from .crawler import async_crawl
+from .seo import analyze_onpage
+from .links import analyze_links_async
+from .performance import analyze_performance
+from .record import fetch_site_html
+from .psi import fetch_lighthouse
 
 logger = logging.getLogger("audit_engine")
+logging.basicConfig(level=logging.INFO)
 
+class WebsiteAuditRunner:
+    def __init__(self, url: str, psi_api_key: Optional[str] = None):
+        self.url = url
+        self.psi_api_key = psi_api_key
+        self.html_docs = {}
+        self.report: Dict[str, Any] = {}
 
-async def run_audit(
-    url: str,
-    progress_callback: Optional[Callable] = None
-) -> Dict:
-    """
-    Run the full async audit and return final structured report.
-    """
+    async def run_audit(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """Run the full audit asynchronously with real-time progress updates."""
 
-    result = await async_crawl(url, max_pages=20, progress_callback=progress_callback)
+        # 1️⃣ Crawl site asynchronously
+        if progress_callback:
+            await progress_callback({"status": "Starting site crawl...", "crawl_progress": 0, "finished": False})
+        logger.info(f"Starting crawl for {self.url}")
+        crawl_result = await async_crawl(self.url, progress_callback=progress_callback)
+        self.html_docs = {r["url"]: r.get("seo", {}) for r in crawl_result.get("report", [])}
 
-    # Aggregate SEO
-    total_img = sum(r["seo"]["images_missing_alt"] for r in result["report"])
-    total_title = sum(r["seo"]["title_missing"] for r in result["report"])
-    total_meta = sum(r["seo"]["meta_description_missing"] for r in result["report"])
+        if progress_callback:
+            await progress_callback({"status": "Crawl complete, fetching HTML...", "crawl_progress": 0, "finished": False})
 
-    onpage = max(0, 100 - (total_img * 2 + total_title * 3 + total_meta * 2))
-    performance = max(0, 100 - len(result["broken_internal"]) * 2)
-    coverage = max(0, 100 - len(result["broken_external"]) * 1)
+        # 2️⃣ Fetch full HTML for in-depth analysis (titles, H1, meta, images)
+        self.html_docs = fetch_site_html(self.url, max_pages=50)
 
-    confidence = int((onpage + performance + coverage) / 3)
-    overall = int((onpage + performance + coverage + confidence) / 4)
+        # 3️⃣ On-page SEO Analysis
+        seo_metrics = await analyze_onpage(self.html_docs, progress_callback=progress_callback)
 
-    grade = (
-        "A" if overall > 85 else
-        "B" if overall > 70 else
-        "C" if overall > 50 else
-        "D"
-    )
+        # 4️⃣ Link Analysis (internal, external, broken)
+        links_metrics = await analyze_links_async(self.html_docs, self.url, progress_callback=progress_callback)
 
-    return {
-        "url": url,
-        "overall_score": overall,
-        "grade": grade,
-        "breakdown": {
-            "onpage": onpage,
-            "performance": performance,
-            "coverage": coverage,
-            "confidence": confidence,
-        },
-        "chart_data": {
-            "bar": {
-                "labels": ["On‑page SEO", "Performance", "Coverage", "AI Confidence"],
-                "data": [onpage, performance, coverage, confidence],
-                "colors": ["#2563eb", "#059669", "#d97706", "#dc2626"]
-            },
-            "radar": {
-                "labels": ["Images Alt Missing", "Title Missing", "Meta Missing",
-                           "Internal Links", "External Links"],
-                "data": [total_img, total_title, total_meta,
-                         result["unique_internal"], result["unique_external"]]
-            },
-            "doughnut": {
-                "labels": ["Broken Internal", "Broken External"],
-                "data": [len(result["broken_internal"]), len(result["broken_external"])],
-                "colors": ["#dc2626", "#d97706"]
-            }
-        },
-        "report": result["report"],
-        "metrics": {
-            "internal_links": result["unique_internal"],
-            "external_links": result["unique_external"],
-            "broken_internal_links": len(result["broken_internal"]),
-            "broken_external_links": len(result["broken_external"])
+        # 5️⃣ Performance Analysis (page load time, TTFB)
+        perf_metrics = {}
+        for page_url in self.html_docs.keys():
+            perf_metrics[page_url] = analyze_performance(page_url)
+            if progress_callback:
+                await progress_callback({
+                    "crawl_progress": round(len(perf_metrics) / len(self.html_docs) * 100, 2),
+                    "status": f"Performance analyzed for {len(perf_metrics)}/{len(self.html_docs)} pages...",
+                    "finished": False
+                })
+
+        # 6️⃣ Optional PSI / Lighthouse metrics
+        psi_metrics = {}
+        if self.psi_api_key:
+            for page_url in self.html_docs.keys():
+                psi_metrics[page_url] = fetch_lighthouse(page_url, self.psi_api_key)
+                if progress_callback:
+                    await progress_callback({
+                        "crawl_progress": round(len(psi_metrics) / len(self.html_docs) * 100, 2),
+                        "status": f"PageSpeed Insights fetched for {len(psi_metrics)}/{len(self.html_docs)} pages...",
+                        "finished": False
+                    })
+
+        # 7️⃣ Compile final report
+        self.report = {
+            "url": self.url,
+            "crawl": crawl_result,
+            "seo": seo_metrics,
+            "links": links_metrics,
+            "performance": perf_metrics,
+            "psi": psi_metrics,
         }
-    }
+
+        if progress_callback:
+            await progress_callback({"status": "Audit complete!", "crawl_progress": 100, "finished": True})
+
+        return self.report
+
+# Example usage
+if __name__ == "__main__":
+    import json
+
+    async def progress_cb(data):
+        print(f"[{data['crawl_progress']}%] {data['status']}")
+
+    url_to_audit = "https://example.com"
+    psi_key = "YOUR_GOOGLE_PSI_API_KEY"
+
+    runner = WebsiteAuditRunner(url_to_audit, psi_api_key=psi_key)
+    report = asyncio.run(runner.run_audit(progress_callback=progress_cb))
+    
+    with open("audit_report.json", "w") as f:
+        json.dump(report, f, indent=2)
+    
+    print("Audit completed! Report saved as audit_report.json")
