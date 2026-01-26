@@ -188,17 +188,13 @@ function runAudit(url) {
       return;
     }
 
-    const seo = data.https ? 85 : 60;
-    const speed = data.content_length < 500000 ? 80 : 65;
-    const links = data.http_status === 200 ? 90 : 50;
-    const confidence = data.ssl_secure ? 95 : 70;
-    const overall = Math.round((seo + speed + links + confidence)/4);
-
-    let grade = "D";
-    if(overall >= 90) grade="A+";
-    else if(overall >= 80) grade="A";
-    else if(overall >= 70) grade="B";
-    else if(overall >= 60) grade="C";
+    // ✅ Use real results from backend
+    const seo = data.breakdown?.onpage ?? 0;
+    const speed = data.breakdown?.performance ?? 0;
+    const links = data.breakdown?.coverage ?? 0;
+    const confidence = data.breakdown?.confidence ?? 0;
+    const overall = data.overall_score ?? 0;
+    const grade = data.grade ?? "-";
 
     document.getElementById('openResults').classList.remove("d-none");
     document.getElementById('ovScore').textContent = overall;
@@ -220,7 +216,11 @@ function runAudit(url) {
           borderRadius: 6
         }]
       },
-      options: { maintainAspectRatio:false, scales:{y:{beginAtZero:true,max:100}}, plugins:{legend:{display:false}} }
+      options: {
+        maintainAspectRatio:false,
+        scales:{y:{beginAtZero:true,max:100}},
+        plugins:{legend:{display:false}}
+      }
     });
 
     resetUI();
