@@ -3,124 +3,165 @@
 
 <style>
   :root {
-    --glass-bg: rgba(20, 20, 25, 0.82);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --accent-blue: #0d6efd;
-    --accent-green: #20c997;
-    --accent-yellow: #ffc107;
-    --accent-red: #dc3545;
+    --glass: rgba(25, 25, 35, 0.82);
+    --border: rgba(255,255,255,0.09);
+    --blue: #0d6efd;
+    --green: #20c997;
+    --yellow: #ffc107;
+    --orange: #fd7e14;
+    --red: #dc3545;
   }
-  body {
-    background: radial-gradient(1400px 800px at 10% -5%, rgba(13,110,253,0.18), transparent),
-                radial-gradient(1000px 600px at 95% 5%, rgba(32,201,151,0.14), transparent),
-                #0a0a0a;
-    color: #f0f0f5;
-    font-family: 'Inter', system-ui, sans-serif;
-  }
+
   .detail-card {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    border: 1px solid var(--border);
     backdrop-filter: blur(20px);
     border-radius: 1.5rem;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+    padding: 2.5rem;
   }
+
   .score-ring {
     position: relative;
-    width: 200px;
-    height: 200px;
+    width: 220px;
+    height: 220px;
     margin: 0 auto;
   }
-  .score-ring svg { transform: rotate(-90deg); }
-  .circle-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 14; }
-  .circle { fill: none; stroke-linecap: round; stroke-width: 14; transition: stroke-dashoffset 1.2s ease; }
+
+  .score-ring svg {
+    transform: rotate(-90deg);
+  }
+
+  .circle-bg {
+    fill: none;
+    stroke: rgba(255,255,255,0.08);
+    stroke-width: 16;
+  }
+
+  .circle {
+    fill: none;
+    stroke-linecap: round;
+    stroke-width: 16;
+    transition: stroke-dashoffset 1.4s ease, stroke 0.6s ease;
+  }
+
   .grade-badge {
-    font-size: 4.2rem;
+    font-size: 5.5rem;
     font-weight: 900;
     line-height: 1;
     text-shadow: 0 4px 20px rgba(0,0,0,0.6);
   }
-  .metric-big {
-    font-size: 2.8rem;
-    font-weight: 800;
-  }
-  .chart-wrapper {
-    background: rgba(255,255,255,0.04);
+
+  .metric-card {
+    background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 1.25rem;
+    padding: 1.8rem 1.2rem;
+    text-align: center;
+    transition: transform 0.25s ease;
+  }
+
+  .metric-card:hover {
+    transform: translateY(-8px);
+  }
+
+  .metric-value {
+    font-size: 3.2rem;
+    font-weight: 800;
+    margin: 0.6rem 0 0.3rem;
+  }
+
+  .chart-wrapper {
+    background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 1.25rem;
+    padding: 1.8rem;
+    height: 420px;
+  }
+
+  .json-box {
+    background: #1a1a28;
+    border-radius: 1rem;
     padding: 1.5rem;
-    height: 380px;
+    max-height: 500px;
+    overflow-y: auto;
+    font-size: 0.95rem;
+    line-height: 1.5;
   }
 </style>
 
 <div class="container py-5">
-  <div class="detail-card p-5">
+  <div class="detail-card mx-auto" style="max-width: 1100px;">
     <h2 class="fw-bold text-center mb-5">
       <span class="text-primary">FFTech</span> Audit Report
     </h2>
 
     <div class="text-center mb-5">
-      <h5 class="text-secondary">Audited URL</h5>
-      <h4 id="auditUrl" class="text-info mt-2">Loading...</h4>
+      <h5 class="text-muted mb-2">Audited URL</h5>
+      <h4 id="auditUrl" class="text-info fw-medium">—</h4>
     </div>
 
-    <!-- Overall Score + Grade + Ring -->
-    <div class="row align-items-center mb-5">
-      <div class="col-lg-4 text-center">
-        <div class="score-ring">
-          <svg viewBox="0 0 220 220">
-            <circle class="circle-bg" cx="110" cy="110" r="100"></circle>
-            <circle id="scoreCircle" class="circle" cx="110" cy="110" r="100"
-                    stroke="#0d6efd" stroke-dasharray="628" stroke-dashoffset="628"></circle>
+    <!-- Main Score + Ring + Grade -->
+    <div class="row justify-content-center mb-5">
+      <div class="col-auto text-center">
+        <div class="score-ring mb-4">
+          <svg viewBox="0 0 240 240">
+            <circle class="circle-bg" cx="120" cy="120" r="110"/>
+            <circle id="scoreCircle" class="circle" cx="120" cy="120" r="110"
+                    stroke-dasharray="691" stroke-dashoffset="691"/>
           </svg>
           <div class="position-absolute top-50 start-50 translate-middle text-center">
-            <div id="ovScore" class="display-3 fw-bold text-white">—</div>
-            <small class="text-secondary">/100</small>
+            <div id="ovScore" class="display-2 fw-black text-white">—</div>
+            <small class="text-muted">/100</small>
           </div>
         </div>
-        <div id="grade" class="grade-badge text-primary mt-3">—</div>
-      </div>
-
-      <div class="col-lg-8">
-        <div class="chart-wrapper">
-          <h5 class="text-center text-secondary mb-4">Score Breakdown</h5>
-          <canvas id="breakdownChart"></canvas>
-        </div>
+        <div id="grade" class="grade-badge text-primary">—</div>
       </div>
     </div>
 
-    <!-- Metrics Grid -->
-    <div class="row g-4 text-center mb-5">
+    <!-- Breakdown Bar Chart -->
+    <div class="chart-wrapper mb-5">
+      <h5 class="text-center text-muted mb-4">Score Breakdown</h5>
+      <canvas id="breakdownChart"></canvas>
+    </div>
+
+    <!-- Four Metric Cards -->
+    <div class="row g-4 mb-5">
       <div class="col-md-3">
-        <div class="p-4 bg-dark rounded-4 border border-info border-opacity-30">
-          <small class="text-secondary text-uppercase fw-bold">On-Page SEO</small>
-          <div id="onpageScore" class="metric-big text-info mt-2">—</div>
+        <div class="metric-card border-info border-opacity-25">
+          <div class="text-muted small text-uppercase fw-bold mb-2">On-page SEO</div>
+          <div id="onpageScore" class="metric-value text-info">—</div>
         </div>
       </div>
       <div class="col-md-3">
-        <div class="p-4 bg-dark rounded-4 border border-success border-opacity-30">
-          <small class="text-secondary text-uppercase fw-bold">Performance</small>
-          <div id="perfScore" class="metric-big text-success mt-2">—</div>
+        <div class="metric-card border-success border-opacity-25">
+          <div class="text-muted small text-uppercase fw-bold mb-2">Performance</div>
+          <div id="perfScore" class="metric-value text-success">—</div>
         </div>
       </div>
       <div class="col-md-3">
-        <div class="p-4 bg-dark rounded-4 border border-warning border-opacity-30">
-          <small class="text-secondary text-uppercase fw-bold">Link Coverage</small>
-          <div id="coverageScore" class="metric-big text-warning mt-2">—</div>
+        <div class="metric-card border-warning border-opacity-25">
+          <div class="text-muted small text-uppercase fw-bold mb-2">Link Coverage</div>
+          <div id="coverageScore" class="metric-value text-warning">—</div>
         </div>
       </div>
       <div class="col-md-3">
-        <div class="p-4 bg-dark rounded-4 border border-danger border-opacity-30">
-          <small class="text-secondary text-uppercase fw-bold">AI Trust Score</small>
-          <div id="confidence" class="metric-big text-danger mt-2">—</div>
+        <div class="metric-card border-danger border-opacity-25">
+          <div class="text-muted small text-uppercase fw-bold mb-2">AI Trust</div>
+          <div id="confidence" class="metric-value text-danger">—</div>
         </div>
       </div>
     </div>
 
     <!-- Raw JSON (collapsible) -->
-    <details class="mt-4">
-      <summary class="h6 text-secondary cursor-pointer">View Raw JSON Data</summary>
-      <pre id="auditJson" class="bg-dark text-light p-4 rounded-3 mt-3 overflow-auto" style="max-height: 500px;"></pre>
-    </details>
+    <div class="mt-5">
+      <details>
+        <summary class="h6 text-muted cursor-pointer mb-3">View Raw JSON Response</summary>
+        <div class="json-box">
+          <pre id="auditJson"></pre>
+        </div>
+      </details>
+    </div>
   </div>
 </div>
 
@@ -142,27 +183,28 @@ async function loadAudit(url) {
 
     const data = await response.json();
 
-    // Fill basic info
+    // Basic fields
     document.getElementById('auditUrl').textContent = url;
-    document.getElementById('ovScore').textContent = data.overall_score ?? '-';
-    document.getElementById('grade').textContent = data.grade ?? '-';
-    document.getElementById('confidence').textContent = (data.breakdown?.confidence ?? '-') + '%';
+    document.getElementById('ovScore').textContent = data.overall_score ?? '—';
+    document.getElementById('grade').textContent = data.grade ?? '—';
+    document.getElementById('confidence').textContent = (data.breakdown?.confidence ?? '—') + '%';
 
     const bd = data.breakdown || {};
-    document.getElementById('onpageScore').textContent = bd.onpage ?? '-';
-    document.getElementById('perfScore').textContent = bd.performance ?? '-';
-    document.getElementById('coverageScore').textContent = bd.coverage ?? '-';
+    document.getElementById('onpageScore').textContent = bd.onpage ?? '—';
+    document.getElementById('perfScore').textContent = bd.performance ?? '—';
+    document.getElementById('coverageScore').textContent = bd.coverage ?? '—';
 
     // Raw JSON
     document.getElementById('auditJson').textContent = JSON.stringify(data, null, 2);
 
-    // Score Ring Animation
-    const score = data.overall_score || 0;
+    // Animated Score Ring
+    const score = Number(data.overall_score) || 0;
     const circle = document.getElementById('scoreCircle');
-    const circumference = 628; // 2 * π * 100
-    const offset = circumference * (1 - score / 100);
-    circle.style.strokeDashoffset = offset;
-    circle.style.stroke = score >= 85 ? '#20c997' : score >= 70 ? '#ffc107' : score >= 55 ? '#fd7e14' : '#dc3545';
+    const circumference = 691; // ≈ 2 * π * 110
+    circle.style.strokeDashoffset = circumference * (1 - score / 100);
+    circle.style.stroke = score >= 85 ? 'var(--green)' :
+                          score >= 70 ? 'var(--yellow)' :
+                          score >= 55 ? 'var(--orange)' : 'var(--red)';
 
     // Bar Chart
     const ctx = document.getElementById('breakdownChart').getContext('2d');
@@ -171,46 +213,49 @@ async function loadAudit(url) {
     window.breakdownChart = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: ['On-Page SEO', 'Performance', 'Link Coverage', 'AI Trust'],
+        labels: ['SEO', 'Performance', 'Coverage', 'Trust'],
         datasets: [{
           label: 'Score',
-          data: [bd.onpage || 0, bd.performance || 0, bd.coverage || 0, bd.confidence || 0],
-          backgroundColor: [
-            'rgba(13, 110, 253, 0.7)',
-            'rgba(32, 201, 151, 0.7)',
-            'rgba(255, 193, 7, 0.7)',
-            'rgba(220, 53, 69, 0.7)'
+          data: [
+            bd.onpage || 0,
+            bd.performance || 0,
+            bd.coverage || 0,
+            bd.confidence || 0
           ],
-          borderRadius: 10,
+          backgroundColor: [
+            'rgba(13, 110, 253, 0.65)',
+            'rgba(32, 201, 151, 0.65)',
+            'rgba(255, 193, 7, 0.65)',
+            'rgba(220, 53, 69, 0.65)'
+          ],
+          borderRadius: 12,
           borderSkipped: false,
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false }
-        },
+        plugins: { legend: { display: false } },
         scales: {
-          y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.1)' } },
+          y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.08)' } },
           x: { grid: { display: false } }
         }
       }
     });
 
-  } catch (e) {
-    console.error(e);
-    alert('Error loading audit data');
+  } catch (err) {
+    console.error(err);
+    alert('Failed to load audit data');
   }
 }
 
-// Load on page open
-const urlParams = new URLSearchParams(window.location.search);
-const auditUrl = urlParams.get('url');
+// Auto-load from URL parameter
+const params = new URLSearchParams(window.location.search);
+const auditUrl = params.get('url');
 if (auditUrl) {
   loadAudit(decodeURIComponent(auditUrl));
 } else {
-  document.getElementById('auditUrl').textContent = 'No URL provided in query';
+  document.getElementById('auditUrl').textContent = 'No URL provided';
 }
 </script>
 
