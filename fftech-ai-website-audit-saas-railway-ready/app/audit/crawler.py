@@ -1,3 +1,4 @@
+# app/audit/crawler.py
 import time
 from collections import defaultdict, deque
 from typing import Callable, Dict, List, Optional, Tuple
@@ -69,6 +70,7 @@ def crawl(
     delay: float = 0.2,
     on_progress: Optional[Callable[[int, str], None]] = None,
 ) -> CrawlResult:
+    """Breadth-first crawl with parallel broken link checks."""
     start_time = time.time()
     result = CrawlResult()
     queue = deque([start_url])
@@ -76,7 +78,6 @@ def crawl(
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    # BFS crawl
     while queue and len(seen) < max_pages:
         url = queue.popleft()
         if url in seen:
