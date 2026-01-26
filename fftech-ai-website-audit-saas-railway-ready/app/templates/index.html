@@ -1,213 +1,262 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FF Tech – World-Class AI Web Audit</title>
-
-  <!-- Bootstrap -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <!-- Chart.js -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FF Tech Audit – Professional Website Auditor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
   <style>
+    :root {
+      --bg: #0a0e17;
+      --card: #111827;
+      --glass: rgba(17, 24, 39, 0.85);
+      --border: rgba(255, 215, 0, 0.2);
+      --gold: #ffd700;
+      --gold-dark: #d4af37;
+    }
     body {
-      background: radial-gradient(circle at top, #0f172a, #020617);
-      color: #e5e7eb;
+      background: linear-gradient(135deg, #0a0e17 0%, #111827 100%);
+      color: #e2e8f0;
       min-height: 100vh;
+      font-family: 'Inter', system-ui, sans-serif;
     }
-    .card {
-      background: #020617;
-      border: 1px solid #1e293b;
-      border-radius: 16px;
-      box-shadow: 0 12px 35px rgba(0,0,0,0.45);
-    }
-    .audit-title {
+    .main-container { max-width: 1300px; margin: 0 auto; padding: 4rem 1rem; }
+    .header-title {
+      font-size: 3.5rem;
       font-weight: 800;
-      letter-spacing: 0.6px;
+      background: linear-gradient(90deg, var(--gold), #fff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 2.5rem;
+      text-align: center;
     }
-    .progress {
-      height: 14px;
-      background: #020617;
+    .card-glass {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(15px);
+      border-radius: 1.5rem;
+      padding: 2.5rem;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.4);
     }
-    .progress-bar {
-      background: linear-gradient(90deg, #3b82f6, #22c55e);
+    #loadingOverlay {
+      position: fixed; inset: 0; background: rgba(10,14,23,0.98);
+      color: var(--gold); display: none; flex-direction: column;
+      justify-content: center; align-items: center; z-index: 9999;
     }
-    .log-box {
-      background: #020617;
-      border: 1px solid #1e293b;
-      border-radius: 12px;
-      padding: 12px;
-      height: 170px;
-      overflow-y: auto;
-      font-family: monospace;
-      font-size: 0.85rem;
-      color: #22c55e;
+    .metric-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255,215,0,0.1);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      text-align: center;
+      transition: 0.3s;
     }
-    .badge-fast {
-      background: linear-gradient(90deg,#f59e0b,#ef4444);
+    .metric-box:hover { border-color: var(--gold); transform: translateY(-5px); }
+    .metric-value { font-size: 2.5rem; font-weight: 800; color: var(--gold); }
+    .metric-label { font-size: 0.9rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; }
+    .chart-container {
+      background: rgba(255,255,255,0.02);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
     }
+    .btn-gold {
+      background: linear-gradient(90deg, var(--gold), var(--gold-dark));
+      border: none; color: #000; font-weight: 700;
+    }
+    .btn-gold:hover { opacity: 0.9; transform: scale(1.02); }
   </style>
 </head>
 <body>
 
-<div class="container py-5">
-
-  <!-- Header -->
-  <div class="row mb-4">
-    <div class="col text-center">
-      <h2 class="audit-title">🚀 FF Tech – International AI Web Audit</h2>
-      <p class="text-secondary">Top-1% audit engine • Ultra-fast • AI-driven insights</p>
+  <div id="loadingOverlay">
+    <div class="spinner-border text-warning mb-4" style="width:4rem;height:4rem;"></div>
+    <h3 id="statusLabel">Initializing Engine...</h3>
+    <div class="w-50 mt-3">
+      <div class="progress" style="height: 10px;">
+        <div id="loadingBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 5%"></div>
+      </div>
     </div>
   </div>
 
-  <!-- URL + Controls -->
-  <div class="row mb-4">
-    <div class="col-lg-10 mx-auto">
-      <div class="card p-4">
-        <label class="form-label">Website URL</label>
-        <div class="input-group mb-3">
-          <input id="urlInput" class="form-control" placeholder="https://www.example.com" />
-          <button class="btn btn-primary" onclick="startAudit()">Start Audit</button>
+  <div class="main-container">
+    <h1 class="header-title">Audit Engine <span style="font-weight: 300;">v4.1</span></h1>
+
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div class="card-glass">
+          <div class="input-group input-group-lg mb-5">
+            <span class="input-group-text bg-dark border-secondary text-warning"><i class="bi bi-globe"></i></span>
+            <input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="https://example.com">
+            <button id="btnRun" class="btn btn-gold px-5">START AUDIT</button>
+          </div>
+
+          <div id="resultsPanel" class="d-none">
+            <div class="text-center mb-5">
+              <div class="d-inline-block p-4 rounded-circle border border-warning mb-3">
+                <h2 id="ovScore" class="display-2 fw-bold mb-0" style="color: var(--gold);">0</h2>
+              </div>
+              <h3 id="gradeDisplay" class="fw-bold">GRADE: —</h3>
+              <p class="text-muted">Analysis based on international SEO & performance benchmarks</p>
+            </div>
+
+            <div class="row g-3 mb-5">
+              <div class="col-md-3">
+                <div class="metric-box">
+                  <div class="metric-label">On-Page</div>
+                  <div id="onpageScore" class="metric-value">0</div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="metric-box">
+                  <div class="metric-label">Performance</div>
+                  <div id="perfScore" class="metric-value">0</div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="metric-box">
+                  <div class="metric-label">Coverage</div>
+                  <div id="coverageScore" class="metric-value">0</div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="metric-box">
+                  <div class="metric-label">Confidence</div>
+                  <div id="confScore" class="metric-value">0</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-md-7">
+                <div class="chart-container">
+                  <canvas id="mainChart" height="250"></canvas>
+                </div>
+              </div>
+              <div class="col-md-5">
+                <div class="chart-container">
+                  <canvas id="radarChart" height="250"></canvas>
+                </div>
+                <div class="mt-3 p-3 bg-dark rounded border border-secondary">
+                  <div class="d-flex justify-content-between mb-2">
+                    <span>Internal Links:</span> <strong id="intCount" class="text-success">0</strong>
+                  </div>
+                  <div class="d-flex justify-content-between mb-2">
+                    <span>External Links:</span> <strong id="extCount" class="text-primary">0</strong>
+                  </div>
+                  <div class="d-flex justify-content-between">
+                    <span>Broken Links:</span> <strong id="brkCount" class="text-danger">0</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
 
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="fastMode" checked>
-          <label class="form-check-label">
-            ⚡ Ultra-Fast Mode (first 5 pages only)
-            <span class="badge badge-fast ms-2">Recommended</span>
-          </label>
+      <div class="col-lg-4">
+        <div class="card-glass h-100">
+          <h4 class="text-warning mb-4"><i class="bi bi-shield-lock me-2"></i>Account Access</h4>
+          <div class="mb-4">
+            <label class="small text-muted mb-2">Email Address</label>
+            <input type="email" class="form-control bg-dark text-white border-secondary mb-3" placeholder="user@company.com">
+            <button class="btn btn-outline-warning w-100">Send Magic Link</button>
+          </div>
+          <hr class="border-secondary">
+          <p class="small text-muted">FF Tech Engine v4.1 uses 128-bit encryption for report storage and AI-driven performance heuristics.</p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Progress -->
-  <div class="row mb-4">
-    <div class="col-lg-10 mx-auto">
-      <div class="card p-4">
-        <h6>Audit Progress</h6>
-        <div class="progress mt-2">
-          <div id="progressBar" class="progress-bar" style="width:0%"></div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <script>
+    let charts = {};
 
-  <!-- Charts -->
-  <div class="row g-4">
-    <div class="col-lg-6">
-      <div class="card p-4">
-        <h6>SEO, Performance & Accessibility</h6>
-        <canvas id="scoreChart"></canvas>
-      </div>
-    </div>
-    <div class="col-lg-6">
-      <div class="card p-4">
-        <h6>Broken Links & Issues</h6>
-        <canvas id="issueChart"></canvas>
-      </div>
-    </div>
-  </div>
+    function initCharts(data) {
+      // Bar Chart
+      if (charts.bar) charts.bar.destroy();
+      charts.bar = new Chart(document.getElementById('mainChart'), {
+        type: 'bar',
+        data: {
+          labels: data.chart_data.bar.labels,
+          datasets: [{
+            label: 'Score',
+            data: data.chart_data.bar.data,
+            backgroundColor: ['#ffd700', '#3b82f6', '#10b981', '#ef4444']
+          }]
+        },
+        options: { plugins: { legend: { display: false } }, scales: { y: { max: 100 } } }
+      });
 
-  <!-- AI Recommendations -->
-  <div class="row mt-4">
-    <div class="col-lg-12">
-      <div class="card p-4">
-        <h6>🧠 AI Recommendations</h6>
-        <ul id="aiTips" class="text-secondary"></ul>
-      </div>
-    </div>
-  </div>
-
-  <!-- Logs + PDF -->
-  <div class="row mt-4">
-    <div class="col-lg-12">
-      <div class="card p-4">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h6 class="mb-0">Live Audit Log</h6>
-          <button class="btn btn-outline-success btn-sm" onclick="downloadPDF()">📄 Download PDF Report</button>
-        </div>
-        <div id="logBox" class="log-box"></div>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<script>
-let ws;
-
-const scoreChart = new Chart(document.getElementById('scoreChart'), {
-  type: 'radar',
-  data: {
-    labels: ['SEO', 'Performance', 'Accessibility', 'Security'],
-    datasets: [{
-      data: [0,0,0,0],
-      fill: true
-    }]
-  },
-  options: { scales: { r: { min: 0, max: 100 } } }
-});
-
-const issueChart = new Chart(document.getElementById('issueChart'), {
-  type: 'doughnut',
-  data: {
-    labels: ['Broken Links', 'Warnings', 'Passed'],
-    datasets: [{ data: [0,0,0] }]
-  }
-});
-
-function log(msg) {
-  const box = document.getElementById('logBox');
-  box.innerHTML += msg + '<br>';
-  box.scrollTop = box.scrollHeight;
-}
-
-function startAudit() {
-  const url = document.getElementById('urlInput').value;
-  const fast = document.getElementById('fastMode').checked;
-
-  document.getElementById('logBox').innerHTML = '';
-  document.getElementById('aiTips').innerHTML = '';
-  document.getElementById('progressBar').style.width = '0%';
-
-  ws = new WebSocket(`ws://${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}&fast=${fast}`);
-
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-
-    if (data.progress !== undefined) {
-      document.getElementById('progressBar').style.width = data.progress + '%';
-    }
-
-    if (data.log) log(data.log);
-
-    if (data.scores) {
-      scoreChart.data.datasets[0].data = data.scores;
-      scoreChart.update();
-    }
-
-    if (data.issues) {
-      issueChart.data.datasets[0].data = data.issues;
-      issueChart.update();
-    }
-
-    if (data.ai_recommendations) {
-      const ul = document.getElementById('aiTips');
-      ul.innerHTML = '';
-      data.ai_recommendations.forEach(tip => {
-        ul.innerHTML += `<li>${tip}</li>`;
+      // Radar Chart
+      if (charts.radar) charts.radar.destroy();
+      charts.radar = new Chart(document.getElementById('radarChart'), {
+        type: 'radar',
+        data: {
+          labels: data.chart_data.radar.labels,
+          datasets: [{
+            label: 'Site Profile',
+            data: data.chart_data.radar.data,
+            borderColor: '#ffd700',
+            backgroundColor: 'rgba(255, 215, 0, 0.2)'
+          }]
+        },
+        options: { scales: { r: { max: 100, ticks: { display: false } } } }
       });
     }
-  };
-}
 
-function downloadPDF() {
-  window.open('/audit/report/pdf', '_blank');
-}
-</script>
+    document.getElementById('btnRun').addEventListener('click', () => {
+      const url = document.getElementById('urlInput').value;
+      if (!url) return alert("Enter a URL");
 
+      const overlay = document.getElementById('loadingOverlay');
+      const statusLabel = document.getElementById('statusLabel');
+      const loadingBar = document.getElementById('loadingBar');
+      
+      overlay.style.display = 'flex';
+      
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
+
+      ws.onmessage = (event) => {
+        const res = JSON.parse(event.data);
+        
+        if (res.status) statusLabel.innerText = res.status;
+        if (res.crawl_progress) loadingBar.style.width = res.crawl_progress + '%';
+
+        if (res.finished) {
+          overlay.style.display = 'none';
+          document.getElementById('resultsPanel').classList.remove('d-none');
+          
+          // Map Results
+          document.getElementById('ovScore').innerText = res.overall_score;
+          document.getElementById('gradeDisplay').innerText = `GRADE: ${res.grade}`;
+          document.getElementById('onpageScore').innerText = res.breakdown.onpage;
+          document.getElementById('perfScore').innerText = res.breakdown.performance;
+          document.getElementById('coverageScore').innerText = res.breakdown.coverage;
+          document.getElementById('confScore').innerText = res.breakdown.confidence;
+          
+          document.getElementById('intCount').innerText = res.metrics.internal_links;
+          document.getElementById('extCount').innerText = res.metrics.external_links;
+          document.getElementById('brkCount').innerText = res.metrics.broken_internal_links;
+          
+          initCharts(res);
+          ws.close();
+        }
+
+        if (res.error) {
+          alert("Error: " + res.error);
+          overlay.style.display = 'none';
+        }
+      };
+
+      ws.onerror = () => {
+        alert("WebSocket Connection Failed");
+        overlay.style.display = 'none';
+      };
+    });
+  </script>
 </body>
 </html>
