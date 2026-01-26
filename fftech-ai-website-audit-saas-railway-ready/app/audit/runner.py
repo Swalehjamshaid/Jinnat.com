@@ -2,15 +2,13 @@
 
 import asyncio
 import logging
-from typing import Optional, Callable, Dict, Any, List
-from urllib.parse import urlparse, urljoin
+from typing import Optional, Callable, Dict, Any
 
-import aiohttp
-from bs4 import BeautifulSoup
-
+from .crawler import async_crawl
 from .seo import analyze_onpage
-from .links import analyze_links
+from .links import analyze_links_async  # ✅ Correct function import
 from .performance import analyze_performance
+from .record import fetch_site_html
 from .psi import fetch_lighthouse
 
 logger = logging.getLogger("audit_engine")
@@ -18,134 +16,89 @@ logging.basicConfig(level=logging.INFO)
 
 
 class WebsiteAuditRunner:
-    def __init__(self, url: str, psi_api_key: Optional[str] = None, max_pages: int = 10):
+    """
+    Asynchronous Website Audit Runner
+    Can crawl a site, analyze SEO, links, performance, and optionally fetch PageSpeed Insights (PSI)
+    """
+
+    def __init__(self, url: str, psi_api_key: Optional[str] = None):
         self.url = url
         self.psi_api_key = psi_api_key
-        self.max_pages = max_pages
-        self.html_docs: Dict[str, str] = {}
+        self.html_docs: Dict[str, Any] = {}
         self.report: Dict[str, Any] = {}
 
-    # -----------------------------
-    # Async HTML fetch
-    # -----------------------------
-    async def fetch_html(self, session: aiohttp.ClientSession, url: str) -> str:
-        try:
-            async with session.get(url, timeout=15, ssl=False) as resp:
-                return await resp.text()
-        except Exception as e:
-            logger.warning(f"Failed to fetch {url}: {e}")
-            return ""
+    async def run_audit(
+        self, progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Run the full audit asynchronously with real-time progress updates
+        """
 
-    # -----------------------------
-    # Async site crawler
-    # -----------------------------
-    async def crawl_site(self, progress_callback: Optional[Callable] = None) -> Dict[str, str]:
-        visited = set()
-        to_visit = {self.url}
-        html_docs: Dict[str, str] = {}
-
-        async with aiohttp.ClientSession() as session:
-            while to_visit and len(visited) < self.max_pages:
-                tasks = [self.fetch_html(session, url) for url in to_visit]
-                results = await asyncio.gather(*tasks)
-                current_urls = list(to_visit)
-                to_visit.clear()
-
-                for url, html in zip(current_urls, results):
-                    if url in visited or not html:
-                        continue
-                    html_docs[url] = html
-                    visited.add(url)
-
-                    soup = BeautifulSoup(html, 'lxml')
-                    for a in soup.find_all('a', href=True):
-                        href = a['href']
-                        joined_url = urljoin(url, href)
-                        if urlparse(joined_url).netloc == urlparse(self.url).netloc:
-                            if joined_url not in visited:
-                                to_visit.add(joined_url)
-
-                    if progress_callback:
-                        await progress_callback({
-                            "status": f"Crawled {len(visited)} pages...",
-                            "crawl_progress": round(len(visited)/self.max_pages*100, 2),
-                            "finished": False
-                        })
-
-        return html_docs
-
-    # -----------------------------
-    # Run full audit
-    # -----------------------------
-    async def run_audit(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-        logger.info(f"Starting audit for {self.url}")
-
-        # 1️⃣ Crawl site
+        # 1️⃣ Crawl the site asynchronously
         if progress_callback:
             await progress_callback({"status": "Starting site crawl...", "crawl_progress": 0, "finished": False})
-        self.html_docs = await self.crawl_site(progress_callback)
+        logger.info(f"Starting crawl for {self.url}")
 
-        # 2️⃣ On-page SEO analysis (concurrent)
+        crawl_result = await async_crawl(self.url, progress_callback=progress_callback)
+        self.html_docs = {r["url"]: r.get("seo", {}) for r in crawl_result.get("report", [])}
+
         if progress_callback:
-            await progress_callback({"status": "Analyzing SEO...", "crawl_progress": 20, "finished": False})
-        seo_task = asyncio.to_thread(analyze_onpage, self.html_docs)
+            await progress_callback({"status": "Crawl complete, fetching HTML...", "crawl_progress": 0, "finished": False})
 
-        # 3️⃣ Link analysis
-        links_task = asyncio.to_thread(analyze_links, self.html_docs)
+        # 2️⃣ Fetch full HTML for in-depth analysis
+        self.html_docs = fetch_site_html(self.url, max_pages=50)
 
-        # 4️⃣ Performance metrics (parallel per page)
-        perf_tasks = [asyncio.to_thread(analyze_performance, url) for url in self.html_docs.keys()]
+        # 3️⃣ On-page SEO Analysis
+        seo_metrics = await analyze_onpage(self.html_docs, progress_callback=progress_callback)
 
-        # 5️⃣ PSI metrics if API key provided
-        psi_tasks: List[asyncio.Future] = []
+        # 4️⃣ Link Analysis (internal, external, broken)
+        links_metrics = await analyze_links_async(self.html_docs, self.url, progress_callback=progress_callback)
+
+        # 5️⃣ Performance Analysis
+        perf_metrics = {}
+        for i, page_url in enumerate(self.html_docs.keys(), start=1):
+            perf_metrics[page_url] = analyze_performance(page_url)
+            if progress_callback:
+                await progress_callback({
+                    "crawl_progress": round(i / len(self.html_docs) * 100, 2),
+                    "status": f"Performance analyzed for {i}/{len(self.html_docs)} pages...",
+                    "finished": False
+                })
+
+        # 6️⃣ Optional PSI / Lighthouse metrics
+        psi_metrics = {}
         if self.psi_api_key:
-            psi_tasks = [asyncio.to_thread(fetch_lighthouse, url, self.psi_api_key) for url in self.html_docs.keys()]
+            for i, page_url in enumerate(self.html_docs.keys(), start=1):
+                psi_metrics[page_url] = fetch_lighthouse(page_url, self.psi_api_key)
+                if progress_callback:
+                    await progress_callback({
+                        "crawl_progress": round(i / len(self.html_docs) * 100, 2),
+                        "status": f"PageSpeed Insights fetched for {i}/{len(self.html_docs)} pages...",
+                        "finished": False
+                    })
 
-        # Gather all tasks concurrently
-        seo_metrics, links_metrics, perf_results, psi_results = await asyncio.gather(
-            seo_task,
-            links_task,
-            asyncio.gather(*perf_tasks),
-            asyncio.gather(*psi_tasks) if psi_tasks else asyncio.sleep(0)
-        )
-
-        # Map perf and psi results to URLs
-        perf_metrics = dict(zip(self.html_docs.keys(), perf_results))
-        psi_metrics = dict(zip(self.html_docs.keys(), psi_results)) if psi_tasks else {}
-
-        # 6️⃣ Compile final report
+        # 7️⃣ Compile final report
         self.report = {
             "url": self.url,
-            "pages": list(self.html_docs.keys()),
+            "crawl": crawl_result,
             "seo": seo_metrics,
             "links": links_metrics,
             "performance": perf_metrics,
-            "psi": psi_metrics
+            "psi": psi_metrics,
         }
 
         if progress_callback:
             await progress_callback({"status": "Audit complete!", "crawl_progress": 100, "finished": True})
 
-        logger.info(f"Audit finished for {self.url}")
         return self.report
 
 
-# -----------------------------
-# Quick runner example
-# -----------------------------
-if __name__ == "__main__":
-    import json
-
-    async def progress_cb(data):
-        print(f"[{data.get('crawl_progress', 0)}%] {data.get('status')}")
-
-    url_to_audit = "https://example.com"
-    psi_key = "YOUR_PSI_API_KEY"
-
-    runner = WebsiteAuditRunner(url_to_audit, psi_api_key=psi_key, max_pages=5)
-    report = asyncio.run(runner.run_audit(progress_callback=progress_cb))
-
-    with open("audit_report.json", "w") as f:
-        json.dump(report, f, indent=2)
-
-    print("Audit completed! Report saved as audit_report.json")
+# -------------------------------
+# Convenience function for external use
+# -------------------------------
+async def run_audit(url: str, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    """
+    External helper function for FastAPI WebSocket or scripts
+    """
+    runner = WebsiteAuditRunner(url)
+    return await runner.run_audit(progress_callback=progress_callback)
