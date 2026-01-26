@@ -1,30 +1,30 @@
 # --- CORE WEB FRAMEWORK ---
-fastapi==0.128.0
-uvicorn[standard]==0.32.0
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
 jinja2==3.1.5
 python-multipart==0.0.20
 
 # --- DATA VALIDATION & SETTINGS ---
-pydantic==2.12.5
-pydantic-settings==2.12.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
 email-validator==2.2.0
-validators==0.20.0
+validators==0.34.0
 
 # --- DATABASE & ORM ---
-sqlalchemy==2.0.46
+sqlalchemy==2.0.36
 psycopg2-binary==2.9.10
 
 # --- AUDIT ENGINE (SCRAPING & PERFORMANCE) ---
 httpx==0.28.1
 requests==2.32.3
 urllib3==2.3.0
-aiohttp==3.10.10
-beautifulsoup4==4.13.0
+aiohttp==3.10.11
+beautifulsoup4==4.12.3
 lxml==5.3.0
-certifi==2024.8.30
+certifi==2024.12.14
 
 # --- AI & LLM SERVICES ---
-google-genai==1.60.0
+google-generativeai==0.8.3
 
 # --- SECURITY & AUTHENTICATION ---
 itsdangerous==2.2.0
@@ -32,15 +32,15 @@ PyJWT==2.10.1
 passlib[bcrypt]==1.7.4
 
 # --- REPORTING (PDF/XLSX/PPTX) ---
-reportlab==4.4.9
+reportlab==4.2.5
 fpdf2==2.8.1
-python-pptx==1.0.0
+python-pptx==1.0.2
 openpyxl==3.1.5
 
 # --- DATA SCIENCE & ROI ANALYSIS ---
-pandas==3.0.0
-numpy==2.4.1
+pandas==2.2.3
+numpy==2.1.3
 matplotlib==3.9.3
 
 # --- AUTOMATION & SCHEDULING ---
-APScheduler==3.10.4
+APScheduler==3.11.0
