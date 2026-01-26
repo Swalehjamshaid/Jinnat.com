@@ -1,3 +1,4 @@
+
 # app/audit/runner.py
 
 import logging
@@ -69,8 +70,8 @@ def run_audit(url: str) -> Dict:
     # ───────────── PERFORMANCE SCORING ─────────────
     page_size_kb = round(len(html.encode("utf-8")) / 1024, 2)
     perf_score = 100
-    perf_score -= min(40, load_time * 8)  # penalty for slow pages
-    perf_score -= min(40, page_size_kb / 30)  # penalty for large pages
+    perf_score -= min(40, load_time * 8)        # penalty for slow pages
+    perf_score -= min(40, page_size_kb / 30)    # penalty for large pages
     perf_score = max(0, round(perf_score))
 
     # ───────────── LINK COVERAGE SCORING ─────────────
@@ -104,6 +105,10 @@ def run_audit(url: str) -> Dict:
         "D"
     )
 
+    # NEW: Confidence — keep it simple by mirroring overall score (0–100)
+    # You can later replace this with a custom trust metric if desired.
+    confidence_score = overall_score
+
     return {
         "finished": True,
         "url": final_url,
@@ -117,6 +122,7 @@ def run_audit(url: str) -> Dict:
             "onpage": seo_score,
             "performance": perf_score,
             "coverage": coverage_score,
+            "confidence": confidence_score,  # <-- added for the Trust tile
         },
         "metrics": {
             "title_length": len(title),
