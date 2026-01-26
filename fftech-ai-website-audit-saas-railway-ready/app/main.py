@@ -13,7 +13,6 @@ from fastapi.templating import Jinja2Templates
 
 from app.audit.runner import WebsiteAuditRunner
 
-
 # ---------------------------------------------------------
 # Logging Setup
 # ---------------------------------------------------------
@@ -24,7 +23,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("audit_engine")
 
-
 # ---------------------------------------------------------
 # FastAPI Lifespan
 # ---------------------------------------------------------
@@ -34,13 +32,12 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("🛑 FF Tech International Audit Engine shutting down...")
 
-
 # ---------------------------------------------------------
 # FastAPI App
 # ---------------------------------------------------------
 app = FastAPI(
     title="FF Tech International Audit Engine",
-    version="4.1",
+    version="4.2",
     docs_url=None,
     redoc_url=None,
     lifespan=lifespan,
@@ -48,7 +45,6 @@ app = FastAPI(
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
-
 
 # ---------------------------------------------------------
 # URL Normalizer
@@ -67,14 +63,12 @@ def normalize_url(url: str) -> str:
 
     return parsed.geturl()
 
-
 # ---------------------------------------------------------
 # Home Page
 # ---------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-
 
 # ---------------------------------------------------------
 # WebSocket Audit Endpoint
@@ -84,6 +78,8 @@ async def websocket_audit(websocket: WebSocket):
     await websocket.accept()
 
     url = websocket.query_params.get("url")
+    max_pages = int(websocket.query_params.get("max_pages", 15))  # dynamic page limit
+
     if not url:
         await websocket.send_json({"error": "URL is required"})
         await websocket.close(code=1008)
@@ -104,7 +100,7 @@ async def websocket_audit(websocket: WebSocket):
             raise WebSocketDisconnect()
 
     try:
-        logger.info(f"Starting crawl for {normalized_url}")
+        logger.info(f"Starting real audit for {normalized_url}")
 
         await stream_progress({
             "status": "Initializing audit…",
@@ -114,8 +110,7 @@ async def websocket_audit(websocket: WebSocket):
 
         runner = WebsiteAuditRunner(
             url=normalized_url,
-            psi_api_key=None,
-            max_pages=10
+            max_pages=max_pages
         )
 
         audit_output = await runner.run_audit(progress_callback=stream_progress)
@@ -139,7 +134,6 @@ async def websocket_audit(websocket: WebSocket):
     finally:
         await websocket.close()
 
-
 # ---------------------------------------------------------
 # Health Check
 # ---------------------------------------------------------
@@ -149,6 +143,6 @@ async def health():
     return {
         "status": "ok",
         "engine": "FF Tech Audit Engine",
-        "version": "4.1",
+        "version": "4.2",
         "time": time.time()
     }
