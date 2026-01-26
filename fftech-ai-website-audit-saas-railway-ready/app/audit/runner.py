@@ -5,24 +5,27 @@ from urllib.parse import urlparse
 import certifi, requests
 from bs4 import BeautifulSoup
 import urllib3
-from .crawler import crawl  # optimized crawler
+from .crawler import crawl
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger('audit_engine')
 
+
 def _clamp(v: float, lo: float = 0, hi: float = 100) -> int:
+    """Clamp score between 0 and 100"""
     return int(max(lo, min(hi, round(v))))
+
 
 def run_audit(url: str) -> Dict:
     """
-    Fast World-Class Audit – SEO, Performance, Links, Coverage
-    Optimized for <1 minute per site
+    World-Class Audit Engine (International Standards)
     """
     logger.info("RUNNING AUDIT FOR URL: %s", url)
     start_time = time.time()
 
-    headers = {'User-Agent':'FFTech-AuditBot/4.0','Accept':'text/html,application/xhtml+xml'}
+    # ---------------- HTTP REQUEST ----------------
+    headers = {'User-Agent': 'IntlAuditBot/1.0', 'Accept': 'text/html,application/xhtml+xml'}
     session = requests.Session()
     session.headers.update(headers)
 
@@ -43,106 +46,113 @@ def run_audit(url: str) -> Dict:
 
     # ---------------- SEO ----------------
     title = soup.title.string.strip() if soup.title else ""
-    meta_desc = (soup.find("meta", {"name":"description"}) or {}).get("content", "").strip()
+    meta_desc = (soup.find("meta", {"name": "description"}) or {}).get("content", "").strip()
     h1_tags = soup.find_all("h1")
     h1_count = len(h1_tags)
     img_tags = soup.find_all("img")
     missing_alt = sum(1 for img in img_tags if not img.get("alt"))
+    canonical_tag = (soup.find("link", {"rel": "canonical"}) or {}).get("href", "")
 
-    seo_issues = []
     seo_score = 0
+    seo_issues = []
 
+    # Title
     if title:
-        seo_score += 25
-        seo_score += max(0, 25 - abs(len(title)-55))
-        if len(title)<25: seo_issues.append("Title very short")
-        elif len(title)>65: seo_issues.append("Title too long")
-    else: seo_issues.append("Missing title")
+        seo_score += 20
+        if 50 <= len(title) <= 60:
+            seo_score += 5
+        else:
+            seo_issues.append("Title length not optimal")
+    else:
+        seo_issues.append("Missing title")
 
+    # Meta Description
     if meta_desc:
-        seo_score += min(25,len(meta_desc)/6)
-        if len(meta_desc)<80: seo_issues.append("Meta description short")
-        elif len(meta_desc)>180: seo_issues.append("Meta description long")
-    else: seo_issues.append("Missing meta description")
+        seo_score += 15
+        if 120 <= len(meta_desc) <= 160:
+            seo_score += 5
+        else:
+            seo_issues.append("Meta description length not optimal")
+    else:
+        seo_issues.append("Missing meta description")
 
-    if h1_count==1: seo_score+=15
-    elif h1_count==0: seo_issues.append("No H1")
-    else: seo_issues.append(f"{h1_count} H1 tags")
+    # H1
+    if h1_count == 1:
+        seo_score += 15
+    elif h1_count == 0:
+        seo_issues.append("No H1 tag")
+    else:
+        seo_issues.append(f"{h1_count} H1 tags")
 
-    if missing_alt>0: seo_issues.append(f"{missing_alt} images missing alt")
+    # Images
+    if missing_alt == 0:
+        seo_score += 10
+    else:
+        seo_issues.append(f"{missing_alt} images missing alt")
+
+    # Canonical
+    if canonical_tag:
+        seo_score += 5
+    else:
+        seo_issues.append("Missing canonical tag")
+
     seo_score = _clamp(seo_score)
 
-    # ---------------- Performance ----------------
-    page_size_kb = round(len(html.encode("utf-8"))/1024,2)
+    # ---------------- PERFORMANCE ----------------
+    page_size_kb = round(len(html.encode("utf-8")) / 1024, 2)
     perf_score = 100
-    perf_score -= min(40, load_time*8)
-    perf_score -= min(40, page_size_kb/30)
+    perf_score -= min(40, load_time * 8)
+    perf_score -= min(40, page_size_kb / 30)
     perf_score = _clamp(perf_score)
-    speed_sub = _clamp(100-min(100, load_time*25))
-    weight_sub = _clamp(100-min(100, (page_size_kb/2000)*100))
     perf_issues = []
-    if load_time>3: perf_issues.append(f"Slow load {load_time}s")
-    if page_size_kb>2000: perf_issues.append(f"Large page {page_size_kb}KB")
+    if load_time > 3:
+        perf_issues.append(f"Slow load time: {load_time}s")
+    if page_size_kb > 2000:
+        perf_issues.append(f"Large page size: {page_size_kb} KB")
 
-    # ---------------- Crawl & Links (FAST) ----------------
-    crawl_res = crawl(final_url, max_pages=10, delay=0.01)  # << optimized for speed
-    crawl_res.broken_external = []  # skip slow external link checks
-
+    # ---------------- LINKS & COVERAGE ----------------
+    crawl_res = crawl(final_url, max_pages=10, delay=0.01)
     internal_total = crawl_res.unique_internal
     external_total = crawl_res.unique_external
     broken_count = len(crawl_res.broken_internal)
 
-    coverage_base = min(60, internal_total*2) + min(30, external_total)
-    broken_penalty = min(20, broken_count*2)
-    coverage_score = _clamp(coverage_base - broken_penalty)
+    coverage_score = _clamp(min(60, internal_total * 3) + min(20, external_total * 2) - min(20, broken_count * 2))
     coverage_issues = []
-    if internal_total<5: coverage_issues.append(f"Low internal links {internal_total}")
-    if broken_count>0: coverage_issues.append(f"Broken internal links {broken_count}")
+    if internal_total < 5:
+        coverage_issues.append(f"Low internal links: {internal_total}")
+    if broken_count > 0:
+        coverage_issues.append(f"Broken internal links: {broken_count}")
 
-    internal_sub = _clamp(min(100, internal_total*5))
-    external_sub = _clamp(min(100, external_total*3))
-
-    # ---------------- Overall Score ----------------
-    overall_score = _clamp(seo_score*0.45 + perf_score*0.35 + coverage_score*0.20)
-    grade = "A" if overall_score>=85 else "B" if overall_score>=70 else "C" if overall_score>=55 else "D"
-    confidence = overall_score
-
-    chart_data = {
-        "bar": {
-            "labels":["SEO","Speed","Links","Trust","Images","Meta"],
-            "data":[seo_score,perf_score,coverage_score,confidence,_clamp(100-missing_alt),_clamp(len(meta_desc))],
-            "colors":["#0d6efd","#20c997","#ffc107","#dc3545","#6f42c1","#fd7e14"]
-        },
-        "radar": {
-            "labels":["Title","Meta","H1","Speed","Page Weight","Internal Links","External Links","Alt"],
-            "data":[_clamp(100 if title else 0),_clamp(100 if meta_desc else 0),
-                    _clamp(100 if h1_count==1 else 50 if h1_count>1 else 0),
-                    speed_sub,weight_sub,internal_sub,external_sub,_clamp(100-missing_alt)]
-        },
-        "doughnut": {
-            "labels":["SEO issues","Performance","Links","Images"],
-            "data":[len(seo_issues),len(perf_issues),len(coverage_issues),missing_alt],
-            "colors":["#6f42c1","#fd7e14","#0dcaf0","#6610f2"]
-        }
-    }
+    # ---------------- OVERALL ----------------
+    overall_score = _clamp(seo_score * 0.4 + perf_score * 0.35 + coverage_score * 0.25)
+    grade = "A" if overall_score >= 85 else "B" if overall_score >= 70 else "C" if overall_score >= 55 else "D"
 
     return {
         "finished": True,
         "url": final_url,
         "domain": parsed.netloc,
-        "http_status": response.status_code,
-        "https": parsed.scheme=="https",
+        "https": parsed.scheme == "https",
         "ssl_secure": ssl_verified,
         "overall_score": overall_score,
         "grade": grade,
-        "breakdown":{"onpage":seo_score,"performance":perf_score,"coverage":coverage_score,"confidence":confidence},
-        "metrics":{"title_length":len(title),"meta_description_length":len(meta_desc),"h1_count":h1_count,
-                   "internal_links":internal_total,"external_links":external_total,"broken_internal_links":broken_count,
-                   "load_time_sec":load_time,"page_size_kb":page_size_kb,
-                   "pages_crawled":crawl_res.crawled_count,"crawl_time_sec":crawl_res.total_crawl_time,
-                   "images_missing_alt":missing_alt},
-        "issues":{"seo":seo_issues,"performance":perf_issues,"coverage":coverage_issues},
-        "issues_count":{"seo":len(seo_issues),"performance":len(perf_issues),"coverage":len(coverage_issues),"images":missing_alt},
-        "chart_data": chart_data,
-        "status":"Audit completed successfully"
+        "seo_score": seo_score,
+        "performance_score": perf_score,
+        "coverage_score": coverage_score,
+        "issues": {
+            "seo": seo_issues,
+            "performance": perf_issues,
+            "coverage": coverage_issues
+        },
+        "metrics": {
+            "title_length": len(title),
+            "meta_description_length": len(meta_desc),
+            "h1_count": h1_count,
+            "internal_links": internal_total,
+            "external_links": external_total,
+            "broken_internal_links": broken_count,
+            "load_time_sec": load_time,
+            "page_size_kb": page_size_kb,
+            "images_missing_alt": missing_alt
+        },
+        "status": "Audit completed successfully"
     }
