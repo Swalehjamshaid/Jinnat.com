@@ -1,133 +1,154 @@
-# fftech-ai-website-audit-saas-railway-ready/app/audit/crawler.py
+# app/main.py
 
-import asyncio
+import time
 import logging
-from urllib.parse import urlparse, urljoin
-from typing import Dict, List
-import httpx
-from bs4 import BeautifulSoup
+from typing import Any, Dict
+from urllib.parse import urlparse
+from contextlib import asynccontextmanager
 
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from app.audit.runner import WebsiteAuditRunner
+
+
+# ---------------------------------------------------------
+# Logging Setup
+# ---------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 logger = logging.getLogger("audit_engine")
 
-# -------------------------
-# Configurable Settings
-# -------------------------
-MAX_PAGES = 20        # Maximum pages to crawl
-CONCURRENCY = 10      # Number of parallel requests
-TIMEOUT = 5.0         # HTTP request timeout
 
-# -------------------------
-# Helper: Fetch single page
-# -------------------------
-async def fetch_page(client: httpx.AsyncClient, url: str):
+# ---------------------------------------------------------
+# FastAPI Lifespan
+# ---------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 FF Tech International Audit Engine initializing...")
+    yield
+    logger.info("🛑 FF Tech International Audit Engine shutting down...")
+
+
+# ---------------------------------------------------------
+# FastAPI App
+# ---------------------------------------------------------
+app = FastAPI(
+    title="FF Tech International Audit Engine",
+    version="4.1",
+    docs_url=None,
+    redoc_url=None,
+    lifespan=lifespan,
+)
+
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
+
+
+# ---------------------------------------------------------
+# URL Normalizer
+# ---------------------------------------------------------
+def normalize_url(url: str) -> str:
+    if not url:
+        raise ValueError("URL cannot be empty")
+
+    url = url.strip()
+    if "://" not in url:
+        url = "https://" + url
+
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("Invalid URL format")
+
+    return parsed.geturl()
+
+
+# ---------------------------------------------------------
+# Home Page
+# ---------------------------------------------------------
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+# ---------------------------------------------------------
+# WebSocket Audit Endpoint
+# ---------------------------------------------------------
+@app.websocket("/ws/audit-progress")
+async def websocket_audit(websocket: WebSocket):
+    await websocket.accept()
+
+    url = websocket.query_params.get("url")
+    if not url:
+        await websocket.send_json({"error": "URL is required"})
+        await websocket.close(code=1008)
+        return
+
     try:
-        resp = await client.get(url, timeout=TIMEOUT)
-        return resp.text, resp.status_code
+        normalized_url = normalize_url(url)
+    except ValueError as e:
+        await websocket.send_json({"error": str(e)})
+        await websocket.close()
+        return
+
+    async def stream_progress(update: Dict[str, Any]):
+        try:
+            await websocket.send_json(update)
+        except RuntimeError:
+            logger.warning("WebSocket disconnected early")
+            raise WebSocketDisconnect()
+
+    try:
+        logger.info(f"Starting crawl for {normalized_url}")
+
+        await stream_progress({
+            "status": "Initializing audit…",
+            "crawl_progress": 5,
+            "finished": False
+        })
+
+        runner = WebsiteAuditRunner(
+            url=normalized_url,
+            psi_api_key=None,
+            max_pages=10
+        )
+
+        audit_output = await runner.run_audit(progress_callback=stream_progress)
+
+        await stream_progress({
+            **audit_output,
+            "status": "Audit completed ✔",
+            "crawl_progress": 100,
+            "finished": True
+        })
+
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from WebSocket")
     except Exception as e:
-        logger.warning(f"Failed to fetch {url}: {e}")
-        return "", 0
+        logger.exception("Audit failed")
+        await stream_progress({
+            "error": str(e),
+            "status": "Audit failed",
+            "finished": True
+        })
+    finally:
+        await websocket.close()
 
-# -------------------------
-# Helper: Analyze page for SEO basics
-# -------------------------
-def analyze_page_seo(html: str, url: str):
-    soup = BeautifulSoup(html, "lxml")
-    seo_score = 100
-    issues = []
 
-    # Check title
-    title = soup.title.string.strip() if soup.title else ""
-    if not title:
-        seo_score -= 10
-        issues.append("Missing title tag")
-
-    # Check meta description
-    desc = soup.find("meta", attrs={"name":"description"})
-    if not desc or not desc.get("content", "").strip():
-        seo_score -= 10
-        issues.append("Missing meta description")
-
-    # Check H1 tags
-    h1 = soup.find_all("h1")
-    if not h1:
-        seo_score -= 5
-        issues.append("Missing H1 tag")
-
-    # Check images alt
-    imgs = soup.find_all("img")
-    for img in imgs:
-        if not img.get("alt"):
-            seo_score -= 1
-            issues.append(f"Image missing alt on {url}")
-
-    # Extract internal & external links
-    internal_links = set()
-    external_links = set()
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        parsed_href = urlparse(href)
-        if parsed_href.netloc == "" or parsed_href.netloc == urlparse(url).netloc:
-            full_url = urljoin(url, href)
-            internal_links.add(full_url)
-        else:
-            external_links.add(href)
-
+# ---------------------------------------------------------
+# Health Check
+# ---------------------------------------------------------
+@app.get("/health")
+@app.get("/healthz")
+async def health():
     return {
-        "seo_score": max(seo_score, 0),
-        "issues": issues,
-        "internal_links": list(internal_links),
-        "external_links": list(external_links),
+        "status": "ok",
+        "engine": "FF Tech Audit Engine",
+        "version": "4.1",
+        "time": time.time()
     }
-
-# -------------------------
-# Main Crawler Function
-# -------------------------
-async def crawl(start_url: str, max_pages: int = MAX_PAGES):
-    domain = urlparse(start_url).netloc
-    visited = {start_url}
-    to_crawl = [start_url]
-    results = []
-
-    limits = httpx.Limits(max_connections=CONCURRENCY, max_keepalive_connections=5)
-    async with httpx.AsyncClient(verify=False, limits=limits, follow_redirects=True) as client:
-        while to_crawl and len(results) < max_pages:
-            batch = to_crawl[:CONCURRENCY]
-            to_crawl = to_crawl[CONCURRENCY:]
-
-            tasks = [fetch_page(client, url) for url in batch]
-            responses = await asyncio.gather(*tasks)
-
-            new_links = []
-            for i, (html, status) in enumerate(responses):
-                url = batch[i]
-
-                if status != 200:
-                    logger.info(f"Broken page: {url} (status {status})")
-                    results.append({
-                        "url": url,
-                        "title": "N/A",
-                        "html": "",
-                        "seo": {},
-                        "broken": True
-                    })
-                    continue
-
-                seo_data = analyze_page_seo(html, url)
-                results.append({
-                    "url": url,
-                    "title": seo_data.get("title", BeautifulSoup(html,"lxml").title.string if BeautifulSoup(html,"lxml").title else "N/A"),
-                    "html": html,
-                    "seo": seo_data,
-                    "broken": False
-                })
-
-                # Add internal links to crawl
-                for link in seo_data["internal_links"]:
-                    if link not in visited and len(visited) < max_pages:
-                        visited.add(link)
-                        new_links.append(link)
-
-            to_crawl.extend(new_links)
-
-    return {"report": results}
-
