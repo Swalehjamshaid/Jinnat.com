@@ -1,11 +1,12 @@
+# fftech-ai-website-audit-saas-railway-ready/app/audit/record.py
 
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from typing import Dict, Set
 
-def fetch_site_html(base_url: str, max_pages: int = 20) -> Dict[str, str]:
-    """Fetch a small set of same-host pages and return {url: html}."""
+def fetch_site_html(base_url: str, max_pages: int = 50) -> Dict[str, str]:
+    """Fetch multiple same-host pages and return {url: html}."""
     visited: Set[str] = set()
     to_visit: Set[str] = {base_url}
     html_docs: Dict[str, str] = {}
@@ -25,10 +26,9 @@ def fetch_site_html(base_url: str, max_pages: int = 20) -> Dict[str, str]:
             for a in soup.find_all('a', href=True):
                 href = a['href']
                 joined_url = urljoin(url, href)
-                if urlparse(joined_url).netloc == urlparse(base_url).netloc:
-                    if joined_url not in visited:
-                        to_visit.add(joined_url)
+                if urlparse(joined_url).netloc == urlparse(base_url).netloc and joined_url not in visited:
+                    to_visit.add(joined_url)
         except Exception:
-            pass
+            continue
 
     return html_docs
