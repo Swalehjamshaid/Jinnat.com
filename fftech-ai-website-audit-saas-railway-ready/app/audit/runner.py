@@ -1,3 +1,5 @@
+# app/audit/runner.py
+
 import logging
 import time
 from typing import Dict
@@ -8,12 +10,18 @@ import requests
 from bs4 import BeautifulSoup
 import urllib3
 
+# Disable SSL warnings globally
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger("audit_engine")
 
 
 def run_audit(url: str) -> Dict:
+    """
+    Performs a realistic audit per website.
+    Returns a structured dictionary with scores, metrics, and breakdown.
+    """
+    logger.info("RUNNING AUDIT FOR URL: %s", url)
     start_time = time.time()
 
     headers = {
@@ -31,6 +39,8 @@ def run_audit(url: str) -> Dict:
         logger.warning("SSL error on %s – falling back to unverified.", url)
         ssl_verified = False
         response = session.get(url, timeout=20, verify=False)
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to fetch URL {url}: {e}")
 
     load_time = round(time.time() - start_time, 2)
     final_url = response.url
@@ -38,31 +48,29 @@ def run_audit(url: str) -> Dict:
     html = response.text
     soup = BeautifulSoup(html, "html.parser")
 
-    # ───────────── SEO SCORING (REAL) ─────────────
+    # ───────────── SEO SCORING ─────────────
     title = soup.title.string.strip() if soup.title and soup.title.string else ""
     meta_desc_tag = soup.find("meta", attrs={"name": "description"})
     meta_desc = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else ""
 
     seo_score = 0
-
+    # Title scoring
     if title:
         seo_score += 25
-        seo_score += max(0, 25 - abs(len(title) - 55))  # optimal length scoring
-
+        seo_score += max(0, 25 - abs(len(title) - 55))  # optimal length bonus
+    # Meta description scoring
     if meta_desc:
         seo_score += min(25, len(meta_desc) / 6)
-
+    # H1 scoring
     h1_count = len(soup.find_all("h1"))
     seo_score += 15 if h1_count == 1 else 5 if h1_count > 1 else 0
-
     seo_score = min(100, round(seo_score))
 
     # ───────────── PERFORMANCE SCORING ─────────────
     page_size_kb = round(len(html.encode("utf-8")) / 1024, 2)
-
     perf_score = 100
-    perf_score -= min(40, load_time * 8)
-    perf_score -= min(40, page_size_kb / 30)
+    perf_score -= min(40, load_time * 8)  # penalty for slow pages
+    perf_score -= min(40, page_size_kb / 30)  # penalty for large pages
     perf_score = max(0, round(perf_score))
 
     # ───────────── LINK COVERAGE SCORING ─────────────
@@ -113,6 +121,7 @@ def run_audit(url: str) -> Dict:
         "metrics": {
             "title_length": len(title),
             "meta_description_length": len(meta_desc),
+            "h1_count": h1_count,
             "internal_links": internal_links,
             "external_links": external_links,
             "load_time_sec": load_time,
