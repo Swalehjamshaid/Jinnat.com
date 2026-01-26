@@ -1,5 +1,3 @@
-# app/main.py
-
 import time
 import logging
 from typing import Any, Dict
@@ -11,6 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+# Use the updated runner
 from app.audit.runner import WebsiteAuditRunner
 
 # ---------------------------------------------------------
@@ -52,15 +51,12 @@ templates = Jinja2Templates(directory="app/templates")
 def normalize_url(url: str) -> str:
     if not url:
         raise ValueError("URL cannot be empty")
-
     url = url.strip()
     if "://" not in url:
         url = "https://" + url
-
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
         raise ValueError("Invalid URL format")
-
     return parsed.geturl()
 
 # ---------------------------------------------------------
@@ -78,8 +74,6 @@ async def websocket_audit(websocket: WebSocket):
     await websocket.accept()
 
     url = websocket.query_params.get("url")
-    max_pages = int(websocket.query_params.get("max_pages", 15))  # dynamic page limit
-
     if not url:
         await websocket.send_json({"error": "URL is required"})
         await websocket.close(code=1008)
@@ -100,21 +94,24 @@ async def websocket_audit(websocket: WebSocket):
             raise WebSocketDisconnect()
 
     try:
-        logger.info(f"Starting real audit for {normalized_url}")
+        logger.info(f"Starting audit for {normalized_url}")
 
+        # Initial progress
         await stream_progress({
             "status": "Initializing audit…",
             "crawl_progress": 5,
             "finished": False
         })
 
+        # Run audit
         runner = WebsiteAuditRunner(
             url=normalized_url,
-            max_pages=max_pages
+            max_pages=15  # You can adjust max pages here
         )
 
         audit_output = await runner.run_audit(progress_callback=stream_progress)
 
+        # Final progress
         await stream_progress({
             **audit_output,
             "status": "Audit completed ✔",
