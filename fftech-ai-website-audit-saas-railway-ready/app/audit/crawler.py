@@ -1,154 +1,69 @@
-# app/main.py
+import asyncio
+import httpx
+from urllib.parse import urlparse, urljoin
+from bs4 import BeautifulSoup
 
-import time
-import logging
-from typing import Any, Dict
-from urllib.parse import urlparse
-from contextlib import asynccontextmanager
+# -------------------------
+# Configuration
+# -------------------------
+MAX_PAGES = 20
+CONCURRENCY = 10
+TIMEOUT = 5.0
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-
-from app.audit.runner import WebsiteAuditRunner
-
-
-# ---------------------------------------------------------
-# Logging Setup
-# ---------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
-logger = logging.getLogger("audit_engine")
-
-
-# ---------------------------------------------------------
-# FastAPI Lifespan
-# ---------------------------------------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("🚀 FF Tech International Audit Engine initializing...")
-    yield
-    logger.info("🛑 FF Tech International Audit Engine shutting down...")
-
-
-# ---------------------------------------------------------
-# FastAPI App
-# ---------------------------------------------------------
-app = FastAPI(
-    title="FF Tech International Audit Engine",
-    version="4.1",
-    docs_url=None,
-    redoc_url=None,
-    lifespan=lifespan,
-)
-
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
-
-
-# ---------------------------------------------------------
-# URL Normalizer
-# ---------------------------------------------------------
-def normalize_url(url: str) -> str:
-    if not url:
-        raise ValueError("URL cannot be empty")
-
-    url = url.strip()
-    if "://" not in url:
-        url = "https://" + url
-
-    parsed = urlparse(url)
-    if not parsed.scheme or not parsed.netloc:
-        raise ValueError("Invalid URL format")
-
-    return parsed.geturl()
-
-
-# ---------------------------------------------------------
-# Home Page
-# ---------------------------------------------------------
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
-# ---------------------------------------------------------
-# WebSocket Audit Endpoint
-# ---------------------------------------------------------
-@app.websocket("/ws/audit-progress")
-async def websocket_audit(websocket: WebSocket):
-    await websocket.accept()
-
-    url = websocket.query_params.get("url")
-    if not url:
-        await websocket.send_json({"error": "URL is required"})
-        await websocket.close(code=1008)
-        return
-
+# -------------------------
+# Fetch Page
+# -------------------------
+async def fast_fetch(client: httpx.AsyncClient, url: str):
     try:
-        normalized_url = normalize_url(url)
-    except ValueError as e:
-        await websocket.send_json({"error": str(e)})
-        await websocket.close()
-        return
+        resp = await client.get(url, timeout=TIMEOUT, verify=False)
+        return resp.text, resp.status_code
+    except Exception:
+        return "", 0
 
-    async def stream_progress(update: Dict[str, Any]):
-        try:
-            await websocket.send_json(update)
-        except RuntimeError:
-            logger.warning("WebSocket disconnected early")
-            raise WebSocketDisconnect()
+# -------------------------
+# Crawl Website
+# -------------------------
+async def crawl(start_url: str, max_pages: int = MAX_PAGES):
+    """
+    Crawl website and return a list of page dictionaries:
+    {"url": ..., "title": ..., "html": ...}
+    """
+    domain = urlparse(start_url).netloc
+    visited = {start_url}
+    to_crawl = [start_url]
+    results = []
 
-    try:
-        logger.info(f"Starting crawl for {normalized_url}")
+    limits = httpx.Limits(max_connections=CONCURRENCY, max_keepalive_connections=5)
 
-        await stream_progress({
-            "status": "Initializing audit…",
-            "crawl_progress": 5,
-            "finished": False
-        })
+    async with httpx.AsyncClient(limits=limits, follow_redirects=True, verify=False) as client:
+        while to_crawl and len(results) < max_pages:
+            batch = to_crawl[:CONCURRENCY]
+            to_crawl = to_crawl[CONCURRENCY:]
 
-        runner = WebsiteAuditRunner(
-            url=normalized_url,
-            psi_api_key=None,
-            max_pages=10
-        )
+            tasks = [fast_fetch(client, url) for url in batch]
+            responses = await asyncio.gather(*tasks)
 
-        audit_output = await runner.run_audit(progress_callback=stream_progress)
+            new_links = []
 
-        await stream_progress({
-            **audit_output,
-            "status": "Audit completed ✔",
-            "crawl_progress": 100,
-            "finished": True
-        })
+            for i, (html, status) in enumerate(responses):
+                url = batch[i]
+                if status == 200:
+                    soup = BeautifulSoup(html, "lxml")
 
-    except WebSocketDisconnect:
-        logger.info("Client disconnected from WebSocket")
-    except Exception as e:
-        logger.exception("Audit failed")
-        await stream_progress({
-            "error": str(e),
-            "status": "Audit failed",
-            "finished": True
-        })
-    finally:
-        await websocket.close()
+                    results.append({
+                        "url": url,
+                        "title": soup.title.string if soup.title else "N/A",
+                        "html": html
+                    })
 
+                    # Add internal links for further crawling
+                    if len(results) + len(to_crawl) < max_pages:
+                        for a in soup.find_all("a", href=True):
+                            link = urljoin(url, a["href"])
+                            if urlparse(link).netloc == domain and link not in visited:
+                                visited.add(link)
+                                new_links.append(link)
 
-# ---------------------------------------------------------
-# Health Check
-# ---------------------------------------------------------
-@app.get("/health")
-@app.get("/healthz")
-async def health():
-    return {
-        "status": "ok",
-        "engine": "FF Tech Audit Engine",
-        "version": "4.1",
-        "time": time.time()
-    }
+            to_crawl.extend(new_links)
+
+    return {"report": results}
