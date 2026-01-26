@@ -12,53 +12,145 @@
       --bg: #0f172a;
       --card: #1e293b;
       --glass: rgba(30, 41, 59, 0.75);
-      --border: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.12);
       --primary: #3b82f6;
       --success: #10b981;
       --warning: #f59e0b;
       --danger: #ef4444;
       --muted: #94a3b8;
+      --highlight: #f5f5f5;
     }
+
     body {
       background: var(--bg);
       color: #e2e8f0;
       min-height: 100vh;
-      font-family: system-ui, sans-serif;
+      font-family: 'Inter', system-ui, sans-serif;
     }
-    .main-container { max-width: 1400px; margin: 0 auto; padding: 2rem 1rem; }
+
+    .main-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+    }
+
+    h1, h5 {
+      font-family: 'Inter', sans-serif;
+    }
+
     .card-glass {
       background: var(--glass);
       border: 1px solid var(--border);
       backdrop-filter: blur(16px);
       border-radius: 1.25rem;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+      transition: transform 0.3s, box-shadow 0.3s;
     }
+    .card-glass:hover { transform: translateY(-5px); box-shadow: 0 25px 50px rgba(0,0,0,0.6); }
+
     #loadingOverlay {
-      position: fixed; inset: 0; background: rgba(15,23,42,0.92);
-      color: var(--success); display: none; flex-direction: column;
-      justify-content: center; align-items: center; z-index: 9999;
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.96);
+      color: var(--success);
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      font-family: 'Inter', sans-serif;
+      text-align: center;
     }
-    .progress { height: 10px; background: rgba(255,255,255,0.08); border-radius: 999px; }
-    .progress-bar { background: linear-gradient(90deg, var(--primary), #8b5cf6); }
+
+    .progress {
+      height: 12px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      background: linear-gradient(90deg, var(--primary), #8b5cf6);
+    }
+
     .metric-box {
-      background: rgba(30,41,59,0.6);
+      background: rgba(30,41,59,0.65);
       border: 1px solid var(--border);
       border-radius: 1rem;
-      padding: 1.5rem;
+      padding: 1.75rem 1rem;
       text-align: center;
-      transition: transform 0.2s;
+      transition: transform 0.25s, background 0.25s;
     }
-    .metric-box:hover { transform: translateY(-6px); }
-    .metric-value { font-size: 2.8rem; font-weight: 700; margin: 0.5rem 0; }
+    .metric-box:hover {
+      transform: translateY(-6px);
+      background: rgba(30,41,59,0.85);
+    }
+    .metric-value {
+      font-size: 2.8rem;
+      font-weight: 700;
+      margin: 0.5rem 0;
+      color: var(--highlight);
+      text-shadow: 0 0 6px rgba(0,0,0,0.5);
+    }
+    .metric-label {
+      font-size: 0.95rem;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
     .chart-container {
-      background: rgba(30,41,59,0.5);
+      background: rgba(30,41,59,0.65);
       border: 1px solid var(--border);
       border-radius: 1.25rem;
       padding: 1.5rem;
       height: 400px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+      transition: transform 0.3s;
     }
-    .section-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; }
-    .metric-label { font-size: 0.95rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .chart-container:hover { transform: translateY(-4px); }
+
+    .section-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      color: var(--highlight);
+      text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    }
+
+    .auth-sidebar {
+      background: rgba(30,41,59,0.6);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1.75rem 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    }
+
+    .auth-sidebar input.form-control {
+      background: rgba(22,28,40,0.8);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: var(--highlight);
+    }
+
+    .btn-primary, .btn-success {
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      border-radius: 0.75rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn-primary:hover, .btn-success:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+
+    /* Responsive tweaks */
+    @media(max-width: 992px){
+      .chart-container { height: 350px; }
+      .metric-value { font-size: 2.2rem; }
+    }
+    @media(max-width: 576px){
+      .metric-value { font-size: 1.8rem; }
+    }
   </style>
 </head>
 <body>
@@ -77,7 +169,6 @@
     </h1>
 
     <div class="row g-4">
-
       <!-- Main Audit Panel -->
       <div class="col-lg-8">
         <div class="card-glass p-4 p-lg-5">
@@ -102,7 +193,7 @@
             <!-- Top Score -->
             <div class="row g-4 mb-5 justify-content-center">
               <div class="col-md-5 col-lg-4 text-center">
-                <div class="p-4 bg-dark rounded-4 border border-primary border-opacity-30 shadow-lg">
+                <div class="p-5 bg-dark rounded-4 border border-primary border-opacity-40 shadow-lg">
                   <small class="text-muted fw-bold text-uppercase d-block mb-3">OVERALL SCORE</small>
                   <div id="ovScore" class="display-1 fw-bold text-white">—</div>
                   <div id="grade" class="fs-3 fw-bold text-success mt-2">—</div>
@@ -184,6 +275,7 @@
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </div>
@@ -217,149 +309,8 @@
           <div id="magicFeedback" class="mt-2 text-center small text-success"></div>
         </div>
       </div>
-
     </div>
   </div>
 
-<script>
-// ──────────────────────────────────────────────
-// Audit logic (unchanged)
-// ──────────────────────────────────────────────
-
-console.log("Audit script loaded");
-let currentWs = null;
-let barChart, radarChart, doughnutChart;
-
-function updateProgress(pct, msg) {
-  const bar = document.getElementById('crawlProgressBar');
-  const label = document.getElementById('progressLabel');
-  const status = document.getElementById('statusLabel');
-  if(bar) bar.style.width = pct + '%';
-  if(label) label.textContent = pct + '%';
-  if(status) status.textContent = msg;
-}
-
-function showError(msg="Audit failed") {
-  document.getElementById('loadingOverlay').style.display = 'none';
-  document.getElementById('crawlProgressContainer').style.display = 'none';
-  document.getElementById('btnOpenAudit').disabled = false;
-  const results = document.getElementById('openResults');
-  results.innerHTML = `<div class="alert alert-danger p-4 text-center">
-    <h4>Error</h4>
-    <p>${msg}</p>
-    <button class="btn btn-outline-light mt-2" onclick="location.reload()">Retry</button>
-  </div>`;
-  results.classList.remove('d-none');
-}
-
-function initCharts(data) {
-  const ctxBar = document.getElementById('barChart').getContext('2d');
-  const ctxRadar = document.getElementById('radarChart').getContext('2d');
-  const ctxDough = document.getElementById('doughnutChart').getContext('2d');
-  if(barChart) barChart.destroy();
-  if(radarChart) radarChart.destroy();
-  if(doughnutChart) doughnutChart.destroy();
-
-  barChart = new Chart(ctxBar, {
-    type: 'bar',
-    data: {
-      labels: data.chart_data.bar.labels,
-      datasets: [{
-        label: 'Scores',
-        data: data.chart_data.bar.data,
-        backgroundColor: data.chart_data.bar.colors
-      }]
-    },
-    options: { responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,max:100}} }
-  });
-
-  radarChart = new Chart(ctxRadar, {
-    type: 'radar',
-    data: {
-      labels: data.chart_data.radar.labels,
-      datasets: [{ label:'Metrics', data: data.chart_data.radar.data, backgroundColor:'rgba(13,110,253,0.3)', borderColor:'#0d6efd', borderWidth:2 }]
-    },
-    options: { responsive:true, scales:{r:{min:0,max:100,beginAtZero:true}} }
-  });
-
-  doughnutChart = new Chart(ctxDough, {
-    type:'doughnut',
-    data:{
-      labels:data.chart_data.doughnut.labels,
-      datasets:[{ data:data.chart_data.doughnut.data, backgroundColor:data.chart_data.doughnut.colors }]
-    },
-    options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
-  });
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const auditButton = document.getElementById('btnOpenAudit');
-  const urlInput = document.getElementById('openUrl');
-
-  if (auditButton && urlInput) {
-    auditButton.addEventListener('click', () => {
-      const url = urlInput.value.trim();
-      if(!url) { alert("Enter a valid URL"); return; }
-      runAudit(url);
-    });
-
-    urlInput.addEventListener('keypress', e => {
-      if(e.key==='Enter') auditButton.click();
-    });
-  }
-});
-
-function runAudit(url) {
-  if(currentWs) currentWs.close();
-  document.getElementById('loadingOverlay').style.display='flex';
-  document.getElementById('crawlProgressContainer').style.display='block';
-  document.getElementById('openResults').classList.add('d-none');
-  document.getElementById('btnOpenAudit').disabled = true;
-
-  const protocol = location.protocol==='https:'?'wss:':'ws:';
-  const ws = new WebSocket(`${protocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
-  currentWs = ws;
-  let receivedAny = false;
-
-  ws.onopen = ()=>console.log("WebSocket connected");
-  ws.onmessage = (event)=>{
-    receivedAny = true;
-    let data;
-    try{ data = JSON.parse(event.data); }catch(e){ console.error(e); return; }
-    if(!data.finished){
-      updateProgress(data.crawl_progress||0, data.status||"Analyzing…");
-      return;
-    }
-    ws.close();
-    if(data.error){ showError(data.error); return; }
-
-    // Fill all visible attributes
-    document.getElementById('ovScore').textContent = data.overall_score ?? '—';
-    document.getElementById('grade').textContent = data.grade ?? '—';
-    const bd = data.breakdown || {};
-    document.getElementById('onpageScore').textContent = bd.onpage ?? '—';
-    document.getElementById('perfScore').textContent = bd.performance ?? '—';
-    document.getElementById('coverageScore').textContent = bd.coverage ?? '—';
-    document.getElementById('confidence').textContent = bd.confidence ?? '—';
-
-    // Link metrics
-    document.getElementById('internalLinks').textContent = data.metrics?.internal_links ?? '—';
-    document.getElementById('externalLinks').textContent = data.metrics?.external_links ?? '—';
-    document.getElementById('brokenLinks').textContent = data.metrics?.broken_internal_links ?? '0';
-
-    initCharts(data);
-
-    document.getElementById('loadingOverlay').style.display='none';
-    document.getElementById('crawlProgressContainer').style.display='none';
-    document.getElementById('btnOpenAudit').disabled=false;
-    document.getElementById('openResults').classList.remove('d-none');
-  };
-  ws.onerror = ()=>{
-    ws.close();
-    showError(receivedAny ? "Connection lost" : "Cannot connect to server");
-  };
-  ws.onclose = ()=>{ currentWs = null; };
-}
-</script>
 </body>
 </html>
