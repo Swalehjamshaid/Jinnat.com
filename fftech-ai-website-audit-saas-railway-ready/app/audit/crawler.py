@@ -1,3 +1,4 @@
+# app/audit/crawler.py
 import asyncio
 import logging
 from collections import deque
@@ -12,17 +13,16 @@ logger = logging.getLogger(__name__)
 
 async def crawl(
     start_url: str,
-    max_pages: int = 25,               # ← reduced default for speed
-    max_depth: int = 3,                # ← prevent deep crawling
+    max_pages: int = 20,               # lowered for speed
+    max_depth: int = 3,
     concurrency: int = 15,
-    timeout: float = 7.0,
+    timeout: float = 6.0,
     progress_callback: Optional[Callable] = None
 ) -> Dict:
-    """Fast concurrent crawler for SEO/link audit."""
     start_time = asyncio.get_event_loop().time()
 
-    start_parsed = urlparse(start_url)
-    base_domain = start_parsed.netloc.lower()
+    parsed_start = urlparse(start_url)
+    base_domain = parsed_start.netloc.lower()
 
     visited: Set[str] = set()
     queue = deque([(start_url, 0)])  # (url, depth)
@@ -31,7 +31,7 @@ async def crawl(
     broken: Set[str] = set()
     status_counts: Dict[int, int] = {}
 
-    connector = aiohttp.TCPConnector(limit=50, ssl=False)  # ssl=False for speed (production: fix certs)
+    connector = aiohttp.TCPConnector(limit=60, ssl=False)  # ssl=False for speed (fix in production)
     timeout_obj = ClientTimeout(total=timeout)
 
     async with aiohttp.ClientSession(connector=connector, timeout=timeout_obj) as session:
@@ -39,7 +39,7 @@ async def crawl(
 
         async def fetch(url: str, depth: int):
             if depth > max_depth:
-                return None, 0
+                return None
 
             async with semaphore:
                 try:
@@ -50,18 +50,16 @@ async def crawl(
                         if status >= 400:
                             if urlparse(url).netloc.lower() == base_domain:
                                 broken.add(url)
-                            return None, status
+                            return None
 
                         if 'text/html' not in resp.headers.get('content-type', '').lower():
-                            return None, status
+                            return None
 
-                        html = await resp.text()
-                        return html, status
+                        return await resp.text()
 
-                except Exception as e:
-                    logger.debug(f"Fetch failed {url}: {type(e).__name__}")
+                except Exception:
                     status_counts[0] = status_counts.get(0, 0) + 1
-                    return None, 0
+                    return None
 
         crawled = 0
         tasks = []
@@ -78,7 +76,7 @@ async def crawl(
                 if progress_callback:
                     pct = min(round(crawled / max_pages * 100, 1), 99)
                     await progress_callback({
-                        "status": f"Crawling: {crawled}/{max_pages} pages (depth ≤ {max_depth})",
+                        "status": f"Crawling pages... ({crawled}/{max_pages})",
                         "crawl_progress": pct,
                         "finished": False
                     })
@@ -89,11 +87,15 @@ async def crawl(
             done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
             for fut in done:
-                html, status = await fut
+                html = await fut
                 if html is None:
                     continue
 
-                soup = BeautifulSoup(html, "lxml", parse_only=SoupStrainer(["a", "link", "meta", "title"]))
+                soup = BeautifulSoup(
+                    html,
+                    "lxml",
+                    parse_only=SoupStrainer(["a", "link", "meta", "title"])
+                )
 
                 for tag in soup.find_all("a", href=True):
                     href = tag["href"].strip()
