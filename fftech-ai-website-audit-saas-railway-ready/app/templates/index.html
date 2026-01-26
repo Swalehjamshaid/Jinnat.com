@@ -41,10 +41,12 @@
       box-shadow: 0 20px 50px rgba(0,0,0,0.4);
     }
     #loadingOverlay {
-      position: fixed; inset: 0; background: rgba(10,14,23,0.98);
+      position: fixed; inset: 0; background: rgba(10,14,23,0.95);
       color: var(--gold); display: none; flex-direction: column;
       justify-content: center; align-items: center; z-index: 9999;
+      transition: opacity 0.3s ease;
     }
+    #loadingOverlay.show { display: flex; opacity: 1; }
     .metric-box {
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(255,215,0,0.1);
@@ -71,6 +73,7 @@
 </head>
 <body>
 
+  <!-- Loading Overlay -->
   <div id="loadingOverlay">
     <div class="spinner-border text-warning mb-4" style="width:4rem;height:4rem;"></div>
     <h3 id="statusLabel">Initializing Engine...</h3>
@@ -82,9 +85,10 @@
   </div>
 
   <div class="main-container">
-    <h1 class="header-title">Audit Engine <span style="font-weight: 300;">v4.1</span></h1>
+    <h1 class="header-title">Audit Engine <span style="font-weight: 300;">v4.2</span></h1>
 
     <div class="row g-4">
+      <!-- Audit Panel -->
       <div class="col-lg-8">
         <div class="card-glass">
           <div class="input-group input-group-lg mb-5">
@@ -156,6 +160,7 @@
         </div>
       </div>
 
+      <!-- Account Panel -->
       <div class="col-lg-4">
         <div class="card-glass h-100">
           <h4 class="text-warning mb-4"><i class="bi bi-shield-lock me-2"></i>Account Access</h4>
@@ -165,7 +170,7 @@
             <button class="btn btn-outline-warning w-100">Send Magic Link</button>
           </div>
           <hr class="border-secondary">
-          <p class="small text-muted">FF Tech Engine v4.1 uses 128-bit encryption for report storage and AI-driven performance heuristics.</p>
+          <p class="small text-muted">FF Tech Engine v4.2 uses 128-bit encryption for report storage and AI-driven performance heuristics.</p>
         </div>
       </div>
     </div>
@@ -215,7 +220,7 @@
       const statusLabel = document.getElementById('statusLabel');
       const loadingBar = document.getElementById('loadingBar');
       
-      overlay.style.display = 'flex';
+      overlay.classList.add('show');
       
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(`${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
@@ -227,7 +232,7 @@
         if (res.crawl_progress) loadingBar.style.width = res.crawl_progress + '%';
 
         if (res.finished) {
-          overlay.style.display = 'none';
+          overlay.classList.remove('show');
           document.getElementById('resultsPanel').classList.remove('d-none');
           
           // Map Results
@@ -248,13 +253,13 @@
 
         if (res.error) {
           alert("Error: " + res.error);
-          overlay.style.display = 'none';
+          overlay.classList.remove('show');
         }
       };
 
       ws.onerror = () => {
         alert("WebSocket Connection Failed");
-        overlay.style.display = 'none';
+        overlay.classList.remove('show');
       };
     });
   </script>
