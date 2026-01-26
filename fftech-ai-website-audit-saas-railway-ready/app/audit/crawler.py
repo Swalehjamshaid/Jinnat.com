@@ -1,90 +1,69 @@
 # app/audit/crawler.py
-import asyncio
-import httpx
+import asyncio, logging
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
-from dataclasses import dataclass, field
-from typing import Set, List
+import httpx
 
-@dataclass
-class CrawlResult:
-    crawled_count: int = 0
-    unique_internal: int = 0
-    unique_external: int = 0
-    broken_internal: List[str] = field(default_factory=list)
-    broken_external: List[str] = field(default_factory=list)
-    total_crawl_time: float = 0.0
+logger = logging.getLogger("audit_engine")
 
-async def fetch_url(client, url, base_domain):
-    internal_links, external_links, broken = set(), set(), []
+async def fetch_page(client, url):
     try:
-        resp = await client.get(url, timeout=5)
-        if resp.status_code != 200:
-            broken.append(url)
-            return internal_links, external_links, broken
+        resp = await client.get(url, timeout=15)
+        html = resp.text
+        return html, resp.status_code
+    except Exception as e:
+        logger.warning(f"Failed to fetch {url}: {e}")
+        return "", None
 
-        soup = BeautifulSoup(resp.text, "lxml")
-        for a in soup.find_all("a", href=True):
-            href = a.get("href")
-            if not href or href.startswith("mailto:") or href.startswith("javascript:"):
+async def async_crawl(start_url: str, max_pages: int = 15, websocket=None):
+    """
+    Async crawler for fast internal/external link extraction
+    Returns: dict with unique_internal, unique_external, broken_internal, broken_external
+    """
+    parsed_root = urlparse(start_url)
+    domain = parsed_root.netloc
+
+    visited = set()
+    internal_links = set()
+    external_links = set()
+    broken_internal = set()
+    broken_external = set()
+    queue = [start_url]
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+        while queue and len(visited) < max_pages:
+            url = queue.pop(0)
+            if url in visited:
                 continue
-            full_url = urljoin(url, href)
-            domain = urlparse(full_url).netloc
-            if domain == base_domain:
-                internal_links.add(full_url)
-            else:
-                external_links.add(full_url)
-    except Exception:
-        broken.append(url)
-    return internal_links, external_links, broken
+            visited.add(url)
 
-async def crawl_async(start_url, max_pages=15):
-    from time import time
-    start_time = time()
-    parsed = urlparse(start_url)
-    base_domain = parsed.netloc
+            html, status = await fetch_page(client, url)
+            if status is None or status >= 400:
+                if domain in url:
+                    broken_internal.add(url)
+                else:
+                    broken_external.add(url)
+                continue
 
-    visited, to_visit = set(), set([start_url])
-    internal_links_all, external_links_all = set(), set()
-    broken_internal, broken_external = [], []
+            soup = BeautifulSoup(html, "lxml")
+            links = [a.get("href") for a in soup.find_all("a", href=True)]
+            for link in links:
+                absolute = urljoin(url, link)
+                link_domain = urlparse(absolute).netloc
+                if link_domain == domain:
+                    if absolute not in visited:
+                        queue.append(absolute)
+                        internal_links.add(absolute)
+                else:
+                    external_links.add(absolute)
 
-    async with httpx.AsyncClient(follow_redirects=True) as client:
-        while to_visit and len(visited) < max_pages:
-            tasks = []
-            current_batch = list(to_visit)[:max_pages-len(visited)]
-            for url in current_batch:
-                tasks.append(fetch_url(client, url, base_domain))
-                to_visit.remove(url)
+            if websocket:
+                await websocket.send_json({"status": "crawling", "message": f"Crawled {len(visited)} pages..."})
 
-            results = await asyncio.gather(*tasks)
-            for i, (internal, external, broken) in enumerate(results):
-                url = current_batch[i]
-                visited.add(url)
-
-                # classify broken
-                for b in broken:
-                    if urlparse(b).netloc == base_domain:
-                        broken_internal.append(b)
-                    else:
-                        broken_external.append(b)
-
-                # add new internal links
-                for link in internal:
-                    if link not in visited:
-                        to_visit.add(link)
-
-                internal_links_all.update(internal)
-                external_links_all.update(external)
-
-    total_crawl_time = round(time() - start_time, 2)
-    return CrawlResult(
-        crawled_count=len(visited),
-        unique_internal=len(internal_links_all),
-        unique_external=len(external_links_all),
-        broken_internal=broken_internal,
-        broken_external=broken_external,
-        total_crawl_time=total_crawl_time
-    )
-
-def crawl(start_url, max_pages=15):
-    return asyncio.run(crawl_async(start_url, max_pages))
+    return {
+        "unique_internal": len(internal_links),
+        "unique_external": len(external_links),
+        "broken_internal": len(broken_internal),
+        "broken_external": len(broken_external),
+        "crawled_count": len(visited)
+    }
