@@ -1,483 +1,166 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FF Tech Audit – Professional Website Auditor</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web Audit Dashboard</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
-    :root {
-      --bg: #0a0e17;
-      --card: #111827;
-      --glass: rgba(17, 24, 39, 0.78);
-      --border: rgba(255, 215, 0, 0.18);
-      --gold: #ffd700;
-      --gold-dark: #d4af37;
-      --primary: #3b82f6;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --muted: #9ca3af;
-    }
     body {
-      background: linear-gradient(135deg, #0a0e17 0%, #111827 100%);
-      color: #e2e8f0;
+      background: radial-gradient(circle at top, #0f172a, #020617);
+      color: #e5e7eb;
       min-height: 100vh;
-      font-family: system-ui, sans-serif;
     }
-    .main-container { max-width: 1400px; margin: 0 auto; padding: 3rem 1rem; }
-    .header-title {
-      font-size: 3rem;
-      font-weight: 800;
-      background: linear-gradient(90deg, var(--gold), var(--gold-dark), #fff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      text-shadow: 0 2px 12px rgba(255,215,0,0.4);
-      margin-bottom: 3rem;
-      text-align: center;
+    .card {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
     }
-    .card-glass {
-      background: var(--glass);
-      border: 1px solid var(--border);
-      backdrop-filter: blur(20px);
-      border-radius: 1.5rem;
-      box-shadow: 0 15px 40px rgba(0,0,0,0.5);
-      transition: transform 0.3s, box-shadow 0.3s;
-    }
-    .card-glass:hover {
-      transform: translateY(-10px);
-      box-shadow: 0 25px 60px rgba(255,215,0,0.2);
-    }
-    #loadingOverlay {
-      position: fixed; inset: 0; background: rgba(10,14,23,0.96);
-      color: var(--gold); display: none; flex-direction: column;
-      justify-content: center; align-items: center; z-index: 9999;
-    }
-    .progress { height: 12px; background: rgba(255,215,0,0.1); border-radius: 999px; overflow: hidden; }
-    .progress-bar { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); }
-    .metric-box {
-      background: rgba(17,24,39,0.75);
-      border: 1px solid rgba(255,215,0,0.15);
-      border-radius: 1.25rem;
-      padding: 1.8rem;
-      text-align: center;
-      transition: all 0.3s;
-    }
-    .metric-box:hover {
-      transform: translateY(-8px);
-      border-color: var(--gold);
-      box-shadow: 0 15px 35px rgba(255,215,0,0.2);
-    }
-    .metric-value { 
-      font-size: 3.5rem; 
-      font-weight: 800; 
-      color: var(--gold); 
-      text-shadow: 0 2px 12px rgba(255,215,0,0.5);
-    }
-    .metric-label { font-size: 1.1rem; color: var(--muted); margin-bottom: 0.8rem; font-weight: 500; }
-    .section-title {
-      font-size: 1.9rem;
+    .audit-title {
       font-weight: 700;
-      color: var(--gold);
-      text-shadow: 0 1px 8px rgba(255,215,0,0.4);
-      margin-bottom: 1.8rem;
-      text-align: center;
+      letter-spacing: 0.5px;
     }
-    .chart-container {
-      background: rgba(17,24,39,0.65);
-      border: 1px solid rgba(255,215,0,0.12);
-      border-radius: 1.5rem;
-      padding: 1.8rem;
-      height: 440px;
+    .progress {
+      height: 14px;
+      background: #020617;
     }
-    .auth-sidebar {
-      background: var(--glass);
-      border: 1px solid var(--border);
-      backdrop-filter: blur(20px);
-      border-radius: 1.5rem;
-      padding: 2rem;
+    .progress-bar {
+      background: linear-gradient(90deg, #3b82f6, #22c55e);
     }
-    .btn-gold {
-      background: linear-gradient(90deg, var(--gold), var(--gold-dark));
-      border: none;
-      color: #0f172a;
-      font-weight: 700;
-      transition: all 0.3s;
-    }
-    .btn-gold:hover {
-      transform: scale(1.05);
-      opacity: 0.92;
+    .log-box {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 12px;
+      height: 160px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #22c55e;
     }
   </style>
 </head>
 <body>
 
-  <!-- Loading Overlay -->
-  <div id="loadingOverlay">
-    <div class="spinner-border text-warning mb-5" style="width:5rem;height:5rem;"></div>
-    <h4 class="fw-bold mb-3" style="color: var(--gold);">Running Professional Audit</h4>
-    <p id="statusLabel" class="lead mb-3">Analyzing website...</p>
-    <small class="text-muted">Estimated time: 45–90 seconds</small>
-  </div>
+<div class="container py-5">
 
-  <div class="main-container">
-    <h1 class="header-title">FF Tech Site Auditor</h1>
-
-    <div class="row g-5">
-
-      <!-- Main Audit Panel -->
-      <div class="col-lg-8">
-        <div class="card-glass p-5">
-          <div class="input-group input-group-lg mb-5">
-            <input id="openUrl" type="url" class="form-control" placeholder="https://www.example.com" value="https://">
-            <button id="btnOpenAudit" class="btn btn-gold px-5 fw-bold">ANALYZE</button>
-          </div>
-
-          <!-- Progress -->
-          <div id="crawlProgressContainer" class="d-none mb-5">
-            <div class="progress mb-3">
-              <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
-            </div>
-            <div class="d-flex justify-content-between small text-muted">
-              <span id="statusLabel">Waiting to start...</span>
-              <span id="progressLabel">0%</span>
-            </div>
-          </div>
-
-          <!-- Results -->
-          <div id="openResults" class="d-none">
-            <!-- Top Score -->
-            <div class="row justify-content-center mb-5">
-              <div class="col-md-6 col-lg-5 text-center">
-                <div class="p-5 bg-dark rounded-4 border border-warning border-opacity-50 shadow-lg">
-                  <small class="text-muted fw-bold text-uppercase d-block mb-4">OVERALL SCORE</small>
-                  <div id="ovScore" class="display-1 fw-black" style="color: var(--gold);">—</div>
-                  <div id="grade" class="fs-3 fw-bold text-success mt-3">—</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Breakdown Metrics -->
-            <h5 class="section-title">Score Breakdown</h5>
-            <div class="row g-4 mb-5">
-              <div class="col-6 col-md-3">
-                <div class="metric-box border-info border-opacity-50">
-                  <div class="metric-label">On-page SEO</div>
-                  <div id="onpageScore" class="metric-value">—</div>
-                </div>
-              </div>
-              <div class="col-6 col-md-3">
-                <div class="metric-box border-success border-opacity-50">
-                  <div class="metric-label">Performance</div>
-                  <div id="perfScore" class="metric-value">—</div>
-                </div>
-              </div>
-              <div class="col-6 col-md-3">
-                <div class="metric-box border-warning border-opacity-50">
-                  <div class="metric-label">Link Coverage</div>
-                  <div id="coverageScore" class="metric-value">—</div>
-                </div>
-              </div>
-              <div class="col-6 col-md-3">
-                <div class="metric-box border-danger border-opacity-50">
-                  <div class="metric-label">AI Confidence</div>
-                  <div id="confidence" class="metric-value">—</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Link Analysis -->
-            <h5 class="section-title">Link Analysis</h5>
-            <div class="row g-4 mb-5">
-              <div class="col-md-4">
-                <div class="metric-box border-success border-opacity-50">
-                  <div class="metric-label">Internal Links</div>
-                  <div id="internalLinks" class="metric-value text-success">—</div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="metric-box border-primary border-opacity-50">
-                  <div class="metric-label">External Links</div>
-                  <div id="externalLinks" class="metric-value text-primary">—</div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="metric-box border-danger border-opacity-50">
-                  <div class="metric-label">Broken Internal</div>
-                  <div id="brokenLinks" class="metric-value text-danger">—</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Charts -->
-            <h5 class="section-title">Visual Insights</h5>
-            <div class="row g-4">
-              <div class="col-md-12">
-                <div class="chart-container">
-                  <canvas id="barChart"></canvas>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="chart-container">
-                  <canvas id="radarChart"></canvas>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="chart-container">
-                  <canvas id="doughnutChart"></canvas>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Sidebar – Registration & Magic Link -->
-      <div class="col-lg-4">
-        <div class="auth-sidebar mb-4">
-          <h5 class="mb-3" style="color: var(--gold);">Create Account</h5>
-          <p class="text-muted small mb-4">Save audits & download PDF reports</p>
-          <form id="registerForm" action="/register" method="POST">
-            <div class="mb-3">
-              <input type="email" name="email" class="form-control bg-dark text-white border-secondary" placeholder="your@email.com" required>
-            </div>
-            <div class="mb-3">
-              <input type="password" name="password" class="form-control bg-dark text-white border-secondary" placeholder="Strong password" required minlength="8">
-            </div>
-            <button type="submit" class="btn btn-gold w-100 fw-bold">Register</button>
-          </form>
-          <div id="registerFeedback" class="mt-3 text-center small text-success"></div>
-        </div>
-
-        <div class="auth-sidebar">
-          <h5 class="mb-3" style="color: var(--gold);">Magic Link Login</h5>
-          <p class="text-muted small mb-4">No password – instant secure login</p>
-          <form id="magicForm" action="/request-magic-link" method="POST">
-            <div class="mb-4">
-              <input type="email" name="email" class="form-control bg-dark text-white border-secondary" placeholder="email@company.com" required>
-            </div>
-            <button type="submit" class="btn btn-primary w-100 fw-bold">Send Magic Link</button>
-          </form>
-          <div id="magicFeedback" class="mt-3 text-center small text-success"></div>
-        </div>
-      </div>
-
+  <div class="row mb-4">
+    <div class="col text-center">
+      <h2 class="audit-title">🚀 FF Tech – AI Web Audit Engine</h2>
+      <p class="text-secondary">Real-time website audit with instant insights</p>
     </div>
   </div>
 
+  <!-- URL Input -->
+  <div class="row mb-4">
+    <div class="col-lg-8 mx-auto">
+      <div class="card p-4">
+        <label class="form-label">Website URL</label>
+        <div class="input-group">
+          <input id="urlInput" class="form-control" placeholder="https://www.example.com" />
+          <button class="btn btn-primary" onclick="startAudit()">Start Audit</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="row mb-4">
+    <div class="col-lg-8 mx-auto">
+      <div class="card p-4">
+        <h6>Audit Progress</h6>
+        <div class="progress mt-2">
+          <div id="progressBar" class="progress-bar" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <div class="card p-4">
+        <h6>SEO & Performance Score</h6>
+        <canvas id="scoreChart"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card p-4">
+        <h6>Issues Breakdown</h6>
+        <canvas id="issueChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logs -->
+  <div class="row mt-4">
+    <div class="col-lg-12">
+      <div class="card p-4">
+        <h6>Live Audit Log</h6>
+        <div id="logBox" class="log-box"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
 <script>
-// ──────────────────────────────────────────────
-// Audit logic – connected to main.py WebSocket
-// ──────────────────────────────────────────────
+let ws;
 
-console.log("Audit script loaded");
+const scoreChart = new Chart(document.getElementById('scoreChart'), {
+  type: 'bar',
+  data: {
+    labels: ['SEO', 'Performance', 'Security', 'Accessibility'],
+    datasets: [{ data: [0,0,0,0] }]
+  },
+  options: { scales: { y: { min: 0, max: 100 } } }
+});
 
-let currentWs = null;
-let barChart, radarChart, doughnutChart;
-
-function updateProgress(pct, msg) {
-  console.log(`Progress: ${pct}% - ${msg}`);
-  const bar = document.getElementById('crawlProgressBar');
-  const label = document.getElementById('progressLabel');
-  const status = document.getElementById('statusLabel');
-  if (bar) bar.style.width = pct + '%';
-  if (label) label.textContent = pct + '%';
-  if (status) status.textContent = msg;
-}
-
-function showError(msg = "Audit failed") {
-  console.error("Audit error:", msg);
-  document.getElementById('loadingOverlay').style.display = 'none';
-  document.getElementById('crawlProgressContainer').style.display = 'none';
-  document.getElementById('btnOpenAudit').disabled = false;
-  const results = document.getElementById('openResults');
-  results.innerHTML = `<div class="alert alert-danger p-5 text-center rounded-4">
-    <h4 class="mb-3">Error</h4>
-    <p>${msg}</p>
-    <button class="btn btn-outline-light mt-3 px-4" onclick="location.reload()">Retry</button>
-  </div>`;
-  results.classList.remove('d-none');
-}
-
-function initCharts(data) {
-  console.log("Initializing charts with data:", data);
-  const ctxBar = document.getElementById('barChart')?.getContext('2d');
-  const ctxRadar = document.getElementById('radarChart')?.getContext('2d');
-  const ctxDough = document.getElementById('doughnutChart')?.getContext('2d');
-
-  if (!ctxBar || !ctxRadar || !ctxDough) {
-    console.error("One or more chart canvases not found");
-    return;
-  }
-
-  if (barChart) barChart.destroy();
-  if (radarChart) radarChart.destroy();
-  if (doughnutChart) doughnutChart.destroy();
-
-  barChart = new Chart(ctxBar, {
-    type: 'bar',
-    data: {
-      labels: data.chart_data?.bar?.labels || ['SEO', 'Performance', 'Coverage', 'Confidence'],
-      datasets: [{
-        label: 'Scores',
-        data: data.chart_data?.bar?.data || [0,0,0,0],
-        backgroundColor: data.chart_data?.bar?.colors || ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
-      }]
-    },
-    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }
-  });
-
-  radarChart = new Chart(ctxRadar, {
-    type: 'radar',
-    data: {
-      labels: data.chart_data?.radar?.labels || ['SEO', 'Performance', 'Coverage', 'Confidence'],
-      datasets: [{ 
-        label: 'Metrics', 
-        data: data.chart_data?.radar?.data || [0,0,0,0], 
-        backgroundColor: 'rgba(255,215,0,0.25)', 
-        borderColor: var(--gold), 
-        borderWidth: 2 
-      }]
-    },
-    options: { responsive: true, scales: { r: { min: 0, max: 100, beginAtZero: true } } }
-  });
-
-  doughnutChart = new Chart(ctxDough, {
-    type: 'doughnut',
-    data: {
-      labels: data.chart_data?.doughnut?.labels || ['Good', 'Warning', 'Critical'],
-      datasets: [{ 
-        data: data.chart_data?.doughnut?.data || [0,0,0], 
-        backgroundColor: ['#10b981', '#f59e0b', '#ef4444'] 
-      }]
-    },
-    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
-  });
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  console.log("DOM fully loaded - attaching button listener");
-
-  const auditButton = document.getElementById('btnOpenAudit');
-  const urlInput = document.getElementById('openUrl');
-
-  if (!auditButton) {
-    console.error("CRITICAL: Button with id 'btnOpenAudit' NOT FOUND");
-    alert("Error: Analyze button not found. Page may have loaded incorrectly.");
-    return;
-  }
-
-  if (!urlInput) {
-    console.error("CRITICAL: Input with id 'openUrl' NOT FOUND");
-  }
-
-  console.log("Button found - listener attached");
-
-  auditButton.addEventListener('click', () => {
-    console.log("ANALYZE button clicked");
-    const url = urlInput?.value?.trim();
-    if (!url || !url.startsWith('http')) {
-      alert("Please enter a valid URL starting with http:// or https://");
-      return;
-    }
-    runAudit(url);
-  });
-
-  if (urlInput) {
-    urlInput.addEventListener('keypress', e => {
-      if (e.key === 'Enter') {
-        console.log("Enter key pressed in URL input");
-        auditButton.click();
-      }
-    });
+const issueChart = new Chart(document.getElementById('issueChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Critical', 'Warnings', 'Passed'],
+    datasets: [{ data: [0,0,0] }]
   }
 });
 
-function runAudit(url) {
-  console.log("Starting audit for:", url);
+function startAudit() {
+  const url = document.getElementById('urlInput').value;
+  document.getElementById('logBox').innerHTML = '';
+  document.getElementById('progressBar').style.width = '0%';
 
-  if (currentWs) {
-    currentWs.close();
-    currentWs = null;
-  }
-
-  document.getElementById('loadingOverlay').style.display = 'flex';
-  document.getElementById('crawlProgressContainer').style.display = 'block';
-  document.getElementById('openResults').classList.add('d-none');
-  document.getElementById('btnOpenAudit').disabled = true;
-
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
-  console.log("Connecting to WebSocket:", wsUrl);
-
-  const ws = new WebSocket(wsUrl);
-  currentWs = ws;
-
-  let receivedAny = false;
-
-  ws.onopen = () => {
-    console.log("WebSocket connected successfully");
-  };
+  ws = new WebSocket(`ws://${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
 
   ws.onmessage = (event) => {
-    receivedAny = true;
-    console.log("Received from WS:", event.data);
-    let data;
-    try {
-      data = JSON.parse(event.data);
-    } catch (e) {
-      console.error("Failed to parse WS message:", e);
-      return;
+    const data = JSON.parse(event.data);
+
+    if (data.progress !== undefined) {
+      document.getElementById('progressBar').style.width = data.progress + '%';
     }
 
-    if (!data.finished) {
-      updateProgress(data.crawl_progress || 0, data.status || "Analyzing...");
-      return;
+    if (data.log) {
+      document.getElementById('logBox').innerHTML += data.log + '<br>';
     }
 
-    ws.close();
-
-    if (data.error) {
-      showError(data.error);
-      return;
+    if (data.scores) {
+      scoreChart.data.datasets[0].data = data.scores;
+      scoreChart.update();
     }
 
-    // Fill results
-    document.getElementById('ovScore').textContent = data.overall_score ?? '—';
-    document.getElementById('grade').textContent = data.grade ?? '—';
-    const bd = data.breakdown || {};
-    document.getElementById('onpageScore').textContent = bd.onpage ?? '—';
-    document.getElementById('perfScore').textContent = bd.performance ?? '—';
-    document.getElementById('coverageScore').textContent = bd.coverage ?? '—';
-    document.getElementById('confidence').textContent = bd.confidence ?? '—';
-
-    document.getElementById('internalLinks').textContent = data.metrics?.internal_links ?? '—';
-    document.getElementById('externalLinks').textContent = data.metrics?.external_links ?? '—';
-    document.getElementById('brokenLinks').textContent = data.metrics?.broken_internal_links ?? '0';
-
-    initCharts(data);
-
-    document.getElementById('loadingOverlay').style.display = 'none';
-    document.getElementById('crawlProgressContainer').style.display = 'none';
-    document.getElementById('btnOpenAudit').disabled = false;
-    document.getElementById('openResults').classList.remove('d-none');
-
-    console.log("Audit results displayed");
-  };
-
-  ws.onerror = (err) => {
-    console.error("WebSocket error:", err);
-    ws.close();
-    showError(receivedAny ? "Connection lost during audit" : "Cannot connect to audit service");
-  };
-
-  ws.onclose = () => {
-    console.log("WebSocket closed");
-    currentWs = null;
+    if (data.issues) {
+      issueChart.data.datasets[0].data = data.issues;
+      issueChart.update();
+    }
   };
 }
 </script>
+
 </body>
 </html>
