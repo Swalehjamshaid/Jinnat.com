@@ -1,271 +1,53 @@
-{% extends 'base.html' %}
-{% block content %}
-
-<style>
-  :root {
-    --glass-bg: rgba(20, 20, 25, 0.78);
-    --glass-border: rgba(255, 255, 255, 0.09);
-    --accent-blue: #0d6efd;
-    --accent-green: #20c997;
-    --accent-yellow: #ffc107;
-    --accent-red: #dc3545;
-  }
-  body {
-    background: radial-gradient(1400px 800px at 10% -5%, rgba(13,110,253,0.18), transparent),
-                radial-gradient(1000px 600px at 95% 5%, rgba(32,201,151,0.14), transparent),
-                #0a0a0a;
-    background-attachment: fixed;
-    color: #f0f0f5;
-    font-family: 'Inter', system-ui, sans-serif;
-  }
-  .saas-card {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    backdrop-filter: blur(20px);
-    border-radius: 1.5rem;
-    box-shadow: 0 22px 70px rgba(0,0,0,0.55);
-  }
-  #loadingOverlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(10,10,15,0.92);
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    border-radius: 1.5rem;
-    z-index: 10;
-  }
-  .metric-tile {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 1rem;
-    padding: 1.25rem 1rem;
-    text-align: center;
-    transition: all 0.22s ease;
-  }
-  .metric-tile:hover {
-    transform: translateY(-5px);
-    background: rgba(255,255,255,0.07);
-    box-shadow: 0 12px 30px rgba(0,0,0,0.3);
-  }
-  .chart-wrapper {
-    background: rgba(255,255,255,0.035);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 1.25rem;
-    padding: 1.25rem;
-    height: 380px;
-  }
-  .grade-badge {
-    font-size: 2.8rem;
-    font-weight: 800;
-    line-height: 1;
-  }
-  .auth-form .form-control {
-    background: rgba(30,30,40,0.7);
-    border: 1px solid rgba(255,255,255,0.12);
-    color: white;
-  }
-  .auth-form .form-control:focus {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.25rem rgba(13,110,253,0.25);
-  }
-  @media (max-width: 992px) {
-    .chart-wrapper { height: 340px; }
-  }
-</style>
-
-<div class="container py-5">
-  <div class="row g-4">
-
-    <!-- LEFT – MAIN AUDIT AREA -->
-    <div class="col-lg-8">
-      <div class="card saas-card position-relative">
-        <!-- Loading Overlay -->
-        <div id="loadingOverlay">
-          <div class="spinner-border text-primary mb-4" style="width:3.5rem;height:3.5rem;"></div>
-          <h4 class="fw-bold mb-2" id="overlayStatus">Initializing Audit Engine…</h4>
-          <p class="text-white-50" id="overlayHint">Analyzing website structure & performance</p>
-        </div>
-
-        <div class="card-body p-4 p-lg-5">
-          <h2 class="fw-bold mb-4">FFTech <span class="text-primary">Web Auditor</span></h2>
-
-          <!-- URL Input + Audit Button -->
-          <div class="input-group input-group-lg mb-4">
-            <input id="openUrl" type="url" class="form-control bg-dark text-white border-secondary"
-                   placeholder="https://example.com" value="https://">
-            <button id="btnOpenAudit" class="btn btn-primary px-5 fw-bold">Run Audit</button>
-          </div>
-
-          <!-- Progress Bar -->
-          <div id="crawlProgressContainer" style="display:none;" class="mb-5">
-            <div class="d-flex justify-content-between small mb-2">
-              <span id="statusLabel" class="text-primary fw-bold">Initializing…</span>
-              <span id="progressLabel" class="text-secondary">0%</span>
-            </div>
-            <div class="progress" style="height:8px; background:rgba(255,255,255,0.06); border-radius:4px;">
-              <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
-                   style="width:0%"></div>
-            </div>
-          </div>
-
-          <!-- RESULTS – Graphical Focus -->
-          <div id="openResults" class="d-none animate-fade-in">
-            <!-- Big Score + Grade Card -->
-            <div class="row g-4 mb-5">
-              <div class="col-md-4">
-                <div class="p-4 text-center bg-gradient-dark rounded-4 border border-primary border-opacity-30 shadow-lg">
-                  <small class="text-secondary fw-bold text-uppercase d-block mb-2">Overall Score</small>
-                  <div id="ovScore" class="display-2 fw-black my-2 text-white">—</div>
-                  <div id="grade" class="grade-badge text-primary">—</div>
-                </div>
-              </div>
-              <div class="col-md-8">
-                <div class="chart-wrapper">
-                  <h6 class="text-center text-secondary small mb-3">Score Breakdown</h6>
-                  <canvas id="barChart"></canvas>
-                </div>
-              </div>
-            </div>
-
-            <!-- Radar + Doughnut -->
-            <div class="row g-4 mb-5">
-              <div class="col-md-6">
-                <div class="chart-wrapper">
-                  <h6 class="text-center text-secondary small mb-3">Technical Profile (Radar)</h6>
-                  <canvas id="radarChart"></canvas>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="chart-wrapper">
-                  <h6 class="text-center text-secondary small mb-3">Issue Distribution</h6>
-                  <canvas id="doughnutChart"></canvas>
-                </div>
-              </div>
-            </div>
-
-            <!-- Metric Tiles -->
-            <div class="row g-3 text-center">
-              <div class="col-6 col-sm-3">
-                <div class="metric-tile">
-                  <small class="text-secondary d-block">SEO</small>
-                  <div id="onpageScore" class="h3 fw-bold text-info mt-1">—</div>
-                </div>
-              </div>
-              <div class="col-6 col-sm-3">
-                <div class="metric-tile">
-                  <small class="text-secondary d-block">Speed</small>
-                  <div id="perfScore" class="h3 fw-bold text-success mt-1">—</div>
-                </div>
-              </div>
-              <div class="col-6 col-sm-3">
-                <div class="metric-tile">
-                  <small class="text-secondary d-block">Links</small>
-                  <div id="coverageScore" class="h3 fw-bold text-warning mt-1">—</div>
-                </div>
-              </div>
-              <div class="col-6 col-sm-3">
-                <div class="metric-tile">
-                  <small class="text-secondary d-block">AI Trust</small>
-                  <div id="confidence" class="h3 fw-bold text-danger mt-1">—</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RIGHT – Auth Sidebar (Registration + Magic Link) -->
-    <div class="col-lg-4">
-      <!-- Registration Card -->
-      <div class="card saas-card mb-4">
-        <div class="card-body p-4 auth-form">
-          <h5 class="fw-bold mb-3">Create Account</h5>
-          <p class="text-secondary small mb-4">Sign up to save audits and download reports.</p>
-          <form id="registerForm" action="/register" method="POST">
-            <div class="mb-3">
-              <input type="email" name="email" class="form-control" placeholder="your@email.com" required>
-            </div>
-            <div class="mb-3">
-              <input type="password" name="password" class="form-control" placeholder="Strong password" required minlength="8">
-            </div>
-            <button type="submit" class="btn btn-success w-100 fw-bold">Register</button>
-          </form>
-          <p class="text-center text-secondary small mt-3 mb-0">
-            Already have an account? Use Magic Link below.
-          </p>
-        </div>
-      </div>
-
-      <!-- Magic Link Login Card -->
-      <div class="card saas-card">
-        <div class="card-body p-4 auth-form">
-          <h5 class="fw-bold mb-3">Magic Link Login</h5>
-          <p class="text-secondary small mb-4">No password needed — we'll email you a secure link.</p>
-          <form id="magicLinkForm" action="/request-magic-link" method="POST">
-            <div class="mb-4">
-              <input type="email" name="email" class="form-control" placeholder="email@company.com" required>
-            </div>
-            <button type="submit" class="btn btn-primary w-100 fw-bold">Send Magic Link</button>
-          </form>
-          <div id="magicFeedback" class="mt-3 text-center small d-none"></div>
-        </div>
-      </div>
-
-      <!-- Optional: Pro Subscription Teaser -->
-      <div class="card saas-card mt-4">
-        <div class="card-body p-4 text-center">
-          <h6 class="fw-bold text-uppercase small text-secondary mb-3">Go Pro</h6>
-          <p class="text-secondary small mb-3">
-            <i class="bi bi-patch-check text-primary"></i> PDF Reports<br>
-            <i class="bi bi-patch-check text-primary"></i> History & Monitoring<br>
-            <i class="bi bi-patch-check text-primary"></i> Priority Support
-          </p>
-          <button class="btn btn-outline-primary w-100">Upgrade Now</button>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</div>
-
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 // ──────────────────────────────────────────────
-// Existing audit logic (unchanged)
+// Audit logic with better debugging
 // ──────────────────────────────────────────────
 
 let charts = {};
 let currentEventSource = null;
 
 function updateProgress(pct, msg) {
-  document.getElementById('crawlProgressBar').style.width = pct + '%';
-  document.getElementById('progressLabel').textContent = pct + '%';
-  document.getElementById('statusLabel').textContent = msg;
-  document.getElementById('overlayStatus').textContent = msg;
+  console.log(`Progress: ${pct}% - ${msg}`);
+  const bar = document.getElementById('crawlProgressBar');
+  const label = document.getElementById('progressLabel');
+  const status = document.getElementById('statusLabel');
+  const overlay = document.getElementById('overlayStatus');
+
+  if (bar) bar.style.width = pct + '%';
+  if (label) label.textContent = pct + '%';
+  if (status) status.textContent = msg;
+  if (overlay) overlay.textContent = msg;
 }
 
 function showError(msg = "Audit failed – please try again") {
+  console.error("Audit error:", msg);
   document.getElementById('loadingOverlay').style.display = 'none';
   document.getElementById('crawlProgressContainer').style.display = 'none';
   document.getElementById('btnOpenAudit').disabled = false;
+
   const results = document.getElementById('openResults');
-  results.innerHTML = `<div class="alert alert-danger text-center p-5 rounded-4">
-    <h4 class="mb-3">Something went wrong</h4>
-    <p>${msg}</p>
-    <button class="btn btn-outline-light mt-3 px-4" onclick="location.reload()">Retry</button>
-  </div>`;
+  results.innerHTML = `
+    <div class="alert alert-danger text-center p-5 rounded-4">
+      <h4 class="mb-3">Audit Error</h4>
+      <p>${msg}</p>
+      <button class="btn btn-outline-light mt-3 px-4" onclick="location.reload()">Retry</button>
+    </div>`;
   results.classList.remove('d-none');
 }
 
 function initCharts(data) {
+  console.log("Initializing charts with data:", data.chart_data);
   const cd = data.chart_data || {};
-  if (!cd.bar || !cd.radar || !cd.doughnut) return;
+  if (!cd.bar || !cd.radar || !cd.doughnut) {
+    console.warn("Missing chart data");
+    return;
+  }
+
   Object.values(charts).forEach(c => c?.destroy());
 
+  // Bar
   charts.bar = new Chart(document.getElementById('barChart'), {
     type: 'bar',
     data: {
@@ -288,6 +70,7 @@ function initCharts(data) {
     }
   });
 
+  // Radar
   charts.radar = new Chart(document.getElementById('radarChart'), {
     type: 'radar',
     data: {
@@ -317,6 +100,7 @@ function initCharts(data) {
     }
   });
 
+  // Doughnut
   charts.doughnut = new Chart(document.getElementById('doughnutChart'), {
     type: 'doughnut',
     data: {
@@ -343,30 +127,58 @@ function initCharts(data) {
 }
 
 function runAudit(url) {
+  console.log("Starting audit for:", url);
+
   if (!url || !/^https?:\/\//i.test(url)) {
     alert("Please enter a valid URL starting with http:// or https://");
     return;
   }
-  if (currentEventSource) currentEventSource.close();
+
+  if (currentEventSource) {
+    currentEventSource.close();
+    currentEventSource = null;
+  }
+
   document.getElementById('loadingOverlay').style.display = 'flex';
   document.getElementById('crawlProgressContainer').style.display = 'block';
   document.getElementById('openResults').classList.add('d-none');
   document.getElementById('btnOpenAudit').disabled = true;
+
   const evtSource = new EventSource(`/api/open-audit-progress?url=${encodeURIComponent(url)}`);
   currentEventSource = evtSource;
+
+  let receivedAnyMessage = false;
+
+  evtSource.onopen = () => {
+    console.log("SSE connection opened");
+  };
+
   evtSource.onmessage = (e) => {
+    receivedAnyMessage = true;
+    console.log("SSE message received:", e.data);
+
     let data;
-    try { data = JSON.parse(e.data); } catch { return; }
+    try {
+      data = JSON.parse(e.data);
+    } catch (err) {
+      console.error("Invalid JSON from SSE:", err, e.data);
+      return;
+    }
+
     if (!data.finished) {
       updateProgress(data.crawl_progress || 0, data.status || "Analyzing…");
       return;
     }
+
     evtSource.close();
     currentEventSource = null;
+
     if (data.error) {
       showError(data.error);
       return;
     }
+
+    // Fill results
     document.getElementById('ovScore').textContent = data.overall_score ?? '—';
     document.getElementById('grade').textContent = data.grade || '—';
     const bd = data.breakdown || {};
@@ -374,64 +186,37 @@ function runAudit(url) {
     document.getElementById('perfScore').textContent = bd.performance ?? '—';
     document.getElementById('coverageScore').textContent = bd.coverage ?? '—';
     document.getElementById('confidence').textContent = bd.confidence ? bd.confidence + '%' : '—';
+
     initCharts(data);
+
     document.getElementById('loadingOverlay').style.display = 'none';
     document.getElementById('crawlProgressContainer').style.display = 'none';
     document.getElementById('btnOpenAudit').disabled = false;
     document.getElementById('openResults').classList.remove('d-none');
   };
-  evtSource.onerror = () => {
+
+  evtSource.onerror = (err) => {
+    console.error("SSE error:", err);
     evtSource.close();
     currentEventSource = null;
-    showError("Connection lost. The server might be busy.");
+
+    if (!receivedAnyMessage) {
+      showError("Could not connect to audit service. Server may be down or blocked by proxy.");
+    } else {
+      showError("Connection lost during audit.");
+    }
   };
 }
 
-// Audit button & Enter key
-document.getElementById('btnOpenAudit').addEventListener('click', () => {
-  runAudit(document.getElementById('openUrl').value.trim());
-});
-document.getElementById('openUrl').addEventListener('keypress', e => {
-  if (e.key === 'Enter') document.getElementById('btnOpenAudit').click();
+// Button & Enter key listeners
+document.getElementById('btnOpenAudit')?.addEventListener('click', () => {
+  const url = document.getElementById('openUrl')?.value?.trim();
+  if (url) runAudit(url);
 });
 
-// ──────────────────────────────────────────────
-// Basic client-side feedback for auth forms
-// ──────────────────────────────────────────────
-
-document.getElementById('registerForm')?.addEventListener('submit', function(e) {
-  // Optional: can add client-side validation here later
-  // For now just let the form POST normally
-});
-
-document.getElementById('magicLinkForm')?.addEventListener('submit', async function(e) {
-  e.preventDefault();
-  const form = e.target;
-  const feedback = document.getElementById('magicFeedback');
-  feedback.classList.remove('d-none', 'text-success', 'text-danger');
-  feedback.textContent = "Sending magic link...";
-
-  try {
-    const response = await fetch(form.action, {
-      method: 'POST',
-      body: new FormData(form),
-      headers: { 'Accept': 'application/json' }
-    });
-
-    const result = await response.json();
-
-    if (response.ok && result.success) {
-      feedback.classList.add('text-success');
-      feedback.textContent = "Magic link sent! Check your inbox (and spam).";
-    } else {
-      feedback.classList.add('text-danger');
-      feedback.textContent = result.detail || "Something went wrong. Try again.";
-    }
-  } catch (err) {
-    feedback.classList.add('text-danger');
-    feedback.textContent = "Network error — please try again later.";
+document.getElementById('openUrl')?.addEventListener('keypress', e => {
+  if (e.key === 'Enter') {
+    document.getElementById('btnOpenAudit')?.click();
   }
 });
 </script>
-
-{% endblock %}
