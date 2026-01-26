@@ -3,6 +3,7 @@
 import logging
 import time
 from typing import Any, Dict
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -10,12 +11,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
-from app.audit.runner import WebsiteAuditRunner  # Updated runner class
+from app.audit.runner import WebsiteAuditRunner  # updated runner class
 
-
-# -----------------------------
+# ---------------------------------------------------------
 # Logging Setup
-# -----------------------------
+# ---------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
@@ -24,9 +24,9 @@ logging.basicConfig(
 logger = logging.getLogger("audit_engine")
 
 
-# -----------------------------
-# FastAPI App with lifespan
-# -----------------------------
+# ---------------------------------------------------------
+# FastAPI App
+# ---------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 FF Tech International Audit Engine initializing...")
@@ -46,9 +46,9 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
-# -----------------------------
+# ---------------------------------------------------------
 # URL Normalizer
-# -----------------------------
+# ---------------------------------------------------------
 def normalize_url(url: str) -> str:
     if not url:
         raise ValueError("URL cannot be empty.")
@@ -57,7 +57,6 @@ def normalize_url(url: str) -> str:
     if "://" not in url:
         url = "https://" + url
 
-    from urllib.parse import urlparse
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
         raise ValueError("Invalid URL format.")
@@ -65,19 +64,20 @@ def normalize_url(url: str) -> str:
     return parsed.geturl()
 
 
-# -----------------------------
+# ---------------------------------------------------------
 # Home Page
-# -----------------------------
+# ---------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-# -----------------------------
-# WebSocket Real-Time Audit
-# -----------------------------
+# ---------------------------------------------------------
+# WebSocket Real‑Time Audit Endpoint
+# ---------------------------------------------------------
 @app.websocket("/ws/audit-progress")
 async def websocket_audit(websocket: WebSocket):
+
     await websocket.accept()
     url = websocket.query_params.get("url")
 
@@ -94,6 +94,7 @@ async def websocket_audit(websocket: WebSocket):
         return
 
     async def stream_progress(update: Dict[str, Any]):
+        """Send progress events to WebSocket safely."""
         try:
             await websocket.send_json(update)
         except RuntimeError:
@@ -101,10 +102,13 @@ async def websocket_audit(websocket: WebSocket):
             raise WebSocketDisconnect()
 
     try:
+        # Send initial progress
         await stream_progress({"status": "Starting audit…", "crawl_progress": 5})
 
-        # Use updated async runner
+        # ✅ Use max_pages parameter for quicker audits
         runner = WebsiteAuditRunner(normalized, psi_api_key=None, max_pages=10)
+
+        # Run the audit asynchronously, streaming progress back
         audit_output = await runner.run_audit(progress_callback=stream_progress)
 
         # Send final result
@@ -129,9 +133,9 @@ async def websocket_audit(websocket: WebSocket):
         await websocket.close()
 
 
-# -----------------------------
+# ---------------------------------------------------------
 # Health Check
-# -----------------------------
+# ---------------------------------------------------------
 @app.get("/health")
 @app.get("/healthz")
 async def health():
