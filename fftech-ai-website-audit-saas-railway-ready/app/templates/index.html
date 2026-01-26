@@ -44,7 +44,6 @@
       backdrop-filter: blur(20px);
       border-radius: 1.5rem;
       box-shadow: 0 15px 40px rgba(0,0,0,0.5);
-      overflow: hidden;
       transition: transform 0.3s, box-shadow 0.3s;
     }
     .card-glass:hover {
@@ -119,7 +118,7 @@
   <div id="loadingOverlay">
     <div class="spinner-border text-warning mb-5" style="width:5rem;height:5rem;"></div>
     <h4 class="fw-bold mb-3" style="color: var(--gold);">Running Professional Audit</h4>
-    <p id="statusLabel" class="lead mb-3">Analyzing website structure...</p>
+    <p id="statusLabel" class="lead mb-3">Analyzing website...</p>
     <small class="text-muted">Estimated time: 45–90 seconds</small>
   </div>
 
@@ -142,7 +141,7 @@
               <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
             </div>
             <div class="d-flex justify-content-between small text-muted">
-              <span id="statusLabel">Initializing...</span>
+              <span id="statusLabel">Waiting to start...</span>
               <span id="progressLabel">0%</span>
             </div>
           </div>
@@ -272,20 +271,24 @@
 // ──────────────────────────────────────────────
 // Audit logic – connected to main.py WebSocket
 // ──────────────────────────────────────────────
+
 console.log("Audit script loaded");
+
 let currentWs = null;
 let barChart, radarChart, doughnutChart;
 
 function updateProgress(pct, msg) {
+  console.log(`Progress: ${pct}% - ${msg}`);
   const bar = document.getElementById('crawlProgressBar');
   const label = document.getElementById('progressLabel');
   const status = document.getElementById('statusLabel');
-  if(bar) bar.style.width = pct + '%';
-  if(label) label.textContent = pct + '%';
-  if(status) status.textContent = msg;
+  if (bar) bar.style.width = pct + '%';
+  if (label) label.textContent = pct + '%';
+  if (status) status.textContent = msg;
 }
 
-function showError(msg="Audit failed") {
+function showError(msg = "Audit failed") {
+  console.error("Audit error:", msg);
   document.getElementById('loadingOverlay').style.display = 'none';
   document.getElementById('crawlProgressContainer').style.display = 'none';
   document.getElementById('btnOpenAudit').disabled = false;
@@ -299,12 +302,19 @@ function showError(msg="Audit failed") {
 }
 
 function initCharts(data) {
-  const ctxBar = document.getElementById('barChart').getContext('2d');
-  const ctxRadar = document.getElementById('radarChart').getContext('2d');
-  const ctxDough = document.getElementById('doughnutChart').getContext('2d');
-  if(barChart) barChart.destroy();
-  if(radarChart) radarChart.destroy();
-  if(doughnutChart) doughnutChart.destroy();
+  console.log("Initializing charts with data:", data);
+  const ctxBar = document.getElementById('barChart')?.getContext('2d');
+  const ctxRadar = document.getElementById('radarChart')?.getContext('2d');
+  const ctxDough = document.getElementById('doughnutChart')?.getContext('2d');
+
+  if (!ctxBar || !ctxRadar || !ctxDough) {
+    console.error("One or more chart canvases not found");
+    return;
+  }
+
+  if (barChart) barChart.destroy();
+  if (radarChart) radarChart.destroy();
+  if (doughnutChart) doughnutChart.destroy();
 
   barChart = new Chart(ctxBar, {
     type: 'bar',
@@ -316,7 +326,7 @@ function initCharts(data) {
         backgroundColor: data.chart_data?.bar?.colors || ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
       }]
     },
-    options: { responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,max:100}} }
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }
   });
 
   radarChart = new Chart(ctxRadar, {
@@ -324,70 +334,103 @@ function initCharts(data) {
     data: {
       labels: data.chart_data?.radar?.labels || ['SEO', 'Performance', 'Coverage', 'Confidence'],
       datasets: [{ 
-        label:'Metrics', 
+        label: 'Metrics', 
         data: data.chart_data?.radar?.data || [0,0,0,0], 
-        backgroundColor:'rgba(255,215,0,0.25)', 
-        borderColor:var(--gold), 
-        borderWidth:2 
+        backgroundColor: 'rgba(255,215,0,0.25)', 
+        borderColor: var(--gold), 
+        borderWidth: 2 
       }]
     },
-    options: { responsive:true, scales:{r:{min:0,max:100,beginAtZero:true}} }
+    options: { responsive: true, scales: { r: { min: 0, max: 100, beginAtZero: true } } }
   });
 
   doughnutChart = new Chart(ctxDough, {
-    type:'doughnut',
-    data:{
+    type: 'doughnut',
+    data: {
       labels: data.chart_data?.doughnut?.labels || ['Good', 'Warning', 'Critical'],
-      datasets:[{ 
+      datasets: [{ 
         data: data.chart_data?.doughnut?.data || [0,0,0], 
         backgroundColor: ['#10b981', '#f59e0b', '#ef4444'] 
       }]
     },
-    options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
+    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
   });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  console.log("DOM fully loaded - attaching button listener");
+
   const auditButton = document.getElementById('btnOpenAudit');
   const urlInput = document.getElementById('openUrl');
 
-  if (auditButton && urlInput) {
-    auditButton.addEventListener('click', () => {
-      const url = urlInput.value.trim();
-      if(!url || !url.startsWith('http')) { 
-        alert("Enter a valid URL starting with http:// or https://"); 
-        return; 
-      }
-      runAudit(url);
-    });
+  if (!auditButton) {
+    console.error("CRITICAL: Button with id 'btnOpenAudit' NOT FOUND");
+    alert("Error: Analyze button not found. Page may have loaded incorrectly.");
+    return;
+  }
 
+  if (!urlInput) {
+    console.error("CRITICAL: Input with id 'openUrl' NOT FOUND");
+  }
+
+  console.log("Button found - listener attached");
+
+  auditButton.addEventListener('click', () => {
+    console.log("ANALYZE button clicked");
+    const url = urlInput?.value?.trim();
+    if (!url || !url.startsWith('http')) {
+      alert("Please enter a valid URL starting with http:// or https://");
+      return;
+    }
+    runAudit(url);
+  });
+
+  if (urlInput) {
     urlInput.addEventListener('keypress', e => {
-      if(e.key==='Enter') auditButton.click();
+      if (e.key === 'Enter') {
+        console.log("Enter key pressed in URL input");
+        auditButton.click();
+      }
     });
   }
 });
 
 function runAudit(url) {
-  if(currentWs) currentWs.close();
-  document.getElementById('loadingOverlay').style.display='flex';
-  document.getElementById('crawlProgressContainer').style.display='block';
+  console.log("Starting audit for:", url);
+
+  if (currentWs) {
+    currentWs.close();
+    currentWs = null;
+  }
+
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  document.getElementById('crawlProgressContainer').style.display = 'block';
   document.getElementById('openResults').classList.add('d-none');
   document.getElementById('btnOpenAudit').disabled = true;
 
-  const protocol = location.protocol==='https:'?'wss:':'ws:';
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
+  console.log("Connecting to WebSocket:", wsUrl);
+
   const ws = new WebSocket(wsUrl);
   currentWs = ws;
+
   let receivedAny = false;
 
   ws.onopen = () => {
-    console.log("WebSocket connected to main.py");
+    console.log("WebSocket connected successfully");
   };
 
   ws.onmessage = (event) => {
     receivedAny = true;
+    console.log("Received from WS:", event.data);
     let data;
-    try { data = JSON.parse(event.data); } catch (e) { console.error("Invalid JSON:", e); return; }
+    try {
+      data = JSON.parse(event.data);
+    } catch (e) {
+      console.error("Failed to parse WS message:", e);
+      return;
+    }
 
     if (!data.finished) {
       updateProgress(data.crawl_progress || 0, data.status || "Analyzing...");
@@ -401,7 +444,7 @@ function runAudit(url) {
       return;
     }
 
-    // Fill all visible attributes
+    // Fill results
     document.getElementById('ovScore').textContent = data.overall_score ?? '—';
     document.getElementById('grade').textContent = data.grade ?? '—';
     const bd = data.breakdown || {};
@@ -410,27 +453,29 @@ function runAudit(url) {
     document.getElementById('coverageScore').textContent = bd.coverage ?? '—';
     document.getElementById('confidence').textContent = bd.confidence ?? '—';
 
-    // Link metrics
     document.getElementById('internalLinks').textContent = data.metrics?.internal_links ?? '—';
     document.getElementById('externalLinks').textContent = data.metrics?.external_links ?? '—';
     document.getElementById('brokenLinks').textContent = data.metrics?.broken_internal_links ?? '0';
 
     initCharts(data);
 
-    document.getElementById('loadingOverlay').style.display='none';
-    document.getElementById('crawlProgressContainer').style.display='none';
-    document.getElementById('btnOpenAudit').disabled=false;
+    document.getElementById('loadingOverlay').style.display = 'none';
+    document.getElementById('crawlProgressContainer').style.display = 'none';
+    document.getElementById('btnOpenAudit').disabled = false;
     document.getElementById('openResults').classList.remove('d-none');
+
+    console.log("Audit results displayed");
   };
 
-  ws.onerror = () => {
+  ws.onerror = (err) => {
+    console.error("WebSocket error:", err);
     ws.close();
     showError(receivedAny ? "Connection lost during audit" : "Cannot connect to audit service");
   };
 
   ws.onclose = () => {
-    currentWs = null;
     console.log("WebSocket closed");
+    currentWs = null;
   };
 }
 </script>
