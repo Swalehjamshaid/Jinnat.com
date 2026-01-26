@@ -1,119 +1,88 @@
-import requests
-import time
+# app/audit/crawler.py
+import requests, time
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from collections import deque
 
-HEADERS = {
-    "User-Agent": "FFTechAuditBot/5.0 (+https://fftech.ai/audit)"
-}
+HEADERS = {"User-Agent": "FFTechAuditBot/5.0"}
 
-ALLOWED_CONTENT_TYPES = ("text/html",)
+class CrawlResult:
+    def __init__(self):
+        self.pages = []
+        self.visited = set()
+        self.unique_internal = 0
+        self.unique_external = 0
+        self.broken_internal = []
+        self.broken_external = []
+        self.crawled_count = 0
+        self.total_crawl_time = 0
 
-
-def is_valid_html(response):
-    ctype = response.headers.get("Content-Type", "")
-    return any(ct in ctype for ct in ALLOWED_CONTENT_TYPES)
-
-
-def normalize_url(base, link):
-    link = link.split("#")[0].strip()
-    if not link:
-        return None
-    return urljoin(base, link)
-
-
-def crawl_site(start_url: str, max_pages=40, timeout=8):
+def crawl_site(start_url: str, max_pages=40, delay=0.15, timeout=8):
     """
-    Fast, safe, production-grade crawler
-    Completes within 30–120 seconds
+    Crawl a website and collect pages, internal/external links, broken links.
     """
-
-    parsed = urlparse(start_url)
-    domain = parsed.netloc
-
-    visited = set()
-    pages = []
+    domain = urlparse(start_url).netloc
     queue = deque([start_url])
-
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
+    result = CrawlResult()
     start_time = time.time()
-    MAX_RUNTIME = 90  # hard stop safety
 
-    while queue and len(visited) < max_pages:
-        if time.time() - start_time > MAX_RUNTIME:
-            break
-
+    while queue and len(result.visited) < max_pages and time.time() - start_time < 90:
         url = queue.popleft()
-        if url in visited:
+        if url in result.visited:
             continue
 
         try:
-            response = session.get(url, timeout=timeout, allow_redirects=True)
-            if response.status_code != 200:
+            r = requests.get(url, headers=HEADERS, timeout=timeout)
+            if r.status_code != 200:
                 continue
-            if not is_valid_html(response):
-                continue
-        except requests.RequestException:
+            soup = BeautifulSoup(r.text, "html.parser")
+        except Exception:
             continue
 
-        visited.add(url)
+        result.visited.add(url)
+        result.pages.append({"url": url, "html": r.text, "soup": soup})
+        result.crawled_count += 1
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        internal_links = set()
+        external_links = set()
 
-        page_data = {
-            "url": url,
-            "title": soup.title.string.strip() if soup.title else "",
-            "meta_description": "",
-            "h1": [],
-            "images": [],
-            "links": [],
-            "html": response.text,
-            "soup": soup,
-        }
-
-        # Meta description
-        meta_desc = soup.find("meta", attrs={"name": "description"})
-        if meta_desc and meta_desc.get("content"):
-            page_data["meta_description"] = meta_desc["content"].strip()
-
-        # H1 tags
-        page_data["h1"] = [h.get_text(strip=True) for h in soup.find_all("h1")]
-
-        # Images (for accessibility audit)
-        for img in soup.find_all("img"):
-            page_data["images"].append({
-                "src": img.get("src"),
-                "alt": img.get("alt", "").strip()
-            })
-
-        # Links discovery
         for a in soup.select("a[href]"):
-            link = normalize_url(url, a["href"])
-            if not link:
+            link = urljoin(url, a["href"].split("#")[0])
+            parsed_link = urlparse(link)
+            if not parsed_link.scheme.startswith("http"):
                 continue
 
-            parsed_link = urlparse(link)
+            if parsed_link.netloc == domain:
+                internal_links.add(link)
+            else:
+                external_links.add(link)
 
-            page_data["links"].append({
-                "url": link,
-                "internal": parsed_link.netloc == domain
-            })
+        result.unique_internal = len(internal_links)
+        result.unique_external = len(external_links)
 
-            if parsed_link.netloc == domain and link not in visited:
+        # Check for broken links
+        for link in internal_links:
+            try:
+                if requests.head(link, headers=HEADERS, timeout=timeout).status_code >= 400:
+                    result.broken_internal.append(link)
+            except:
+                result.broken_internal.append(link)
+
+        for link in external_links:
+            try:
+                if requests.head(link, headers=HEADERS, timeout=timeout).status_code >= 400:
+                    result.broken_external.append(link)
+            except:
+                result.broken_external.append(link)
+
+        for link in internal_links:
+            if link not in result.visited:
                 queue.append(link)
 
-        pages.append(page_data)
+        time.sleep(delay)
 
-    return {
-        "start_url": start_url,
-        "domain": domain,
-        "pages_crawled": len(pages),
-        "crawl_time_seconds": round(time.time() - start_time, 2),
-        "pages": pages,
-    }
+    result.total_crawl_time = round(time.time() - start_time, 2)
+    return result
 
-
-__all__ = ["crawl_site"]
+# Alias for runner.py compatibility
+crawl = crawl_site
