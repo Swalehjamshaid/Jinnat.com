@@ -2,7 +2,7 @@
 import logging
 import time
 from typing import Dict, List
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse
 import certifi
 import requests
 from bs4 import BeautifulSoup
@@ -21,26 +21,21 @@ def _clamp(v: float, lo: float = 0, hi: float = 100) -> int:
 
 def run_audit(url: str) -> Dict:
     """
-    Enhanced Single-URL Audit
-    Returns a dict consumed by index.html JS (tiles + charts)
+    World-class Single-URL Audit
+    Returns dict compatible with index.html (metrics + charts)
     """
-
     logger.info("RUNNING AUDIT FOR URL: %s", url)
     start_time = time.time()
-    headers = {
-        'User-Agent': 'FFTech-AuditBot/3.0 (+https://fftech.audit)',
-        'Accept': 'text/html,application/xhtml+xml',
-    }
+    headers = {'User-Agent': 'FFTech-AuditBot/4.0 (+https://fftech.audit)'}
     session = requests.Session()
     session.headers.update(headers)
 
     ssl_verified = True
     try:
-        response = session.get(url, timeout=25, verify=certifi.where(), allow_redirects=True)
+        response = session.get(url, timeout=20, verify=certifi.where(), allow_redirects=True)
     except requests.exceptions.SSLError:
-        logger.warning("SSL error on %s – falling back to unverified.", url)
         ssl_verified = False
-        response = session.get(url, timeout=25, verify=False, allow_redirects=True)
+        response = session.get(url, timeout=20, verify=False, allow_redirects=True)
     except requests.RequestException as e:
         raise RuntimeError(f"Failed to fetch URL {url}: {e}")
 
@@ -50,50 +45,51 @@ def run_audit(url: str) -> Dict:
     html = response.text
     soup = BeautifulSoup(html, "html.parser")
 
-    # ---------- SEO Scoring ----------
+    # ---------- SEO Metrics ----------
     title = soup.title.string.strip() if soup.title and soup.title.string else ""
     meta_desc_tag = soup.find("meta", attrs={"name": "description"})
     meta_desc = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else ""
     h1_tags = soup.find_all("h1")
     h1_count = len(h1_tags)
+
+    img_tags = soup.find_all("img")
+    missing_alt = sum(1 for img in img_tags if not img.get("alt"))
+
     seo_issues: List[str] = []
     seo_score = 0.0
 
-    # Title Scoring
+    # Title
     if title:
         seo_score += 25
-        title_bonus = max(0.0, 25 - abs(len(title) - 55))
-        seo_score += title_bonus
+        seo_score += max(0, 25 - abs(len(title) - 55))
         if len(title) < 25:
-            seo_issues.append("Title very short (<25 chars)")
+            seo_issues.append("Title very short")
         elif len(title) > 65:
-            seo_issues.append("Title long (>65 chars)")
+            seo_issues.append("Title too long")
     else:
-        seo_issues.append("Missing <title> tag")
+        seo_issues.append("Missing <title>")
 
-    # Meta Description
+    # Meta
     if meta_desc:
-        seo_score += min(25.0, len(meta_desc) / 6.0)
+        seo_score += min(25, len(meta_desc) / 6)
         if len(meta_desc) < 80:
-            seo_issues.append("Meta description short (<80 chars)")
+            seo_issues.append("Meta description too short")
         elif len(meta_desc) > 180:
-            seo_issues.append("Meta description long (>180 chars)")
+            seo_issues.append("Meta description too long")
     else:
         seo_issues.append("Missing meta description")
 
-    # H1 Tags
+    # H1
     if h1_count == 1:
         seo_score += 15
     elif h1_count == 0:
-        seo_issues.append("No H1 tag found")
+        seo_issues.append("No H1 tag")
     else:
-        seo_issues.append(f"Multiple H1 tags ({h1_count}) found")
+        seo_issues.append(f"Multiple H1 tags ({h1_count})")
 
-    # Richer SEO metrics
-    img_tags = soup.find_all("img")
-    missing_alt = sum(1 for img in img_tags if not img.get("alt"))
+    # Images
     if missing_alt:
-        seo_issues.append(f"{missing_alt} images missing alt attributes")
+        seo_issues.append(f"{missing_alt} images missing alt attribute")
 
     seo_score = _clamp(seo_score)
 
@@ -105,17 +101,17 @@ def run_audit(url: str) -> Dict:
     perf_score -= min(40, page_size_kb / 30)
     perf_score = _clamp(perf_score)
 
-    if load_time > 3.0:
-        perf_issues.append(f"Slow page load ({load_time}s > 3s)")
+    if load_time > 3:
+        perf_issues.append(f"Slow load ({load_time}s)")
     if page_size_kb > 2000:
-        perf_issues.append(f"Large page size ({page_size_kb} KB > 2000 KB)")
+        perf_issues.append(f"Page too large ({page_size_kb} KB)")
 
-    # Sub-metrics for radar
+    # Radar sub-metrics
     speed_sub = _clamp(100 - min(100, load_time * 25))
     weight_sub = _clamp(100 - min(100, (page_size_kb / 2000) * 100))
 
-    # ---------- Crawl & Coverage ----------
-    crawl_res = crawl(final_url, max_pages=50, delay=0.25)  # deeper crawl
+    # ---------- Crawl & Link Coverage ----------
+    crawl_res = crawl(final_url, max_pages=50, delay=0.2)
     internal_total = crawl_res.unique_internal
     external_total = crawl_res.unique_external
     broken_count = len(crawl_res.broken_internal)
@@ -123,8 +119,8 @@ def run_audit(url: str) -> Dict:
     coverage_base = min(60, internal_total * 2) + min(30, external_total)
     broken_penalty = min(20, broken_count * 2)
     coverage_score = _clamp(coverage_base - broken_penalty)
-    coverage_issues: List[str] = []
 
+    coverage_issues: List[str] = []
     if internal_total < 5:
         coverage_issues.append(f"Low internal links ({internal_total})")
     if external_total < 2:
@@ -135,24 +131,15 @@ def run_audit(url: str) -> Dict:
     internal_linking_sub = _clamp(min(100, internal_total * 5))
     external_linking_sub = _clamp(min(100, external_total * 3))
 
-    # ---------- Overall Score & Grade ----------
-    overall_score = _clamp(
-        seo_score * 0.45 +
-        perf_score * 0.35 +
-        coverage_score * 0.20
-    )
-    grade = (
-        "A" if overall_score >= 85 else
-        "B" if overall_score >= 70 else
-        "C" if overall_score >= 55 else
-        "D"
-    )
+    # ---------- Overall Score ----------
+    overall_score = _clamp(seo_score * 0.45 + perf_score * 0.35 + coverage_score * 0.2)
+    grade = "A" if overall_score >= 85 else "B" if overall_score >= 70 else "C" if overall_score >= 55 else "D"
     confidence_score = overall_score
 
-    # ---------- Chart Data (Enhanced) ----------
+    # ---------- Chart Data ----------
     chart_data = {
         "bar": {
-            "labels": ["SEO", "Speed", "Links", "Trust", "Images", "Meta"],
+            "labels": ["SEO", "Speed", "Links", "Confidence", "Images", "Meta"],
             "data": [
                 seo_score, perf_score, coverage_score, confidence_score,
                 _clamp(100 - missing_alt), _clamp(len(meta_desc))
@@ -162,7 +149,7 @@ def run_audit(url: str) -> Dict:
         "radar": {
             "labels": [
                 "Title Quality", "Meta Description", "H1 Structure",
-                "Speed", "Page Weight", "Internal Linking", "External Linking",
+                "Speed", "Page Weight", "Internal Links", "External Links",
                 "Alt Attributes"
             ],
             "data": [
@@ -174,10 +161,10 @@ def run_audit(url: str) -> Dict:
                 internal_linking_sub,
                 external_linking_sub,
                 _clamp(100 - missing_alt)
-            ],
+            ]
         },
         "doughnut": {
-            "labels": ["SEO issues", "Performance issues", "Links issues", "Images"],
+            "labels": ["SEO issues", "Performance issues", "Links issues", "Images issues"],
             "data": [len(seo_issues), len(perf_issues), len(coverage_issues), missing_alt],
             "colors": ["#6f42c1", "#fd7e14", "#0dcaf0", "#6610f2"]
         },
@@ -185,7 +172,7 @@ def run_audit(url: str) -> Dict:
             "status_counts": dict(crawl_res.status_counts),
             "internal_total": internal_total,
             "external_total": external_total,
-            "broken_internal": broken_count,
+            "broken_internal": broken_count
         }
     }
 
@@ -202,7 +189,7 @@ def run_audit(url: str) -> Dict:
             "onpage": seo_score,
             "performance": perf_score,
             "coverage": coverage_score,
-            "confidence": confidence_score,
+            "confidence": confidence_score
         },
         "metrics": {
             "title_length": len(title),
@@ -220,7 +207,7 @@ def run_audit(url: str) -> Dict:
         "issues": {
             "seo": seo_issues,
             "performance": perf_issues,
-            "coverage": coverage_issues,
+            "coverage": coverage_issues
         },
         "issues_count": {
             "seo": len(seo_issues),
@@ -229,5 +216,5 @@ def run_audit(url: str) -> Dict:
             "images": missing_alt
         },
         "chart_data": chart_data,
-        "status": "Audit completed successfully",
+        "status": "Audit completed successfully"
     }
