@@ -1,3 +1,263 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<style>
+  :root {
+    --glass-bg: rgba(20, 20, 25, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.09);
+    --accent-blue: #0d6efd;
+    --accent-green: #20c997;
+    --accent-yellow: #ffc107;
+    --accent-red: #dc3545;
+    --text-muted: #a0a0c0;
+  }
+  body {
+    background: radial-gradient(1400px 800px at 10% -5%, rgba(13,110,253,0.18), transparent),
+                radial-gradient(1000px 600px at 95% 5%, rgba(32,201,151,0.14), transparent),
+                #0a0a0a;
+    background-attachment: fixed;
+    color: #f0f0f5;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  .saas-card {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(20px);
+    border-radius: 1.5rem;
+    box-shadow: 0 22px 70px rgba(0,0,0,0.55);
+  }
+  #loadingOverlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(10,10,15,0.92);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 1.5rem;
+    z-index: 10;
+  }
+  .metric-tile {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    text-align: center;
+    transition: all 0.25s ease;
+  }
+  .metric-tile:hover {
+    transform: translateY(-6px);
+    background: rgba(255,255,255,0.08);
+    box-shadow: 0 14px 35px rgba(0,0,0,0.35);
+  }
+  .chart-wrapper {
+    background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 1.25rem;
+    padding: 1.5rem;
+    height: 420px;
+  }
+  .score-ring {
+    position: relative;
+    width: 180px;
+    height: 180px;
+    margin: 0 auto;
+  }
+  .score-ring svg {
+    transform: rotate(-90deg);
+  }
+  .score-ring .circle-bg {
+    fill: none;
+    stroke: rgba(255,255,255,0.1);
+    stroke-width: 12;
+  }
+  .score-ring .circle {
+    fill: none;
+    stroke-linecap: round;
+    stroke-width: 12;
+    transition: stroke-dashoffset 1s ease;
+  }
+  .grade-badge {
+    font-size: 3.5rem;
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  .issue-badge {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 1rem;
+    margin: 0.25rem;
+  }
+  @media (max-width: 992px) {
+    .chart-wrapper { height: 360px; }
+    .grade-badge { font-size: 2.8rem; }
+  }
+</style>
+
+<div class="container py-5">
+  <div class="row g-4">
+
+    <!-- LEFT – MAIN AUDIT AREA -->
+    <div class="col-lg-8">
+      <div class="card saas-card position-relative overflow-hidden">
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay">
+          <div class="spinner-border text-primary mb-4" style="width:4rem;height:4rem;"></div>
+          <h4 class="fw-bold mb-3" id="overlayStatus">Analyzing Website...</h4>
+          <p class="text-white-50" id="overlayHint">Running full audit & generating visuals</p>
+        </div>
+
+        <div class="card-body p-4 p-lg-5">
+          <h2 class="fw-bold mb-4">FFTech <span class="text-primary">Web Auditor</span></h2>
+
+          <!-- URL Input -->
+          <div class="input-group input-group-lg mb-4">
+            <input id="openUrl" type="url" class="form-control bg-dark text-white border-secondary"
+                   placeholder="https://example.com" value="https://">
+            <button id="btnOpenAudit" class="btn btn-primary px-5 fw-bold">Run Audit</button>
+          </div>
+
+          <!-- Progress Bar -->
+          <div id="crawlProgressContainer" style="display:none;" class="mb-5">
+            <div class="d-flex justify-content-between small mb-2">
+              <span id="statusLabel" class="text-primary fw-bold">Initializing…</span>
+              <span id="progressLabel" class="text-secondary">0%</span>
+            </div>
+            <div class="progress rounded-pill" style="height:10px;background:rgba(255,255,255,0.08);">
+              <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-gradient-primary"
+                   style="width:0%"></div>
+            </div>
+          </div>
+
+          <!-- RESULTS – Graphical Focus -->
+          <div id="openResults" class="d-none animate-fade-in">
+
+            <!-- Top Score + Grade -->
+            <div class="row g-4 mb-5 justify-content-center">
+              <div class="col-md-5 col-lg-4">
+                <div class="text-center p-4 bg-gradient-dark rounded-4 border border-primary border-opacity-30 shadow-lg">
+                  <small class="text-secondary fw-bold text-uppercase d-block mb-3">OVERALL SCORE</small>
+                  <div class="score-ring mx-auto mb-3">
+                    <svg viewBox="0 0 200 200">
+                      <circle class="circle-bg" cx="100" cy="100" r="90"></circle>
+                      <circle class="circle" id="scoreCircle" cx="100" cy="100" r="90"
+                              stroke="#0d6efd" stroke-dasharray="565" stroke-dashoffset="565"></circle>
+                    </svg>
+                    <div class="position-absolute top-50 start-50 translate-middle">
+                      <div id="ovScore" class="display-3 fw-bold text-white">—</div>
+                    </div>
+                  </div>
+                  <div id="grade" class="grade-badge text-primary">—</div>
+                </div>
+              </div>
+              <div class="col-md-7 col-lg-8">
+                <div class="chart-wrapper">
+                  <h6 class="text-center text-secondary small mb-3">Score Breakdown</h6>
+                  <canvas id="barChart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Radar + Doughnut -->
+            <div class="row g-4 mb-5">
+              <div class="col-md-6">
+                <div class="chart-wrapper">
+                  <h6 class="text-center text-secondary small mb-3">Technical Radar Profile</h6>
+                  <canvas id="radarChart"></canvas>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="chart-wrapper">
+                  <h6 class="text-center text-secondary small mb-3">Issue Distribution</h6>
+                  <canvas id="doughnutChart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Metric Tiles + Issues -->
+            <div class="row g-3">
+              <div class="col-6 col-sm-3">
+                <div class="metric-tile">
+                  <small class="text-secondary d-block mb-1">SEO</small>
+                  <div id="onpageScore" class="h3 fw-bold text-info">—</div>
+                </div>
+              </div>
+              <div class="col-6 col-sm-3">
+                <div class="metric-tile">
+                  <small class="text-secondary d-block mb-1">Speed</small>
+                  <div id="perfScore" class="h3 fw-bold text-success">—</div>
+                </div>
+              </div>
+              <div class="col-6 col-sm-3">
+                <div class="metric-tile">
+                  <small class="text-secondary d-block mb-1">Links</small>
+                  <div id="coverageScore" class="h3 fw-bold text-warning">—</div>
+                </div>
+              </div>
+              <div class="col-6 col-sm-3">
+                <div class="metric-tile">
+                  <small class="text-secondary d-block mb-1">AI Trust</small>
+                  <div id="confidence" class="h3 fw-bold text-danger">—</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Issues Badges -->
+            <div class="mt-4 text-center">
+              <h6 class="text-secondary small mb-3">Detected Issues</h6>
+              <div id="issuesContainer" class="d-flex flex-wrap justify-content-center gap-2"></div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT – Sidebar -->
+    <div class="col-lg-4">
+      <!-- Registration Card -->
+      <div class="card saas-card mb-4">
+        <div class="card-body p-4">
+          <h5 class="fw-bold mb-3">Create Account</h5>
+          <p class="text-secondary small mb-4">Save audits & download PDF reports</p>
+          <form action="/register" method="POST">
+            <input type="email" name="email" class="form-control bg-dark text-white border-secondary mb-3" placeholder="your@email.com" required>
+            <input type="password" name="password" class="form-control bg-dark text-white border-secondary mb-3" placeholder="Strong password" required minlength="8">
+            <button type="submit" class="btn btn-success w-100 fw-bold">Register</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Magic Link Card -->
+      <div class="card saas-card mb-4">
+        <div class="card-body p-4">
+          <h5 class="fw-bold mb-3">Magic Link Login</h5>
+          <p class="text-secondary small mb-4">No password — instant secure login</p>
+          <form action="/request-magic-link" method="POST">
+            <input type="email" name="email" class="form-control bg-dark text-white border-secondary mb-4" placeholder="email@company.com" required>
+            <button type="submit" class="btn btn-primary w-100 fw-bold">Send Magic Link</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Pro Teaser -->
+      <div class="card saas-card">
+        <div class="card-body p-4 text-center">
+          <h6 class="fw-bold text-uppercase small text-secondary mb-3">Go Pro</h6>
+          <p class="text-secondary small mb-3">
+            <i class="bi bi-patch-check text-primary me-2"></i>PDF Reports<br>
+            <i class="bi bi-patch-check text-primary me-2"></i>History & Monitoring<br>
+            <i class="bi bi-patch-check text-primary me-2"></i>Priority Support
+          </p>
+          <button class="btn btn-outline-primary w-100">Upgrade Now</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
@@ -9,163 +269,84 @@ let charts = {};
 let currentWs = null;
 
 function updateProgress(pct, msg) {
-  console.log(`Progress: ${pct}% - ${msg}`);
-  const bar = document.getElementById('crawlProgressBar');
-  const label = document.getElementById('progressLabel');
-  const status = document.getElementById('statusLabel');
-  const overlay = document.getElementById('overlayStatus');
-
-  if (bar) bar.style.width = pct + '%';
-  if (label) label.textContent = pct + '%';
-  if (status) status.textContent = msg;
-  if (overlay) overlay.textContent = msg;
+  document.getElementById('crawlProgressBar').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = pct + '%';
+  document.getElementById('statusLabel').textContent = msg;
+  document.getElementById('overlayStatus').textContent = msg;
 }
 
 function showError(msg = "Audit failed – please try again") {
-  console.error("Audit error:", msg);
   document.getElementById('loadingOverlay').style.display = 'none';
   document.getElementById('crawlProgressContainer').style.display = 'none';
   document.getElementById('btnOpenAudit').disabled = false;
 
-  const results = document.getElementById('openResults');
-  results.innerHTML = `
+  document.getElementById('openResults').innerHTML = `
     <div class="alert alert-danger text-center p-5 rounded-4">
-      <h4 class="mb-3">Audit Error</h4>
+      <h4 class="mb-3">Error</h4>
       <p>${msg}</p>
       <button class="btn btn-outline-light mt-3 px-4" onclick="location.reload()">Retry</button>
     </div>`;
-  results.classList.remove('d-none');
+  document.getElementById('openResults').classList.remove('d-none');
 }
 
 function initCharts(data) {
-  console.log("Initializing charts with:", data.chart_data);
   const cd = data.chart_data || {};
-  if (!cd.bar || !cd.radar || !cd.doughnut) {
-    console.warn("Missing chart data");
-    return;
-  }
+  if (!cd.bar || !cd.radar || !cd.doughnut) return;
 
   Object.values(charts).forEach(c => c?.destroy());
 
   // Bar Chart
   charts.bar = new Chart(document.getElementById('barChart'), {
     type: 'bar',
-    data: {
-      labels: cd.bar.labels,
-      datasets: [{
-        data: cd.bar.data,
-        backgroundColor: cd.bar.colors,
-        borderRadius: 8,
-        borderSkipped: false,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.08)' } },
-        x: { grid: { display: false } }
-      }
-    }
+    data: { labels: cd.bar.labels, datasets: [{ data: cd.bar.data, backgroundColor: cd.bar.colors, borderRadius: 8 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }
   });
 
   // Radar Chart
   charts.radar = new Chart(document.getElementById('radarChart'), {
     type: 'radar',
-    data: {
-      labels: cd.radar.labels,
-      datasets: [{
-        data: cd.radar.data,
-        backgroundColor: 'rgba(13,110,253,0.28)',
-        borderColor: '#0d6efd',
-        pointBackgroundColor: '#0d6efd',
-        pointBorderColor: '#fff',
-        pointRadius: 4,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        r: {
-          min: 0,
-          max: 100,
-          ticks: { stepSize: 25, backdropColor: 'transparent', color: '#aaa' },
-          grid: { color: 'rgba(255,255,255,0.1)' },
-          angleLines: { color: 'rgba(255,255,255,0.1)' }
-        }
-      }
-    }
+    data: { labels: cd.radar.labels, datasets: [{ data: cd.radar.data, backgroundColor: 'rgba(13,110,253,0.28)', borderColor: '#0d6efd' }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { r: { min: 0, max: 100 } } }
   });
 
   // Doughnut Chart
   charts.doughnut = new Chart(document.getElementById('doughnutChart'), {
     type: 'doughnut',
-    data: {
-      labels: cd.doughnut.labels,
-      datasets: [{
-        data: cd.doughnut.data,
-        backgroundColor: cd.doughnut.colors,
-        borderWidth: 2,
-        borderColor: 'rgba(10,10,15,0.9)'
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '68%',
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: { color: '#ccc', font: { size: 13 }, padding: 20 }
-        }
-      }
-    }
+    data: { labels: cd.doughnut.labels, datasets: [{ data: cd.doughnut.data, backgroundColor: cd.doughnut.colors }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom' } } }
   });
+
+  // Score Ring Animation
+  const score = data.overall_score || 0;
+  const circle = document.getElementById('scoreCircle');
+  const circumference = 2 * Math.PI * 90;
+  circle.style.strokeDasharray = circumference;
+  circle.style.strokeDashoffset = circumference * (1 - score / 100);
+  circle.style.stroke = score >= 85 ? '#20c997' : score >= 70 ? '#ffc107' : score >= 55 ? '#fd7e14' : '#dc3545';
 }
 
 function runAudit(url) {
-  console.log("Starting audit for:", url);
-
   if (!url || !/^https?:\/\//i.test(url)) {
-    alert("Please enter a valid URL starting with http:// or https://");
+    alert("Please enter a valid URL (http/https)");
     return;
   }
 
-  if (currentWs) {
-    currentWs.close();
-    currentWs = null;
-  }
+  if (currentWs) currentWs.close();
 
   document.getElementById('loadingOverlay').style.display = 'flex';
   document.getElementById('crawlProgressContainer').style.display = 'block';
   document.getElementById('openResults').classList.add('d-none');
   document.getElementById('btnOpenAudit').disabled = true;
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
-  const ws = new WebSocket(wsUrl);
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${protocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
   currentWs = ws;
 
-  let receivedAnyMessage = false;
-
-  ws.onopen = () => {
-    console.log("WebSocket connection opened");
-  };
+  ws.onopen = () => console.log("Audit WebSocket connected");
 
   ws.onmessage = (event) => {
-    receivedAnyMessage = true;
-    console.log("WebSocket message:", event.data);
-
     let data;
-    try {
-      data = JSON.parse(event.data);
-    } catch (err) {
-      console.error("Invalid JSON from WS:", err, event.data);
-      return;
-    }
+    try { data = JSON.parse(event.data); } catch { return; }
 
     if (!data.finished) {
       updateProgress(data.crawl_progress || 0, data.status || "Analyzing…");
@@ -173,16 +354,15 @@ function runAudit(url) {
     }
 
     ws.close();
-    currentWs = null;
 
     if (data.error) {
       showError(data.error);
       return;
     }
 
-    // Fill results
     document.getElementById('ovScore').textContent = data.overall_score ?? '—';
     document.getElementById('grade').textContent = data.grade || '—';
+
     const bd = data.breakdown || {};
     document.getElementById('onpageScore').textContent = bd.onpage ?? '—';
     document.getElementById('perfScore').textContent = bd.performance ?? '—';
@@ -197,32 +377,20 @@ function runAudit(url) {
     document.getElementById('openResults').classList.remove('d-none');
   };
 
-  ws.onerror = (err) => {
-    console.error("WebSocket error:", err);
+  ws.onerror = () => {
     ws.close();
-    currentWs = null;
-    if (!receivedAnyMessage) {
-      showError("Could not connect to audit service. Server may be down.");
-    } else {
-      showError("Connection lost during audit.");
-    }
-  };
-
-  ws.onclose = () => {
-    console.log("WebSocket closed");
-    currentWs = null;
+    showError("Connection failed. Server may be busy.");
   };
 }
 
-// Button & Enter key
-document.getElementById('btnOpenAudit')?.addEventListener('click', () => {
-  const url = document.getElementById('openUrl')?.value?.trim();
-  if (url) runAudit(url);
+// Button & Enter key listeners
+document.getElementById('btnOpenAudit').addEventListener('click', () => {
+  runAudit(document.getElementById('openUrl').value.trim());
 });
 
-document.getElementById('openUrl')?.addEventListener('keypress', e => {
-  if (e.key === 'Enter') {
-    document.getElementById('btnOpenAudit')?.click();
-  }
+document.getElementById('openUrl').addEventListener('keypress', e => {
+  if (e.key === 'Enter') document.getElementById('btnOpenAudit').click();
 });
 </script>
+
+{% endblock %}
