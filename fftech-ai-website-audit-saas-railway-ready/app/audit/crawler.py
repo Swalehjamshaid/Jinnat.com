@@ -1,30 +1,3 @@
-# app/audit/crawler.py
-import requests, time
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-from collections import deque
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-HEADERS = {"User-Agent": "FFTechAuditBot/5.0"}
-
-class CrawlResult:
-    def __init__(self):
-        self.pages = []
-        self.visited = set()
-        self.unique_internal = 0
-        self.unique_external = 0
-        self.broken_internal = []
-        self.broken_external = []
-        self.crawled_count = 0
-        self.total_crawl_time = 0
-
-def check_link(url, timeout=5):
-    try:
-        status = requests.head(url, headers=HEADERS, timeout=timeout, allow_redirects=True).status_code
-        return url, status >= 400
-    except:
-        return url, True
-
 def crawl_site(start_url: str, max_pages=20, delay=0, timeout=5):
     """
     Fast crawl: limited pages, parallel link checks, no unnecessary sleeps.
@@ -33,6 +6,9 @@ def crawl_site(start_url: str, max_pages=20, delay=0, timeout=5):
     queue = deque([start_url])
     result = CrawlResult()
     start_time = time.time()
+
+    # Initialize global link sets
+    all_internal_links, all_external_links = set(), set()
 
     while queue and len(result.visited) < max_pages and time.time() - start_time < 60:
         url = queue.popleft()
@@ -59,8 +35,10 @@ def crawl_site(start_url: str, max_pages=20, delay=0, timeout=5):
                 continue
             if parsed.netloc == domain:
                 internal_links.add(link)
+                all_internal_links.add(link)
             else:
                 external_links.add(link)
+                all_external_links.add(link)
 
         # Parallel broken link checks
         with ThreadPoolExecutor(max_workers=20) as executor:
@@ -77,10 +55,8 @@ def crawl_site(start_url: str, max_pages=20, delay=0, timeout=5):
             if link not in result.visited:
                 queue.append(link)
 
-    result.unique_internal = len(internal_links)
-    result.unique_external = len(external_links)
+    # Assign global totals
+    result.unique_internal = len(all_internal_links)
+    result.unique_external = len(all_external_links)
     result.total_crawl_time = round(time.time() - start_time, 2)
     return result
-
-# Alias for runner.py compatibility
-crawl = crawl_site
