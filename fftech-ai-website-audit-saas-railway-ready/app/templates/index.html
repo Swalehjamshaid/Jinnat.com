@@ -8,66 +8,126 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { background: #0f172a; color: #fff; font-family: Arial, sans-serif; }
-    .audit-container { max-width: 900px; margin: 40px auto; }
-    .card { background: #1e293b; }
+    .audit-container { max-width: 1200px; margin: 40px auto; }
+    .card { background: #1e293b; border: none; }
     #crawlProgressContainer { display: none; margin-top: 20px; }
-    #loadingOverlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.85); color: #10b981; font-size: 1.5rem; justify-content: center; align-items: center; z-index: 9999; }
+    #loadingOverlay { 
+      display: none; 
+      position: fixed; 
+      inset: 0; 
+      background: rgba(15,23,42,0.92); 
+      color: #10b981; 
+      font-size: 1.5rem; 
+      justify-content: center; 
+      align-items: center; 
+      z-index: 9999; 
+      flex-direction: column;
+    }
     .d-none { display: none !important; }
     .chart-card { margin-top: 25px; padding: 20px; border-radius: 12px; background: #1e293b; }
+    #statusMessage { font-size: 1.3rem; margin: 15px 0; }
+    #timeEstimate { font-size: 1.1rem; color: #94a3b8; }
+    .auth-card { background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
   </style>
 </head>
 <body>
-  <div id="loadingOverlay">Running Audit...</div>
+
+  <!-- Full-screen loading overlay with detailed status -->
+  <div id="loadingOverlay">
+    <div class="spinner-border text-success mb-4" style="width:4rem;height:4rem;"></div>
+    <h4 class="fw-bold mb-2" id="overlayStatus">Starting audit...</h4>
+    <p id="statusMessage" class="mb-2">Preparing engine...</p>
+    <p id="timeEstimate">Estimated time: 45–90 seconds</p>
+  </div>
+
   <div class="audit-container">
+    <div class="row">
 
-    <div class="card p-4">
-      <h3>Site <span style="color:#0d6efd">Auditor</span></h3>
-      <div class="input-group my-3">
-        <input type="text" class="form-control" placeholder="Enter URL e.g. https://www.apple.com" id="openUrl">
-        <button class="btn btn-primary" id="btnOpenAudit">ANALYZE</button>
-      </div>
-      <div class="form-text text-muted">Enter a full URL starting with http:// or https://</div>
-    </div>
+      <!-- LEFT: Audit Section -->
+      <div class="col-lg-8">
+        <div class="card p-4 mb-4">
+          <h3>Site <span style="color:#0d6efd">Auditor</span></h3>
+          <div class="input-group my-3">
+            <input type="text" class="form-control" placeholder="Enter URL e.g. https://www.apple.com" id="openUrl">
+            <button class="btn btn-primary" id="btnOpenAudit">ANALYZE</button>
+          </div>
+          <div class="form-text text-muted">Enter a full URL starting with http:// or https://</div>
+        </div>
 
-    <!-- Progress Bar -->
-    <div id="crawlProgressContainer" class="mt-3">
-      <div class="progress" style="height: 18px;">
-        <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%">0%</div>
-      </div>
-      <small id="progressLabel">0%</small>
-      <small id="statusLabel" class="ms-3">Waiting...</small>
-    </div>
+        <!-- Progress Bar -->
+        <div id="crawlProgressContainer" class="mt-3">
+          <div class="progress" style="height: 18px;">
+            <div id="crawlProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%">0%</div>
+          </div>
+          <small id="progressLabel">0%</small>
+          <small id="statusLabel" class="ms-3">Waiting...</small>
+        </div>
 
-    <!-- Results -->
-    <div id="openResults" class="d-none mt-4">
-      <div class="card p-4">
-        <h4>Audit Results</h4>
-        <ul class="list-group list-group-flush mt-3">
-          <li class="list-group-item bg-dark">Overall Score: <span id="ovScore">—</span></li>
-          <li class="list-group-item bg-dark">Grade: <span id="grade">—</span></li>
-          <li class="list-group-item bg-dark">On-page SEO: <span id="onpageScore">—</span></li>
-          <li class="list-group-item bg-dark">Performance: <span id="perfScore">—</span></li>
-          <li class="list-group-item bg-dark">Coverage: <span id="coverageScore">—</span></li>
-          <li class="list-group-item bg-dark">Confidence: <span id="confidence">—</span></li>
-        </ul>
+        <!-- Results -->
+        <div id="openResults" class="d-none mt-4">
+          <div class="card p-4">
+            <h4>Audit Results</h4>
+            <ul class="list-group list-group-flush mt-3">
+              <li class="list-group-item bg-dark">Overall Score: <span id="ovScore">—</span></li>
+              <li class="list-group-item bg-dark">Grade: <span id="grade">—</span></li>
+              <li class="list-group-item bg-dark">On-page SEO: <span id="onpageScore">—</span></li>
+              <li class="list-group-item bg-dark">Performance: <span id="perfScore">—</span></li>
+              <li class="list-group-item bg-dark">Coverage: <span id="coverageScore">—</span></li>
+              <li class="list-group-item bg-dark">Confidence: <span id="confidence">—</span></li>
+            </ul>
+          </div>
+          <!-- Charts -->
+          <div class="chart-card">
+            <canvas id="barChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <canvas id="radarChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <canvas id="doughnutChart"></canvas>
+          </div>
+        </div>
       </div>
 
-      <!-- Charts -->
-      <div class="chart-card">
-        <canvas id="barChart"></canvas>
+      <!-- RIGHT: Registration + Magic Link -->
+      <div class="col-lg-4">
+        <div class="auth-card">
+          <h5 class="mb-3">Create Account</h5>
+          <p class="text-muted small mb-4">Save audits & download PDF reports</p>
+          <form id="registerForm" action="/register" method="POST">
+            <div class="mb-3">
+              <input type="email" name="email" class="form-control bg-dark text-white border-secondary" placeholder="your@email.com" required>
+            </div>
+            <div class="mb-3">
+              <input type="password" name="password" class="form-control bg-dark text-white border-secondary" placeholder="Strong password" required minlength="8">
+            </div>
+            <button type="submit" class="btn btn-success w-100">Register</button>
+          </form>
+          <div id="registerFeedback" class="mt-2 text-center small"></div>
+        </div>
+
+        <div class="auth-card">
+          <h5 class="mb-3">Magic Link Login</h5>
+          <p class="text-muted small mb-4">No password — instant secure login</p>
+          <form id="magicForm" action="/request-magic-link" method="POST">
+            <div class="mb-4">
+              <input type="email" name="email" class="form-control bg-dark text-white border-secondary" placeholder="email@company.com" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Send Magic Link</button>
+          </form>
+          <div id="magicFeedback" class="mt-2 text-center small"></div>
+        </div>
       </div>
-      <div class="chart-card">
-        <canvas id="radarChart"></canvas>
-      </div>
-      <div class="chart-card">
-        <canvas id="doughnutChart"></canvas>
-      </div>
+
     </div>
   </div>
 
 <script>
-console.log("Audit script loaded");
+// ──────────────────────────────────────────────
+// Audit logic (unchanged)
+// ──────────────────────────────────────────────
 
+console.log("Audit script loaded");
 let currentWs = null;
 let barChart, radarChart, doughnutChart;
 
@@ -75,9 +135,14 @@ function updateProgress(pct, msg) {
   const bar = document.getElementById('crawlProgressBar');
   const label = document.getElementById('progressLabel');
   const status = document.getElementById('statusLabel');
+  const overlayStatus = document.getElementById('overlayStatus');
+  const statusMsg = document.getElementById('statusMessage');
+
   if(bar) bar.style.width = pct + '%';
   if(label) label.textContent = pct + '%';
   if(status) status.textContent = msg;
+  if(overlayStatus) overlayStatus.textContent = msg;
+  if(statusMsg) statusMsg.textContent = `Currently: ${msg}`;
 }
 
 function showError(msg="Audit failed") {
@@ -97,11 +162,9 @@ function initCharts(data) {
   const ctxBar = document.getElementById('barChart').getContext('2d');
   const ctxRadar = document.getElementById('radarChart').getContext('2d');
   const ctxDough = document.getElementById('doughnutChart').getContext('2d');
-
   if(barChart) barChart.destroy();
   if(radarChart) radarChart.destroy();
   if(doughnutChart) doughnutChart.destroy();
-
   barChart = new Chart(ctxBar, {
     type: 'bar',
     data: {
@@ -114,7 +177,6 @@ function initCharts(data) {
     },
     options: { responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,max:100}} }
   });
-
   radarChart = new Chart(ctxRadar, {
     type: 'radar',
     data: {
@@ -123,7 +185,6 @@ function initCharts(data) {
     },
     options: { responsive:true, scales:{r:{min:0,max:100,beginAtZero:true}} }
   });
-
   doughnutChart = new Chart(ctxDough, {
     type:'doughnut',
     data:{
@@ -132,6 +193,83 @@ function initCharts(data) {
     },
     options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
   });
+}
+
+function runAudit(url) {
+  if(currentWs) currentWs.close();
+  document.getElementById('loadingOverlay').style.display='flex';
+  document.getElementById('crawlProgressContainer').style.display='block';
+  document.getElementById('openResults').classList.add('d-none');
+  document.getElementById('btnOpenAudit').disabled = true;
+
+  // Update status messages
+  document.getElementById('overlayStatus').textContent = "Starting audit...";
+  document.getElementById('statusMessage').textContent = "Connecting to audit engine...";
+  document.getElementById('timeEstimate').textContent = "Estimated time: 45–90 seconds";
+
+  const protocol = location.protocol==='https:'?'wss:':'ws:';
+  const ws = new WebSocket(`${protocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
+  currentWs = ws;
+  let receivedAny = false;
+
+  ws.onopen = ()=>{
+    console.log("WebSocket connected");
+    document.getElementById('statusMessage').textContent = "Connection established – preparing analysis...";
+  };
+
+  ws.onmessage = (event)=>{
+    receivedAny = true;
+    let data;
+    try{ data = JSON.parse(event.data); }catch(e){ console.error(e); return; }
+
+    if(!data.finished){
+      updateProgress(data.crawl_progress||0, data.status||"Analyzing…");
+
+      // Dynamic time estimate
+      const pct = data.crawl_progress || 0;
+      const remainingSec = Math.round(60 * (100 - pct) / 100); // rough estimate
+      document.getElementById('timeEstimate').textContent = `Estimated remaining: ${remainingSec} seconds`;
+
+      return;
+    }
+
+    ws.close();
+
+    if(data.error){ 
+      showError(data.error); 
+      document.getElementById('timeEstimate').textContent = "";
+      return; 
+    }
+
+    document.getElementById('ovScore').textContent = data.overall_score ?? '—';
+    document.getElementById('grade').textContent = data.grade ?? '—';
+    const bd = data.breakdown || {};
+    document.getElementById('onpageScore').textContent = bd.onpage ?? '—';
+    document.getElementById('perfScore').textContent = bd.performance ?? '—';
+    document.getElementById('coverageScore').textContent = bd.coverage ?? '—';
+    document.getElementById('confidence').textContent = bd.confidence ?? '—';
+
+    initCharts(data);
+
+    document.getElementById('loadingOverlay').style.display='none';
+    document.getElementById('crawlProgressContainer').style.display='none';
+    document.getElementById('btnOpenAudit').disabled=false;
+    document.getElementById('openResults').classList.remove('d-none');
+
+    document.getElementById('statusMessage').textContent = "Audit completed successfully!";
+    document.getElementById('timeEstimate').textContent = "Total time: ~" + Math.round((Date.now() - startTime)/1000) + " seconds";
+  };
+
+  ws.onerror = ()=>{
+    ws.close();
+    showError(receivedAny ? "Connection lost during audit" : "Cannot connect to audit engine");
+    document.getElementById('timeEstimate').textContent = "";
+  };
+
+  ws.onclose = ()=>{ currentWs = null; };
+
+  // Record start time for final estimate
+  const startTime = Date.now();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -148,58 +286,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if(e.key==='Enter') auditButton.click();
   });
 });
-
-function runAudit(url) {
-  if(currentWs) currentWs.close();
-  document.getElementById('loadingOverlay').style.display='flex';
-  document.getElementById('crawlProgressContainer').style.display='block';
-  document.getElementById('openResults').classList.add('d-none');
-  document.getElementById('btnOpenAudit').disabled = true;
-
-  const protocol = location.protocol==='https:'?'wss:':'ws:';
-  const ws = new WebSocket(`${protocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
-  currentWs = ws;
-  let receivedAny = false;
-
-  ws.onopen = ()=>console.log("WebSocket connected");
-
-  ws.onmessage = (event)=>{
-    receivedAny = true;
-    let data;
-    try{ data = JSON.parse(event.data); }catch(e){ console.error(e); return; }
-
-    if(!data.finished){
-      updateProgress(data.crawl_progress||0, data.status||"Analyzing…");
-      return;
-    }
-
-    ws.close();
-
-    if(data.error){ showError(data.error); return; }
-
-    document.getElementById('ovScore').textContent = data.overall_score ?? '—';
-    document.getElementById('grade').textContent = data.grade ?? '—';
-    const bd = data.breakdown || {};
-    document.getElementById('onpageScore').textContent = bd.onpage ?? '—';
-    document.getElementById('perfScore').textContent = bd.performance ?? '—';
-    document.getElementById('coverageScore').textContent = bd.coverage ?? '—';
-    document.getElementById('confidence').textContent = bd.confidence ?? '—';
-
-    initCharts(data);
-
-    document.getElementById('loadingOverlay').style.display='none';
-    document.getElementById('crawlProgressContainer').style.display='none';
-    document.getElementById('btnOpenAudit').disabled=false;
-    document.getElementById('openResults').classList.remove('d-none');
-  };
-
-  ws.onerror = ()=>{
-    ws.close();
-    showError(receivedAny ? "Connection lost" : "Cannot connect to server");
-  };
-
-  ws.onclose = ()=>{ currentWs = null; };
-}
 </script>
 </body>
 </html>
