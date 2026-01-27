@@ -1,328 +1,192 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FF Tech Audit v4.2 – Professional Auditor</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FF Tech Audit Engine v4.2</title>
 
+  <!-- Bootstrap -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
+  <!-- Charts & Export -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
-    :root {
-      --bg: #0a0e17;
-      --card: #111827;
-      --glass: rgba(17, 24, 39, 0.9);
-      --border: rgba(255, 215, 0, 0.15);
-      --gold: #ffd700;
-      --gold-hover: #ffea00;
-    }
     body {
-      background: radial-gradient(circle at top right, #1e293b, var(--bg));
-      color: #e2e8f0;
-      min-height: 100vh;
-      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(circle at top right, #1e293b, #0a0e17);
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
     }
-    .main-container { max-width: 1200px; margin: 0 auto; padding: 3rem 1rem; }
-    
-    /* Title Styling */
-    .header-title {
-      font-size: clamp(2rem, 5vw, 3.5rem);
-      font-weight: 800;
-      background: linear-gradient(to right, var(--gold), #fff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-
-    /* Glassmorphism Cards */
     .card-glass {
-      background: var(--glass);
-      border: 1px solid var(--border);
-      backdrop-filter: blur(12px);
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid rgba(255, 215, 0, 0.15);
       border-radius: 1.25rem;
       padding: 2rem;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(12px);
     }
-
-    /* Loading Overlay */
-    #loadingOverlay {
-      position: fixed; inset: 0; background: rgba(10, 14, 23, 0.98); 
-      display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 10000;
-    }
-    #loadingOverlay.show { display: flex; }
-
-    /* Metric Boxes */
     .metric-box {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 215, 0, 0.05);
-      border-radius: 0.75rem;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,215,0,0.08);
+      border-radius: .75rem;
       padding: 1.25rem;
       text-align: center;
-      transition: all 0.3s ease;
     }
-    .metric-box:hover { 
-      background: rgba(255, 215, 0, 0.03);
-      border-color: var(--gold);
-      transform: translateY(-3px);
+    .metric-value { font-size: 2rem; font-weight: 700; color: #ffd700; }
+    .metric-label { font-size: .75rem; color: #9ca3af; text-transform: uppercase; }
+    #loadingOverlay {
+      position: fixed; inset: 0;
+      background: rgba(10,14,23,.95);
+      display: none; align-items: center; justify-content: center;
+      flex-direction: column; z-index: 9999;
     }
-    .metric-value { font-size: 2rem; font-weight: 700; color: var(--gold); }
-    .metric-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
-
-    /* Button Customization */
-    .btn-gold { 
-      background: var(--gold); 
-      border: none; color: #000; 
-      font-weight: 700;
-      transition: all 0.2s;
-    }
-    .btn-gold:hover { background: var(--gold-hover); transform: scale(1.02); }
-    
-    @media print { .no-print { display: none !important; } }
+    #loadingOverlay.show { display: flex; }
   </style>
 </head>
+
 <body>
 
+<!-- Loading Overlay -->
 <div id="loadingOverlay">
-  <div class="spinner-grow text-warning mb-4" role="status" style="width: 3rem; height: 3rem;"></div>
-  <h4 id="statusLabel" class="text-warning">Connecting to Engine...</h4>
-  <div class="w-50 mt-3">
-    <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);">
-      <div id="loadingBar" class="progress-bar bg-warning transition-all" style="width: 5%"></div>
-    </div>
+  <div class="spinner-border text-warning mb-3"></div>
+  <h5 id="statusLabel">Initializing Audit Engine...</h5>
+  <div class="progress w-50 mt-3" style="height:6px;">
+    <div id="loadingBar" class="progress-bar bg-warning" style="width:5%"></div>
   </div>
 </div>
 
-<div class="main-container">
-  <h1 class="header-title">Audit Engine <span class="fw-light">v4.2</span></h1>
+<div class="container py-5">
+  <h1 class="text-center fw-bold mb-4 text-warning">FF Tech Audit Engine <span class="fw-light">v4.2</span></h1>
 
   <div class="row g-4">
     <div class="col-lg-8">
       <div class="card-glass" id="printableArea">
-        
-        <div class="input-group input-group-lg mb-5 no-print">
-          <span class="input-group-text bg-dark border-secondary text-warning"><i class="bi bi-link-45deg"></i></span>
-          <input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="www.haier.com.pk">
-          <button id="btnRun" class="btn btn-gold px-4">RUN ANALYSIS</button>
+
+        <!-- URL Input -->
+        <div class="input-group input-group-lg mb-4">
+          <span class="input-group-text bg-dark text-warning border-secondary">
+            <i class="bi bi-globe"></i>
+          </span>
+          <input id="urlInput" class="form-control bg-dark text-white border-secondary"
+                 placeholder="www.example.com">
+          <button id="btnRun" class="btn btn-warning fw-bold px-4">RUN AUDIT</button>
         </div>
 
+        <!-- Results -->
         <div id="resultsPanel" class="d-none">
-          <div class="text-center mb-5">
-            <div class="d-inline-flex align-items-center justify-content-center rounded-circle border border-warning p-5 mb-3" style="width:160px; height:160px;">
-              <h2 id="ovScore" class="display-3 fw-bold mb-0" style="color: var(--gold);">0</h2>
-            </div>
-            <h3 id="gradeDisplay" class="fw-bold tracking-tight">GRADE: —</h3>
-            <button id="btnDownload" class="btn btn-sm btn-outline-light opacity-50 mt-2 no-print">
-              <i class="bi bi-cloud-download me-2"></i>Export PDF Report
+
+          <!-- Score -->
+          <div class="text-center mb-4">
+            <h1 id="ovScore" class="display-3 fw-bold text-warning">0</h1>
+            <h4 id="gradeDisplay">GRADE: —</h4>
+            <button id="btnDownload" class="btn btn-outline-warning btn-sm mt-2">
+              <i class="bi bi-file-earmark-pdf"></i> Export PDF
             </button>
           </div>
 
-          <div class="row g-3 mb-5">
-            <div class="col-6 col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">SEO Logic</div>
-                <div id="onpageScore" class="metric-value">0</div>
-              </div>
+          <!-- Metrics -->
+          <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">SEO</div><div id="seoScore" class="metric-value">0</div></div></div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">LCP (ms)</div><div id="lcpScore" class="metric-value">0</div></div></div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">Competitor</div><div id="compScore" class="metric-value">0</div></div></div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">AI Trust</div><div class="metric-value">95</div></div></div>
+          </div>
+
+          <!-- Charts -->
+          <div class="row g-4">
+            <div class="col-md-7">
+              <canvas id="barChart" height="220"></canvas>
             </div>
-            <div class="col-6 col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">LCP Speed</div>
-                <div id="perfScore" class="metric-value">0</div>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">Security</div>
-                <div id="secScore" class="metric-value">0</div>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">AI Trust</div>
-                <div id="confScore" class="metric-value">90</div>
+            <div class="col-md-5">
+              <canvas id="doughnutChart" height="220"></canvas>
+              <div class="mt-3 small bg-dark p-3 rounded border border-secondary">
+                <div class="d-flex justify-content-between"><span>Internal</span><span id="intCount">0</span></div>
+                <div class="d-flex justify-content-between"><span>External</span><span id="extCount">0</span></div>
+                <div class="d-flex justify-content-between"><span>Broken</span><span id="brkCount">0</span></div>
               </div>
             </div>
           </div>
 
-          <div class="row g-4">
-            <div class="col-md-7">
-              <div class="p-3 rounded bg-black bg-opacity-25" style="height: 300px;">
-                <canvas id="mainChart"></canvas>
-              </div>
-            </div>
-            <div class="col-md-5">
-              <div class="p-3 rounded bg-black bg-opacity-25 mb-3" style="height: 220px;">
-                <canvas id="doughnutChart"></canvas>
-              </div>
-              <div class="small p-3 bg-dark rounded border border-secondary shadow-sm">
-                <div class="d-flex justify-content-between mb-2">
-                  <span>Healthy Links</span> <span id="intCount" class="badge bg-success bg-opacity-25 text-success">0</span>
-                </div>
-                <div class="d-flex justify-content-between mb-2">
-                  <span>Warnings</span> <span id="warnCount" class="badge bg-warning bg-opacity-25 text-warning">0</span>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <span>Broken Links</span> <span id="brkCount" class="badge bg-danger bg-opacity-25 text-danger">0</span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
-    
+
+    <!-- Log Panel -->
     <div class="col-lg-4">
       <div class="card-glass h-100">
-        <h5 class="text-warning mb-4"><i class="bi bi-activity me-2"></i>Real-Time Log</h5>
-        <div id="auditLog" class="small text-secondary font-monospace" style="line-height: 1.6;">
-          > Engine Standby...<br>
-          > Ready for URL input.
-        </div>
-        <hr class="border-secondary my-4">
-        <p class="x-small text-muted mb-0">
-          <i class="bi bi-info-circle me-1"></i> Standards: ISO/IEC 27001 Compliance Check
-        </p>
+        <h6 class="text-warning">Live Audit Log</h6>
+        <pre id="auditLog" class="small text-secondary mt-3">> Engine Ready</pre>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-let charts = {};
+let barChart, doughnutChart;
 
-function logMessage(msg) {
-  const log = document.getElementById('auditLog');
-  log.innerHTML += `<br>> ${msg}`;
-  log.scrollTop = log.scrollHeight;
+function log(msg) {
+  const logEl = document.getElementById("auditLog");
+  logEl.textContent += `\n> ${msg}`;
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
-function updateCharts(data) {
-  const commonOptions = { 
-    responsive: true, 
-    maintainAspectRatio: false, 
-    plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } } 
-  };
+document.getElementById("btnRun").onclick = () => {
+  const url = document.getElementById("urlInput").value.trim();
+  if (!url) return alert("Enter a valid URL");
 
-  // Bar Chart
-  if (charts.bar) charts.bar.destroy();
-  charts.bar = new Chart(document.getElementById('mainChart'), {
-    type: 'bar',
-    data: {
-      labels: data.chart_data.bar.labels,
-      datasets: [{ 
-        label: 'Audit Scores', 
-        data: data.chart_data.bar.data, 
-        backgroundColor: ['#ffd700', '#3b82f6', '#10b981', '#f43f5e'],
-        borderRadius: 5
-      }]
-    },
-    options: { 
-      ...commonOptions, 
-      scales: { 
-        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } },
-        x: { grid: { display: false }, ticks: { color: '#64748b' } }
-      } 
-    }
-  });
+  document.getElementById("loadingOverlay").classList.add("show");
+  document.getElementById("resultsPanel").classList.add("d-none");
 
-  // Doughnut Chart
-  if (charts.doughnut) charts.doughnut.destroy();
-  charts.doughnut = new Chart(document.getElementById('doughnutChart'), {
-    type: 'doughnut',
-    data: {
-      labels: data.chart_data.doughnut.labels,
-      datasets: [{ 
-        data: data.chart_data.doughnut.data, 
-        backgroundColor: ['#10b981', '#f59e0b', '#f43f5e'], 
-        borderWidth: 0,
-        hoverOffset: 10
-      }]
-    },
-    options: commonOptions
-  });
-}
+  const ws = new WebSocket(
+    `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`
+  );
 
-document.getElementById('btnRun').addEventListener('click', () => {
-  const url = document.getElementById('urlInput').value.trim();
-  if(!url) return alert("Please enter a valid URL.");
+  ws.onmessage = e => {
+    const r = JSON.parse(e.data);
 
-  const overlay = document.getElementById('loadingOverlay');
-  overlay.classList.add('show');
-  logMessage(`Starting audit for ${url}...`);
-  
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
-
-  ws.onmessage = (event) => {
-    const res = JSON.parse(event.data);
-    
-    if(res.status) {
-      document.getElementById('statusLabel').innerText = res.status;
-      logMessage(res.status);
-    }
-    if(res.crawl_progress) {
-      document.getElementById('loadingBar').style.width = res.crawl_progress + '%';
+    if (r.status) {
+      document.getElementById("statusLabel").innerText = r.status;
+      log(r.status);
     }
 
-    if(res.error) {
-        alert(res.error);
-        overlay.classList.remove('show');
-        ws.close();
-    }
+    if (r.crawl_progress)
+      document.getElementById("loadingBar").style.width = r.crawl_progress + "%";
 
-    if(res.finished) {
-      overlay.classList.remove('show');
-      document.getElementById('resultsPanel').classList.remove('d-none');
-      
-      // Update UI Numbers
-      document.getElementById('ovScore').innerText = res.overall_score;
-      document.getElementById('gradeDisplay').innerText = `GRADE: ${res.grade}`;
-      document.getElementById('onpageScore').innerText = res.breakdown.seo;
-      document.getElementById('perfScore').innerText = res.breakdown.performance.lcp_ms;
-      document.getElementById('secScore').innerText = res.chart_data.bar.data[2]; // Security Index
-      
-      document.getElementById('intCount').innerText = res.breakdown.links.internal_links_count;
-      document.getElementById('warnCount').innerText = res.breakdown.links.warning_links_count;
-      document.getElementById('brkCount').innerText = res.breakdown.links.broken_internal_links;
+    if (r.finished) {
+      document.getElementById("loadingOverlay").classList.remove("show");
+      document.getElementById("resultsPanel").classList.remove("d-none");
 
-      updateCharts(res);
-      logMessage("Audit Complete. Report Generated.");
+      document.getElementById("ovScore").innerText = r.overall_score;
+      document.getElementById("gradeDisplay").innerText = `GRADE: ${r.grade}`;
+      document.getElementById("seoScore").innerText = r.breakdown.seo;
+      document.getElementById("lcpScore").innerText = r.breakdown.performance.lcp_ms;
+      document.getElementById("compScore").innerText = r.breakdown.competitors.top_competitor_score;
+
+      document.getElementById("intCount").innerText = r.breakdown.links.internal_links_count;
+      document.getElementById("extCount").innerText = r.breakdown.links.external_links_count;
+      document.getElementById("brkCount").innerText = r.breakdown.links.broken_internal_links;
+
+      // Charts
+      barChart?.destroy();
+      doughnutChart?.destroy();
+
+      barChart = new Chart(barChartEl = document.getElementById("barChart"), {
+        type: "bar",
+        data: r.chart_data.bar,
+        options: { scales: { y: { max: 100 } }, plugins:{legend:{display:false}} }
+      });
+
+      doughnutChart = new Chart(document.getElementById("doughnutChart"), {
+        type: "doughnut",
+        data: r.chart_data.doughnut
+      });
+
       ws.close();
     }
   };
-
-  ws.onerror = () => {
-    overlay.classList.remove('show');
-    alert("WebSocket connection failed. Check server logs.");
-  };
-});
-
-document.getElementById('btnDownload').addEventListener('click', async () => {
-  const btn = document.getElementById('btnDownload');
-  btn.innerText = "Processing...";
-  
-  const element = document.getElementById('printableArea');
-  const canvas = await html2canvas(element, { 
-    backgroundColor: '#0a0e17', 
-    scale: 2,
-    useCORS: true 
-  });
-  
-  const imgData = canvas.toDataURL('image/png');
-  const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
-  const imgProps = pdf.getImageProperties(imgData);
-  const pdfWidth = pdf.internal.pageSize.getWidth();
-  const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-  
-  pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfHeight);
-  pdf.save(`FF-Audit-${new Date().getTime()}.pdf`);
-  btn.innerHTML = '<i class="bi bi-cloud-download me-2"></i>Export PDF Report';
-});
+};
 </script>
 </body>
 </html>
