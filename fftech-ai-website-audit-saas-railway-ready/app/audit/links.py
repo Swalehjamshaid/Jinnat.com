@@ -7,14 +7,14 @@ import httpx
 
 logger = logging.getLogger("audit_engine")
 
-# Limit concurrency: only 10 links can be checked at the exact same time
+# Limit concurrency to prevent hanging
 sem = asyncio.Semaphore(10)
 
 async def check_single_link(client: httpx.AsyncClient, link: str) -> bool:
     """Returns True if the link is broken (4xx/5xx) or times out."""
     async with sem:
         try:
-            # Strict 3-second timeout per link to prevent hanging
+            # Strict 3-second timeout per link
             resp = await client.head(link, follow_redirects=True, timeout=3.0)
             return resp.status_code >= 400
         except Exception:
@@ -25,9 +25,7 @@ async def extract_links_from_html(html: str, base_url: str) -> Dict[str, int]:
         return {"internal_links_count": 0, "external_links_count": 0, "broken_internal_links": 0, "warning_links_count": 0}
 
     soup = BeautifulSoup(html, "html.parser")
-    internal = set()
-    external = set()
-    warnings = set()
+    internal, external, warnings = set(), set(), set()
 
     base_parsed = urlparse(base_url)
     base_domain = base_parsed.netloc.lower()
@@ -51,8 +49,8 @@ async def extract_links_from_html(html: str, base_url: str) -> Dict[str, int]:
             external.add(full_url)
 
     # Performance Optimization: Only check the first 15 internal links
+    to_check = list(internal)[:15]
     broken_internal_count = 0
-    to_check = list(internal)[:15] 
     
     if to_check:
         async with httpx.AsyncClient(verify=False) as client:
@@ -72,7 +70,6 @@ async def analyze_links_async(html_input: Dict[str, str], base_url: str, progres
     html = html_input[page_url]
     
     if progress_callback:
-        # Passes progress updates to the frontend
         await progress_callback({"status": "🔗 Validating link integrity...", "crawl_progress": 75})
     
     return await extract_links_from_html(html, base_url)
