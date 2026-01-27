@@ -6,40 +6,26 @@ from bs4 import BeautifulSoup
 
 MAX_PAGES = 50
 CONCURRENCY = 10
-TIMEOUT = 10.0  # Increased timeout for slower pages
+TIMEOUT = 5.0
 
 async def fast_fetch(client: httpx.AsyncClient, url: str):
-    """Fetch a URL asynchronously"""
+    """Fetch a URL asynchronously and return HTML and status."""
     try:
         resp = await client.get(url, timeout=TIMEOUT, follow_redirects=True, verify=False)
         return resp.text, resp.status_code
     except Exception:
         return "", 0
 
-def categorize_links(base_domain: str, links: list):
-    """Categorize links as internal, external, and broken"""
-    internal, external, broken = 0, 0, 0
-    for link in links:
-        parsed = urlparse(link)
-        if not parsed.netloc:
-            continue
-        if parsed.netloc == base_domain:
-            internal += 1
-        else:
-            external += 1
-        # For broken check, we could optionally ping here (or do in runner)
-        # Currently, broken = 0 as placeholder
-    return internal, external, broken
-
 async def crawl(start_url: str, max_pages: int = MAX_PAGES):
-    """Async crawl starting from start_url"""
+    """Crawl website starting from start_url up to max_pages."""
     domain = urlparse(start_url).netloc
     visited = {start_url}
     to_crawl = [start_url]
     results = []
 
     limits = httpx.Limits(max_connections=CONCURRENCY, max_keepalive_connections=5)
-    async with httpx.AsyncClient(limits=limits, follow_redirects=True, verify=False) as client:
+
+    async with httpx.AsyncClient(limits=limits) as client:
         while to_crawl and len(results) < max_pages:
             batch = to_crawl[:CONCURRENCY]
             to_crawl = to_crawl[CONCURRENCY:]
@@ -49,33 +35,33 @@ async def crawl(start_url: str, max_pages: int = MAX_PAGES):
             new_links = []
             for i, (html, status) in enumerate(responses):
                 url = batch[i]
-                if status == 200 and html:
+                if status == 200:
                     soup = BeautifulSoup(html, "lxml")
-                    page_links = [urljoin(url, a['href']) for a in soup.find_all("a", href=True)]
-                    internal, external, broken = categorize_links(domain, page_links)
+                    internal_links = external_links = broken_links = 0
 
-                    # Placeholder for LCP / Performance metrics (update in runner)
-                    lcp_ms = None  # Replace with real metric later
+                    for a in soup.find_all("a", href=True):
+                        link = urljoin(url, a["href"])
+                        if urlparse(link).netloc == domain:
+                            internal_links += 1
+                            if not link.startswith("http"):
+                                broken_links += 1
+                        else:
+                            external_links += 1
 
-                    # Placeholder for competitor comparison
-                    top_competitor_score = None  # Replace with real comparison logic
+                        if urlparse(link).netloc == domain and link not in visited:
+                            visited.add(link)
+                            new_links.append(link)
 
+                    # Placeholder for LCP / performance / SEO
                     results.append({
                         "url": url,
                         "title": soup.title.string if soup.title else "N/A",
                         "html": html,
-                        "internal_links_count": internal,
-                        "external_links_count": external,
-                        "broken_internal_links": broken,
-                        "lcp_ms": lcp_ms,
-                        "top_competitor_score": top_competitor_score,
+                        "internal_links_count": internal_links,
+                        "external_links_count": external_links,
+                        "broken_internal_links": broken_links,
+                        "lcp_ms": None,  # To be filled by performance metrics
+                        "top_competitor_score": None  # Placeholder for competitor comparison
                     })
-
-                    if len(results) + len(to_crawl) < max_pages:
-                        for link in page_links:
-                            parsed_link = urlparse(link)
-                            if parsed_link.netloc == domain and link not in visited:
-                                visited.add(link)
-                                new_links.append(link)
             to_crawl.extend(new_links)
     return {"report": results}
