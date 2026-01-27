@@ -1,27 +1,31 @@
 # app/main.py
-import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from app.audit.runner import WebsiteAuditRunner
 import os
 
 app = FastAPI(title="FF Tech Audit Engine v4.3")
 
-# Mount static folder if you have CSS/JS
+# Serve static files (CSS/JS)
 if not os.path.exists("static"):
     os.makedirs("static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Templates folder
+templates = Jinja2Templates(directory="templates")
+
 
 # --------------------------
-# Serve index.html
+# Serve index.html from templates
 # --------------------------
 @app.get("/", response_class=HTMLResponse)
-async def get_index():
-    with open("index.html", "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return HTMLResponse(content=html_content)
+async def get_index(request: Request):
+    """
+    Serve the main audit page.
+    """
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 # --------------------------
@@ -29,11 +33,14 @@ async def get_index():
 # --------------------------
 @app.websocket("/ws/audit-progress")
 async def ws_audit_progress(websocket: WebSocket, url: str):
+    """
+    WebSocket endpoint that streams live audit progress to the frontend.
+    """
     await websocket.accept()
     try:
         async def callback(progress_data: dict):
             """
-            This function is passed to WebsiteAuditRunner to send updates to the frontend.
+            Callback passed to WebsiteAuditRunner to send JSON updates.
             """
             await websocket.send_json(progress_data)
 
