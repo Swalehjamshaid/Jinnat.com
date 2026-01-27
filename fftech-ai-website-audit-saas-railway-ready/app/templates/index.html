@@ -1,202 +1,244 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FF Tech AI Website Audit v4.2</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        :root { --haier-blue: #0056b3; }
-        .audit-header { background: var(--haier-blue); color: white; padding: 2rem 0; margin-bottom: 2rem; }
-        .score-circle { width: 150px; height: 150px; border-radius: 50%; border: 8px solid #eee; display: flex; align-items: center; justify-content: center; font-size: 3rem; font-weight: bold; margin: 0 auto; }
-        .card { border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 1.5rem; }
-        .chart-container { position: relative; height: 300px; }
-        #progress-container { display: none; }
-    </style>
-</head>
-<body class="bg-light">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FF Tech Audit – Professional Website Auditor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<div class="audit-header text-center">
-    <h1>FF Tech International Audit Engine</h1>
-    <p>Professional Technical Site Inspection v4.2</p>
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --card: #111827;
+      --glass: rgba(17, 24, 39, 0.85);
+      --border: rgba(255, 215, 0, 0.2);
+      --gold: #ffd700;
+      --gold-dark: #d4af37;
+    }
+    body { background: linear-gradient(135deg, #0a0e17 0%, #111827 100%); color: #e2e8f0; min-height:100vh; font-family:'Inter', system-ui, sans-serif; }
+    .main-container { max-width: 1300px; margin: 0 auto; padding: 4rem 1rem; }
+    .header-title { font-size:3.5rem; font-weight:800; background:linear-gradient(90deg, var(--gold), #fff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:2.5rem; text-align:center; }
+    .card-glass { background: var(--glass); border:1px solid var(--border); backdrop-filter: blur(15px); border-radius:1.5rem; padding:2.5rem; box-shadow: 0 20px 50px rgba(0,0,0,0.4); }
+    #loadingOverlay { position: fixed; inset:0; background: rgba(10,14,23,0.95); color: var(--gold); display:none; flex-direction:column; justify-content:center; align-items:center; z-index:9999; transition: opacity 0.3s ease; }
+    #loadingOverlay.show { display:flex; opacity:1; }
+    .metric-box { background: rgba(255,255,255,0.03); border:1px solid rgba(255,215,0,0.1); border-radius:1rem; padding:1.5rem; text-align:center; transition:0.3s; }
+    .metric-box:hover { border-color: var(--gold); transform: translateY(-5px); }
+    .metric-value { font-size:2.5rem; font-weight:800; color: var(--gold); }
+    .metric-label { font-size:0.9rem; color:#9ca3af; text-transform:uppercase; letter-spacing:1px; }
+    .chart-container { background: rgba(255,255,255,0.02); border-radius:1rem; padding:1.5rem; margin-bottom:2rem; }
+    .btn-gold { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); border:none; color:#000; font-weight:700; }
+    .btn-gold:hover { opacity:0.9; transform: scale(1.02); }
+  </style>
+</head>
+<body>
+
+<div id="loadingOverlay">
+  <div class="spinner-border text-warning mb-4" style="width:4rem;height:4rem;"></div>
+  <h3 id="statusLabel">Initializing Engine...</h3>
+  <div class="w-50 mt-3">
+    <div class="progress" style="height:10px;">
+      <div id="loadingBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width:5%"></div>
+    </div>
+  </div>
 </div>
 
-<div class="container">
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card p-4 text-center">
-                <div class="input-group mb-3">
-                    <input type="text" id="urlInput" class="form-control form-control-lg" placeholder="Enter Website URL (e.g. haier.com.pk)">
-                    <button class="btn btn-primary btn-lg" onclick="startAudit()">Start Audit</button>
-                </div>
-                <div id="progress-container">
-                    <div class="progress mb-2" style="height: 25px;">
-                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
-                    </div>
-                    <small id="statusText" class="text-muted text-uppercase fw-bold">Initializing...</small>
-                </div>
-            </div>
+<div class="main-container">
+  <h1 class="header-title">Audit Engine <span style="font-weight:300;">v4.2</span></h1>
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card-glass" id="printableArea">
+        <div class="input-group input-group-lg mb-5 no-print">
+          <span class="input-group-text bg-dark border-secondary text-warning"><i class="bi bi-globe"></i></span>
+          <input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="https://example.com">
+          <button id="btnRun" class="btn btn-gold px-5">START AUDIT</button>
         </div>
+
+        <div id="resultsPanel" class="d-none">
+          <div class="text-center mb-5">
+            <div class="d-inline-block p-4 rounded-circle border border-warning mb-3">
+              <h2 id="ovScore" class="display-2 fw-bold mb-0" style="color: var(--gold);">0</h2>
+            </div>
+            <h3 id="gradeDisplay" class="fw-bold">GRADE: —</h3>
+            <p class="text-muted">Comprehensive AI Analysis Report</p>
+            <button id="btnDownload" class="btn btn-sm btn-outline-warning mt-2 no-print">
+              <i class="bi bi-file-earmark-pdf me-2"></i>Download Report
+            </button>
+          </div>
+
+          <div class="row g-3 mb-5">
+            <div class="col-md-3">
+              <div class="metric-box">
+                <div class="metric-label">On-Page SEO</div>
+                <div id="onpageScore" class="metric-value">0</div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="metric-box">
+                <div class="metric-label">Perf (LCP)</div>
+                <div id="perfScore" class="metric-value">0</div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="metric-box">
+                <div class="metric-label">Competitors</div>
+                <div id="coverageScore" class="metric-value">0</div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="metric-box">
+                <div class="metric-label">AI Confidence</div>
+                <div id="confScore" class="metric-value">0</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-7">
+              <div class="chart-container">
+                <canvas id="mainChart" height="250"></canvas>
+              </div>
+            </div>
+            <div class="col-md-5">
+              <div class="chart-container">
+                <canvas id="radarChart" height="250"></canvas>
+              </div>
+              <div class="mt-3 p-3 bg-dark rounded border border-secondary">
+                <div class="d-flex justify-content-between mb-2">
+                  <span>Internal Links:</span> <strong id="intCount" class="text-success">0</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                  <span>External Links:</span> <strong id="extCount" class="text-primary">0</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <span>Broken Links:</span> <strong id="brkCount" class="text-danger">0</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div id="resultsDashboard" style="display: none;">
-        <div class="row">
-            <div class="col-md-4 text-center">
-                <div class="card p-4">
-                    <h3>Overall Score</h3>
-                    <div class="score-circle text-primary" id="overallScore">-</div>
-                    <h2 class="mt-3" id="overallGrade">GRADE: -</h2>
-                    <hr>
-                    <p class="mb-0">Audit Time: <span id="auditTime">0</span>s</p>
-                </div>
-            </div>
-
-            <div class="col-md-8">
-                <div class="row text-center">
-                    <div class="col-6 col-sm-3 mb-3">
-                        <div class="card p-3"><small>SEO</small><h4 id="seoScore" class="mb-0">-</h4></div>
-                    </div>
-                    <div class="col-6 col-sm-3 mb-3">
-                        <div class="card p-3"><small>Performance</small><h4 id="perfVal" class="mb-0">-</h4></div>
-                    </div>
-                    <div class="col-6 col-sm-3 mb-3">
-                        <div class="card p-3"><small>Internal Links</small><h4 id="linksCount" class="mb-0">-</h4></div>
-                    </div>
-                    <div class="col-6 col-sm-3 mb-3">
-                        <div class="card p-3"><small>AI Heuristic</small><h4 class="mb-0">90%</h4></div>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="card p-3 text-center">
-                            <h6>Technical Distribution</h6>
-                            <div class="chart-container"><canvas id="barChart"></canvas></div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card p-3 text-center">
-                            <h6>Link Integrity</h6>
-                            <div class="chart-container"><canvas id="doughnutChart"></canvas></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <div class="col-lg-4">
+      <div class="card-glass h-100">
+        <h4 class="text-warning mb-4"><i class="bi bi-shield-lock me-2"></i>Account Access</h4>
+        <div class="mb-4">
+          <label class="small text-muted mb-2">Email Address</label>
+          <input type="email" class="form-control bg-dark text-white border-secondary mb-3" placeholder="user@company.com">
+          <button class="btn btn-outline-warning w-100">Send Magic Link</button>
         </div>
-
-        <div class="row">
-            <div class="col-12">
-                <div class="card p-3 border-start border-4 border-warning bg-white">
-                    <h5><i class="bi bi-shield-check"></i> Verification & Responsibility (CSD-SOP-35)</h5>
-                    <p class="mb-0">Based on technical metrics: 
-                        <strong id="sopResponsibility" class="text-danger">Awaiting calculation...</strong>
-                    </p>
-                </div>
-            </div>
-        </div>
+        <hr class="border-secondary">
+        <p class="small text-muted">FF Tech Engine v4.2 uses 128-bit encryption for report storage and AI-driven performance heuristics.</p>
+      </div>
     </div>
+  </div>
 </div>
 
 <script>
-    let barChartInstance = null;
-    let doughnutChartInstance = null;
+let charts = {};
 
-    function startAudit() {
-        const url = document.getElementById('urlInput').value;
-        if (!url) return alert("Please enter a URL");
+function initCharts(data) {
+  if (charts.bar) charts.bar.destroy();
+  charts.bar = new Chart(document.getElementById('mainChart'), {
+    type: 'bar',
+    data: {
+      labels: data.chart_data.bar.labels,
+      datasets: [{
+        label: 'Metrics',
+        data: data.chart_data.bar.data,
+        backgroundColor: ['#ffd700', '#3b82f6', '#10b981', '#ef4444']
+      }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { max: 100 } } }
+  });
 
-        // Reset UI
-        document.getElementById('progress-container').style.display = 'block';
-        document.getElementById('resultsDashboard').style.display = 'none';
-        
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
-        const socket = new WebSocket(wsUrl);
+  if (charts.radar) charts.radar.destroy();
+  charts.radar = new Chart(document.getElementById('radarChart'), {
+    type: 'radar',
+    data: {
+      labels: data.chart_data.radar.labels,
+      datasets: [{
+        label: 'Profile',
+        data: data.chart_data.radar.data,
+        borderColor: '#ffd700',
+        backgroundColor: 'rgba(255, 215, 0, 0.2)'
+      }]
+    },
+    options: { scales: { r: { max: 100, ticks: { display: false } } } }
+  });
+}
 
-        socket.onmessage = function(event) {
-            const data = JSON.parse(event.data);
+document.getElementById('btnRun').addEventListener('click', () => {
+  const url = document.getElementById('urlInput').value;
+  if (!url) return alert("Enter a URL");
 
-            if (data.error) {
-                alert("Audit Error: " + data.error);
-                return;
-            }
+  const overlay = document.getElementById('loadingOverlay');
+  const statusLabel = document.getElementById('statusLabel');
+  const loadingBar = document.getElementById('loadingBar');
+  
+  overlay.classList.add('show');
+  document.getElementById('resultsPanel').classList.add('d-none');
 
-            // Update Progress Bar
-            document.getElementById('progressBar').style.width = data.crawl_progress + '%';
-            document.getElementById('progressBar').innerText = data.crawl_progress + '%';
-            document.getElementById('statusText').innerText = data.status;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
 
-            if (data.finished) {
-                displayResults(data);
-            }
-        };
+  ws.onmessage = (event) => {
+    const res = JSON.parse(event.data);
+    if (res.status) statusLabel.innerText = res.status;
+    if (res.crawl_progress) loadingBar.style.width = res.crawl_progress + '%';
+
+    if (res.finished) {
+      overlay.classList.remove('show');
+      document.getElementById('resultsPanel').classList.remove('d-none');
+
+      // Update Metrics safely
+      document.getElementById('ovScore').innerText = res.overall_score ?? 0;
+      document.getElementById('gradeDisplay').innerText = `GRADE: ${res.grade ?? 'N/A'}`;
+      document.getElementById('onpageScore').innerText = res.breakdown?.seo ?? 0;
+
+      const perf = res.breakdown?.performance?.lcp_ms ?? 0;
+      document.getElementById('perfScore').innerText = perf > 1000 ? (perf/1000).toFixed(1)+'s' : perf+'ms';
+
+      document.getElementById('coverageScore').innerText = res.breakdown?.competitors?.top_competitor_score ?? 0;
+      document.getElementById('confScore').innerText = res.chart_data?.bar?.data?.[3] ?? 90;
+
+      document.getElementById('intCount').innerText = res.breakdown?.links?.internal_links_count ?? 0;
+      document.getElementById('extCount').innerText = res.breakdown?.links?.external_links_count ?? 0;
+      document.getElementById('brkCount').innerText = res.breakdown?.links?.broken_internal_links ?? 0;
+
+      initCharts(res);
+      ws.close();
     }
+  };
 
-    function displayResults(data) {
-        document.getElementById('resultsDashboard').style.display = 'block';
-        document.getElementById('progress-container').style.display = 'none';
+  ws.onerror = (e) => { alert("WebSocket error: " + e.message); overlay.classList.remove('show'); }
+});
 
-        // Set Main Values
-        document.getElementById('overallScore').innerText = data.overall_score;
-        document.getElementById('overallGrade').innerText = "GRADE: " + data.grade;
-        document.getElementById('auditTime').innerText = data.breakdown.audit_time || 'N/A';
+// PDF Download
+document.getElementById('btnDownload').addEventListener('click', async () => {
+  const { jsPDF } = window.jspdf;
+  const element = document.getElementById('printableArea');
+  const noPrint = document.querySelectorAll('.no-print');
+  noPrint.forEach(el => el.style.display = 'none');
 
-        // Set Metric Numbers
-        document.getElementById('seoScore').innerText = data.breakdown.seo + "/100";
-        
-        // FIX for Performance [object Object] - extract lcp_ms
-        const perf = data.breakdown.performance;
-        document.getElementById('perfVal').innerText = perf.lcp_ms ? (perf.lcp_ms / 1000).toFixed(2) + "s" : "0s";
-        
-        document.getElementById('linksCount').innerText = data.breakdown.links.internal_links_count || 0;
+  const canvas = await html2canvas(element, { backgroundColor: '#0a0e17', scale: 2 });
+  const imgData = canvas.toDataURL('image/png');
 
-        // SOP Logic (HNR / Factory Responsibility Mapping)
-        const sopEl = document.getElementById('sopResponsibility');
-        if (data.overall_score < 60) {
-            sopEl.innerText = "PRODUCT FINISH SUBSTANDARD (FACTORY RESPONSIBILITY)";
-            sopEl.className = "text-danger fw-bold";
-        } else {
-            sopEl.innerText = "PRODUCT CONDITION VERIFIED OK (LOCAL WAREHOUSE)";
-            sopEl.className = "text-success fw-bold";
-        }
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const imgProps = pdf.getImageProperties(imgData);
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-        renderCharts(data.chart_data);
-    }
+  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+  pdf.save(`FF-Audit-Report-${new Date().toLocaleDateString()}.pdf`);
 
-    function renderCharts(chartData) {
-        // Destroy existing instances to prevent ghosting
-        if(barChartInstance) barChartInstance.destroy();
-        if(doughnutChartInstance) doughnutChartInstance.destroy();
-
-        const ctxBar = document.getElementById('barChart').getContext('2d');
-        barChartInstance = new Chart(ctxBar, {
-            type: 'bar',
-            data: {
-                labels: chartData.bar.labels,
-                datasets: [{
-                    label: 'Score %',
-                    data: chartData.bar.data,
-                    backgroundColor: ['#007bff', '#28a745', '#ffc107', '#17a2b8']
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
-
-        const ctxDoughnut = document.getElementById('doughnutChart').getContext('2d');
-        doughnutChartInstance = new Chart(ctxDoughnut, {
-            type: 'doughnut',
-            data: {
-                labels: chartData.doughnut.labels,
-                datasets: [{
-                    data: chartData.doughnut.data,
-                    backgroundColor: ['#28a745', '#ffc107', '#dc3545']
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
-    }
+  noPrint.forEach(el => el.style.display = 'flex');
+});
 </script>
-
 </body>
 </html>
