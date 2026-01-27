@@ -6,23 +6,12 @@ from app.audit.runner import WebsiteAuditRunner
 
 app = FastAPI(title="FF Tech Audit Engine v4.3")
 
-# Ensure static folder exists (runtime safety)
+# Ensure static folder exists
 STATIC_DIR = "static"
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR)
 
-# Mount static files at root → serves index.html automatically for "/"
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
-
-# Optional explicit root route (extra safety + debug message if file missing)
-@app.get("/", include_in_schema=False)
-async def serve_root():
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    if not os.path.exists(index_path):
-        return {"error": "index.html not found in /static folder"}
-    return FileResponse(index_path)
-
-# Debug endpoint – helps confirm file presence after deploy
+# 1. DEBUG ENDPOINT (Define first)
 @app.get("/debug-static")
 async def debug_static():
     index_path = os.path.join(STATIC_DIR, "index.html")
@@ -33,9 +22,7 @@ async def debug_static():
         "note": "Visit / to see the dashboard"
     }
 
-# ────────────────────────────────────────────────
-# WebSocket: Live audit updates (unchanged)
-# ────────────────────────────────────────────────
+# 2. WEBSOCKET ROUTE (Define before catch-all mount)
 @app.websocket("/ws/audit-progress")
 async def ws_audit_progress(websocket: WebSocket):
     await websocket.accept()
@@ -52,8 +39,15 @@ async def ws_audit_progress(websocket: WebSocket):
         audit_runner = WebsiteAuditRunner(url)
         await audit_runner.run_audit(callback)
     except WebSocketDisconnect:
-        print(f"WebSocket disconnected for {url}")
+        pass
     except Exception as e:
         await websocket.send_json({"error": f"Server error: {str(e)}", "finished": True})
     finally:
-        await websocket.close()
+        try:
+            await websocket.close()
+        except:
+            pass
+
+# 3. STATIC FILES (Define LAST as the catch-all)
+# This will serve index.html for "/" and static assets for everything else
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
