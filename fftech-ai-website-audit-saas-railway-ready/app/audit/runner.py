@@ -29,7 +29,10 @@ class WebsiteAuditRunner:
 
         async def send_update(pct: float, msg: str):
             if progress_callback:
-                await progress_callback({"crawl_progress": pct, "status": msg, "finished": False})
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback({"crawl_progress": pct, "status": msg, "finished": False})
+                else:
+                    progress_callback({"crawl_progress": pct, "status": msg, "finished": False})
 
         # -------------------
         # 1️⃣ Crawl pages
@@ -61,10 +64,10 @@ class WebsiteAuditRunner:
         # 5️⃣ Performance Metrics (PageSpeed Insights)
         # -------------------
         await send_update(70, "Fetching PageSpeed metrics…")
-        psi_data = {}
+        psi_data: Dict[str, Any] = {}
         if self.psi_api_key:
             try:
-                psi_data = fetch_lighthouse(self.url, api_key=self.psi_api_key)
+                psi_data = await asyncio.to_thread(fetch_lighthouse, self.url, api_key=self.psi_api_key)
             except Exception as e:
                 logger.warning(f"PSI fetch failed: {e}")
 
@@ -74,21 +77,31 @@ class WebsiteAuditRunner:
         await send_update(80, "Grading pages…")
         graded_pages = []
         for page in pages:
-            grade = grade_website(page.get("html", ""), page.get("url"))
-            graded_pages.append({"url": page.get("url"), "grade": grade})
+            html_content = page.get("html", "")
+            page_url = page.get("url", "")
+            grade = grade_website(html_content, page_url)
+            graded_pages.append({"url": page_url, "grade": grade})
 
         # -------------------
         # 7️⃣ Competitor Comparison
         # -------------------
         await send_update(90, "Analyzing competitors…")
         competitor_data = compare_with_competitors(self.url)
-        your_score_vs_top = competitor_data["top_competitor_score"] - onpage_score
+        top_score = competitor_data.get("top_competitor_score", 100)
+        your_score_vs_top = top_score - onpage_score
 
         # -------------------
         # 8️⃣ Aggregate final report
         # -------------------
-        overall_score = round((onpage_score + links_data["internal_links_count"] + psi_data.get("lcp_ms", 0) / 100 + 90) / 4)
-        grade = "A+" if overall_score >= 90 else "A" if overall_score >= 80 else "B" if overall_score >= 70 else "C" if overall_score >= 60 else "D"
+        lcp_ms = psi_data.get("lcp_ms", 0)
+        overall_score = round((onpage_score + links_data.get("internal_links_count", 0) + lcp_ms / 100 + 90) / 4)
+        grade = (
+            "A+" if overall_score >= 90 else
+            "A" if overall_score >= 80 else
+            "B" if overall_score >= 70 else
+            "C" if overall_score >= 60 else
+            "D"
+        )
 
         await send_update(100, "Audit complete.")
 
@@ -103,9 +116,18 @@ class WebsiteAuditRunner:
                 "competitors": competitor_data
             },
             "chart_data": {
-                "bar": {"labels": ["SEO", "Links", "Perf", "AI"], "data": [onpage_score, links_data["internal_links_count"], psi_data.get("lcp_ms", 0)//10, 90]},
-                "radar": {"labels": ["SEO", "Links", "Perf", "AI"], "data": [onpage_score, links_data["internal_links_count"], psi_data.get("lcp_ms", 0)//10, 90]},
-                "doughnut": {"labels": ["Good", "Warning", "Broken"], "data": [links_data["internal_links_count"], 2, links_data["broken_internal_links"]]}
+                "bar": {
+                    "labels": ["SEO", "Links", "Perf", "AI"],
+                    "data": [onpage_score, links_data.get("internal_links_count", 0), lcp_ms // 10, 90]
+                },
+                "radar": {
+                    "labels": ["SEO", "Links", "Perf", "AI"],
+                    "data": [onpage_score, links_data.get("internal_links_count", 0), lcp_ms // 10, 90]
+                },
+                "doughnut": {
+                    "labels": ["Good", "Warning", "Broken"],
+                    "data": [links_data.get("internal_links_count", 0), 2, links_data.get("broken_internal_links", 0)]
+                }
             },
             "audit_time": round(asyncio.get_event_loop().time() - start_time, 2)
         }
