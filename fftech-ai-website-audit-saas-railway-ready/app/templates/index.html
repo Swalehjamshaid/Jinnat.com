@@ -186,9 +186,13 @@ document.getElementById('btnRun').addEventListener('click', () => {
       document.getElementById('ovScore').innerText = res.overall_score ?? 0;
       document.getElementById('gradeDisplay').innerText = `GRADE: ${res.grade ?? 'N/A'}`;
       document.getElementById('onpageScore').innerText = res.breakdown?.seo ?? 0;
-      document.getElementById('perfScore').innerText = res.breakdown?.performance?.lcp_ms ?? 0;
+
+      const perf = res.breakdown?.performance?.lcp_ms ?? 0;
+      document.getElementById('perfScore').innerText = (perf >= 1000) ? (perf/1000).toFixed(1)+'s' : perf+'ms';
+
       document.getElementById('coverageScore').innerText = res.breakdown?.competitors?.top_competitor_score ?? 0;
       document.getElementById('confScore').innerText = res.chart_data?.bar?.data?.[3] ?? 90;
+
       document.getElementById('intCount').innerText = res.breakdown?.links?.internal_links_count ?? 0;
       document.getElementById('extCount').innerText = res.breakdown?.links?.external_links_count ?? 0;
       document.getElementById('brkCount').innerText = res.breakdown?.links?.broken_internal_links ?? 0;
@@ -197,6 +201,8 @@ document.getElementById('btnRun').addEventListener('click', () => {
       ws.close();
     }
   };
+
+  ws.onerror = (e) => { alert("WebSocket error: " + e.message); overlay.classList.remove('show'); }
 });
 
 // PDF Download
