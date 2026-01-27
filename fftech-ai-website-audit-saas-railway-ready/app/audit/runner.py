@@ -14,6 +14,7 @@ from app.audit.record import save_audit_record
 
 class WebsiteAuditRunner:
     def __init__(self, url: str):
+        # Keep input URL handling unchanged
         self.url = url if url.startswith("http") else f"https://{url}"
 
     async def run_audit(self, callback):
@@ -28,7 +29,7 @@ class WebsiteAuditRunner:
                 res = await client.get(self.url, follow_redirects=True)
                 html = res.text
 
-            # LCP Measurement
+            # LCP Measurement and Perf score
             lcp_ms = int((time.time() - start_time) * 1000)
             perf_score = calculate_performance_score(lcp_ms)
 
@@ -37,11 +38,12 @@ class WebsiteAuditRunner:
             soup = BeautifulSoup(html, "html.parser")
             seo_score = calculate_seo_score(soup)
 
-            # 4️⃣ Link Analysis
+            # 4️⃣ Link Analysis (keep text with real & for UI)
             await callback({"status": "🔗 Checking internal & external links...", "crawl_progress": 65})
             links_data = await analyze_links_async({self.url: html}, self.url, callback)
 
             # Safety defaults if module returns missing values
+            links_data = links_data or {}
             links_data.setdefault("internal_links_count", 0)
             links_data.setdefault("external_links_count", 0)
             links_data.setdefault("warning_links_count", 0)
@@ -51,10 +53,10 @@ class WebsiteAuditRunner:
             await callback({"status": "📊 Comparing competitors...", "crawl_progress": 75})
             competitor_score = get_top_competitor_score(self.url)
 
-            # 6️⃣ Compute Final Grade
+            # 6️⃣ Compute Final Grade (kept as-is)
             overall, grade = compute_grade(seo_score, perf_score, competitor_score)
 
-            # 7️⃣ CHART DATA (based on your HTML + Chart.js 4 format)
+            # 7️⃣ CHART DATA (Chart.js v4 format – matches your HTML expectations)
             bar_data = {
                 "labels": ["SEO", "Speed", "Security", "AI"],
                 "datasets": [{
@@ -80,14 +82,14 @@ class WebsiteAuditRunner:
                 "labels": ["Healthy", "Warning", "Broken"],
                 "datasets": [{
                     "data": [
-                        links_data["internal_links_count"],
-                        links_data["warning_links_count"],
-                        links_data["broken_internal_links"],
+                        int(links_data.get("internal_links_count", 0)),
+                        int(links_data.get("warning_links_count", 0)),
+                        int(links_data.get("broken_internal_links", 0)),
                     ],
                     "backgroundColor": [
-                        "rgba(34, 197, 94, 0.7)",
-                        "rgba(234, 179, 8, 0.7)",
-                        "rgba(239, 68, 68, 0.7)",
+                        "rgba(34, 197, 94, 0.7)",   # green
+                        "rgba(234, 179, 8, 0.7)",   # amber
+                        "rgba(239, 68, 68, 0.7)",   # red
                     ],
                     "borderColor": [
                         "rgba(34, 197, 94, 1)",
@@ -98,7 +100,7 @@ class WebsiteAuditRunner:
                 }]
             }
 
-            # 8️⃣ Send Final Results to Frontend
+            # 8️⃣ Send Final Results to Frontend (kept the shape the same)
             await callback({
                 "overall_score": overall,
                 "grade": grade,
@@ -115,7 +117,7 @@ class WebsiteAuditRunner:
                 "finished": True,
             })
 
-            # 9️⃣ Save Audit Log
+            # 9️⃣ Save Audit Log (kept as-is)
             save_audit_record(self.url, {
                 "seo": seo_score,
                 "performance": perf_score,
