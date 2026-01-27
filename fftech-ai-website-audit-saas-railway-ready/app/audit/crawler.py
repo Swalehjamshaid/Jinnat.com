@@ -1,28 +1,35 @@
 import asyncio
 import random
 from typing import Dict, Set, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urldefrag
 from collections import deque
 import httpx
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class CrawlConfig:
-    """Internal configuration for the crawler — easy to tune."""
     max_pages: int = 10
     timeout: float = 10.0
     max_concurrency: int = 8
     politeness_delay_min: float = 0.08
     politeness_delay_max: float = 0.25
     user_agent: str = "FFTech-AuditBot/1.0 (+https://yourdomain.com)"
-    max_depth: Optional[int] = None          # optional future extension
+    max_depth: Optional[int] = None
 
 
 def _normalize_netloc(netloc: str) -> str:
-    """Normalized domain for same-site comparison."""
     return netloc.lower().removeprefix("www.").rstrip(".")
+
+
+def _normalize_url(url: str) -> str:
+    url, _ = urldefrag(url)
+    parsed = urlparse(url)
+    return parsed._replace(
+        scheme=parsed.scheme.lower(),
+        netloc=_normalize_netloc(parsed.netloc)
+    ).geturl()
 
 
 async def crawl_site(
@@ -32,54 +39,43 @@ async def crawl_site(
     max_concurrency: int = 8,
     user_agent: str = "FFTech-AuditBot/1.0 (+https://yourdomain.com)",
 ) -> Dict[str, str]:
-    """
-    High-performance, polite, concurrent, same-domain crawler.
 
-    Returns:
-        Dict[str, str]: {url: html_content} for successfully fetched pages.
-
-    Features:
-    • Concurrent fetching with semaphore control
-    • Breadth-first crawl using deque
-    • Connection pooling via single AsyncClient
-    • Randomized politeness delay between batches
-    • Proper URL normalization & same-site check
-    • Graceful error handling & early termination
-    • Fast lxml parser (fallback to html.parser)
-    • Configurable via parameters (no interface break)
-    """
     if max_pages < 1:
         return {}
 
-    start_parsed = urlparse(start_url)
-    if not start_parsed.scheme or not start_parsed.netloc:
-        raise ValueError("Invalid start URL — must include scheme and netloc")
+    parsed_start = urlparse(start_url)
+    if not parsed_start.scheme or not parsed_start.netloc:
+        raise ValueError("Invalid start URL")
 
-    base_netloc_norm = _normalize_netloc(start_parsed.netloc)
+    base_domain = _normalize_netloc(parsed_start.netloc)
 
     visited: Set[str] = set()
-    queue: deque[str] = deque([start_url])
+    queue: deque[str] = deque([_normalize_url(start_url)])
     results: Dict[str, str] = {}
 
-    headers = {"User-Agent": user_agent}
     limits = httpx.Limits(
         max_connections=max_concurrency,
         max_keepalive_connections=max_concurrency,
         keepalive_expiry=30.0
     )
 
+    headers = {
+        "User-Agent": user_agent,
+        "Accept": "text/html,application/xhtml+xml",
+    }
+
     async with httpx.AsyncClient(
-        timeout=timeout,
-        limits=limits,
         headers=headers,
-        verify=False,
+        limits=limits,
+        timeout=httpx.Timeout(timeout),
         follow_redirects=True,
-        http2=True  # faster on modern servers
+        http2=True,
+        verify=True
     ) as client:
 
         semaphore = asyncio.Semaphore(max_concurrency)
 
-        async def fetch_and_parse(url: str) -> None:
+        async def fetch(url: str) -> None:
             async with semaphore:
                 if url in visited or len(results) >= max_pages:
                     return
@@ -87,60 +83,47 @@ async def crawl_site(
                 visited.add(url)
 
                 try:
-                    resp = await client.get(url)
-                    if resp.status_code != 200 or "text/html" not in resp.headers.get("content-type", "").lower():
-                        return
+                    response = await client.get(url)
+                except httpx.HTTPError:
+                    return
 
-                    html = resp.text
-                    results[url] = html
+                if response.status_code != 200:
+                    return
 
-                    # Early exit if limit reached
-                    if len(results) >= max_pages:
-                        return
+                if "text/html" not in response.headers.get("content-type", "").lower():
+                    return
 
-                    # Parse links (use faster lxml parser)
-                    soup = BeautifulSoup(html, "lxml")
+                html = response.text
+                results[url] = html
 
-                    for a_tag in soup.find_all("a", href=True):
-                        href = a_tag["href"].strip()
-                        if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
-                            continue
+                if len(results) >= max_pages:
+                    return
 
-                        next_url = urljoin(url, href)
-                        next_parsed = urlparse(next_url)
+                soup = BeautifulSoup(html, "lxml")
 
-                        if (
-                            next_parsed.scheme in ("http", "https")
-                            and next_parsed.netloc
-                            and _normalize_netloc(next_parsed.netloc) == base_netloc_norm
-                            and next_url not in visited
-                        ):
-                            queue.append(next_url)
+                for tag in soup.select("a[href]"):
+                    href = tag.get("href", "").strip()
+                    if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+                        continue
 
-                except (httpx.RequestError, httpx.TimeoutException, httpx.ConnectError):
-                    pass  # silent skip — continue crawling
+                    next_url = _normalize_url(urljoin(url, href))
+                    parsed = urlparse(next_url)
 
-        # ────────────────────────────────────────────────
-        # Main crawl loop — batch processing for politeness
-        # ────────────────────────────────────────────────
+                    if (
+                        parsed.scheme in ("http", "https")
+                        and _normalize_netloc(parsed.netloc) == base_domain
+                        and next_url not in visited
+                    ):
+                        queue.append(next_url)
+
         while queue and len(results) < max_pages:
-            batch_size = min(len(queue), max_concurrency)
-            current_batch = []
+            tasks = []
 
-            for _ in range(batch_size):
-                if not queue:
-                    break
-                url = queue.popleft()
-                if url not in visited:
-                    current_batch.append(fetch_and_parse(url))
+            for _ in range(min(len(queue), max_concurrency)):
+                tasks.append(fetch(queue.popleft()))
 
-            if not current_batch:
-                break
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-            await asyncio.gather(*current_batch, return_exceptions=True)
-
-            # Politeness delay — randomized jitter (real-world best practice)
-            delay = random.uniform(0.08, 0.25)
-            await asyncio.sleep(delay)
+            await asyncio.sleep(random.uniform(0.08, 0.25))
 
     return results
