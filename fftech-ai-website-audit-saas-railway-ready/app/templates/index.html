@@ -5,16 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FF Tech Audit – Professional Website Auditor</title>
 
-  <!-- Bootstrap & Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-  <!-- Charts & PDF -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-  <!-- Custom CSS -->
   <style>
     :root {
       --bg: #0a0e17;
@@ -27,41 +24,39 @@
     body {
       background: linear-gradient(135deg, var(--bg) 0%, var(--card) 100%);
       color: #e2e8f0;
-      min-height:100vh;
-      font-family:'Inter', system-ui, sans-serif;
+      min-height: 100vh;
+      font-family: 'Inter', system-ui, sans-serif;
     }
     .main-container { max-width: 1300px; margin: 0 auto; padding: 4rem 1rem; }
     .header-title {
-      font-size:3.5rem; font-weight:800;
-      background:linear-gradient(90deg, var(--gold), #fff);
-      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-      margin-bottom:2.5rem; text-align:center;
+      font-size: 3.5rem; font-weight: 800;
+      background: linear-gradient(90deg, var(--gold), #fff);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 2.5rem; text-align: center;
     }
     .card-glass {
       background: var(--glass);
-      border:1px solid var(--border);
+      border: 1px solid var(--border);
       backdrop-filter: blur(15px);
-      border-radius:1.5rem;
-      padding:2.5rem;
+      border-radius: 1.5rem;
+      padding: 2.5rem;
       box-shadow: 0 20px 50px rgba(0,0,0,0.4);
     }
     #loadingOverlay {
-      position: fixed; inset:0; background: rgba(10,14,23,0.95); color: var(--gold);
-      display:none; flex-direction:column; justify-content:center; align-items:center; z-index:9999;
-      transition: opacity 0.3s ease;
+      position: fixed; inset: 0; background: rgba(10,14,23,0.95); color: var(--gold);
+      display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;
     }
-    #loadingOverlay.show { display:flex; opacity:1; }
+    #loadingOverlay.show { display: flex; }
     .metric-box {
       background: rgba(255,255,255,0.03);
-      border:1px solid rgba(255,215,0,0.1);
-      border-radius:1rem; padding:1.5rem; text-align:center; transition:0.3s;
+      border: 1px solid rgba(255,215,0,0.1);
+      border-radius: 1rem; padding: 1.5rem; text-align: center; transition: 0.3s;
     }
     .metric-box:hover { border-color: var(--gold); transform: translateY(-5px); }
-    .metric-value { font-size:2.5rem; font-weight:800; color: var(--gold); }
-    .metric-label { font-size:0.9rem; color:#9ca3af; text-transform:uppercase; letter-spacing:1px; }
-    .chart-container { background: rgba(255,255,255,0.02); border-radius:1rem; padding:1.5rem; margin-bottom:2rem; }
-    .btn-gold { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); border:none; color:#000; font-weight:700; }
-    .btn-gold:hover { opacity:0.9; transform: scale(1.02); }
+    .metric-value { font-size: 2.2rem; font-weight: 800; color: var(--gold); }
+    .metric-label { font-size: 0.8rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; }
+    .chart-container { background: rgba(255,255,255,0.02); border-radius: 1rem; padding: 1.5rem; margin-bottom: 2rem; }
+    .btn-gold { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); border: none; color: #000; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -70,7 +65,7 @@
   <div class="spinner-border text-warning mb-4" style="width:4rem;height:4rem;"></div>
   <h3 id="statusLabel">Initializing Engine...</h3>
   <div class="w-50 mt-3">
-    <div class="progress" style="height:10px;">
+    <div class="progress" style="height:10px; background-color: rgba(255,255,255,0.1);">
       <div id="loadingBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width:5%"></div>
     </div>
   </div>
@@ -80,10 +75,9 @@
   <h1 class="header-title">Audit Engine <span style="font-weight:300;">v4.2</span></h1>
 
   <div class="row g-4">
-    <!-- Left Panel -->
     <div class="col-lg-8">
       <div class="card-glass" id="printableArea">
-        <div class="input-group input-group-lg mb-5 no-print">
+        <div class="input-group input-group-lg mb-5 no-print" id="searchBox">
           <span class="input-group-text bg-dark border-secondary text-warning"><i class="bi bi-globe"></i></span>
           <input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="https://example.com">
           <button id="btnRun" class="btn btn-gold px-5">START AUDIT</button>
@@ -95,77 +89,39 @@
               <h2 id="ovScore" class="display-2 fw-bold mb-0" style="color: var(--gold);">0</h2>
             </div>
             <h3 id="gradeDisplay" class="fw-bold">GRADE: —</h3>
-            <p class="text-muted">Comprehensive AI Analysis Report</p>
             <button id="btnDownload" class="btn btn-sm btn-outline-warning mt-2 no-print">
               <i class="bi bi-file-earmark-pdf me-2"></i>Download Report
             </button>
           </div>
 
           <div class="row g-3 mb-5">
-            <div class="col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">On-Page SEO</div>
-                <div id="onpageScore" class="metric-value">0</div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">Perf (LCP)</div>
-                <div id="perfScore" class="metric-value">0</div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">Competitors</div>
-                <div id="coverageScore" class="metric-value">0</div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">AI Confidence</div>
-                <div id="confScore" class="metric-value">0</div>
-              </div>
-            </div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">SEO</div><div id="onpageScore" class="metric-value">0</div></div></div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">LCP (ms)</div><div id="perfScore" class="metric-value">0</div></div></div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">Competitors</div><div id="coverageScore" class="metric-value">0</div></div></div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">AI Review</div><div id="confScore" class="metric-value">90</div></div></div>
           </div>
 
           <div class="row">
-            <div class="col-md-7">
-              <div class="chart-container">
-                <canvas id="mainChart" height="250"></canvas>
-              </div>
-            </div>
+            <div class="col-md-7"><div class="chart-container"><canvas id="mainChart" height="250"></canvas></div></div>
             <div class="col-md-5">
-              <div class="chart-container">
-                <canvas id="radarChart" height="250"></canvas>
-              </div>
+              <div class="chart-container"><canvas id="doughnutChart" height="250"></canvas></div>
               <div class="mt-3 p-3 bg-dark rounded border border-secondary">
-                <div class="d-flex justify-content-between mb-2">
-                  <span>Internal Links:</span> <strong id="intCount" class="text-success">0</strong>
-                </div>
-                <div class="d-flex justify-content-between mb-2">
-                  <span>External Links:</span> <strong id="extCount" class="text-primary">0</strong>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <span>Broken Links:</span> <strong id="brkCount" class="text-danger">0</strong>
-                </div>
+                <div class="d-flex justify-content-between mb-1"><span>Healthy Links:</span> <strong id="intCount" class="text-success">0</strong></div>
+                <div class="d-flex justify-content-between mb-1"><span>Warnings:</span> <strong id="warnCount" class="text-warning">0</strong></div>
+                <div class="d-flex justify-content-between"><span>Broken:</span> <strong id="brkCount" class="text-danger">0</strong></div>
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Right Panel -->
+    
     <div class="col-lg-4">
       <div class="card-glass h-100">
-        <h4 class="text-warning mb-4"><i class="bi bi-shield-lock me-2"></i>Account Access</h4>
-        <div class="mb-4">
-          <label class="small text-muted mb-2">Email Address</label>
-          <input type="email" class="form-control bg-dark text-white border-secondary mb-3" placeholder="user@company.com">
-          <button class="btn btn-outline-warning w-100">Send Magic Link</button>
-        </div>
+        <h4 class="text-warning mb-4"><i class="bi bi-shield-lock me-2"></i>Audit Overview</h4>
+        <p class="small text-muted">This engine validates site technicals against internal Factory Responsibility standards.</p>
         <hr class="border-secondary">
-        <p class="small text-muted">FF Tech Engine v4.2 uses 128-bit encryption for report storage and AI-driven performance heuristics.</p>
+        <div id="auditLog" class="small text-secondary">Ready for new task...</div>
       </div>
     </div>
   </div>
@@ -174,85 +130,72 @@
 <script>
 let charts = {};
 
-function initCharts(data) {
+function updateCharts(data) {
+  const commonOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#e2e8f0' } } } };
+
   if (charts.bar) charts.bar.destroy();
   charts.bar = new Chart(document.getElementById('mainChart'), {
     type: 'bar',
     data: {
       labels: data.chart_data.bar.labels,
-      datasets: [{ label:'Metrics', data:data.chart_data.bar.data, backgroundColor:['#ffd700','#3b82f6','#10b981','#ef4444'] }]
+      datasets: [{ label: 'Performance Metrics', data: data.chart_data.bar.data, backgroundColor: ['#ffd700', '#3b82f6', '#10b981', '#ef4444'] }]
     },
-    options: { plugins:{legend:{display:false}}, scales:{y:{max:100}} }
+    options: { ...commonOptions, scales: { y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.1)' } } } }
   });
 
-  if (charts.radar) charts.radar.destroy();
-  charts.radar = new Chart(document.getElementById('radarChart'), {
-    type: 'radar',
-    data: { labels:data.chart_data.radar.labels, datasets:[{ label:'Profile', data:data.chart_data.radar.data, borderColor:'#ffd700', backgroundColor:'rgba(255,215,0,0.2)' }] },
-    options:{ scales:{r:{max:100, ticks:{display:false}}} }
+  if (charts.doughnut) charts.doughnut.destroy();
+  charts.doughnut = new Chart(document.getElementById('doughnutChart'), {
+    type: 'doughnut',
+    data: {
+      labels: data.chart_data.doughnut.labels,
+      datasets: [{ data: data.chart_data.doughnut.data, backgroundColor: ['#10b981', '#f59e0b', '#ef4444'], borderWidth: 0 }]
+    },
+    options: commonOptions
   });
 }
 
-// WebSocket audit
 document.getElementById('btnRun').addEventListener('click', () => {
-  const url = document.getElementById('urlInput').value;
-  if(!url) return alert("Enter a URL");
+  const url = document.getElementById('urlInput').value.trim();
+  if(!url) return alert("Please enter a URL");
 
   const overlay = document.getElementById('loadingOverlay');
-  const statusLabel = document.getElementById('statusLabel');
-  const loadingBar = document.getElementById('loadingBar');
-
   overlay.classList.add('show');
-  document.getElementById('resultsPanel').classList.add('d-none');
-
+  
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws = new WebSocket(`${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
 
-  ws.onmessage = (event)=>{
+  ws.onmessage = (event) => {
     const res = JSON.parse(event.data);
-    if(res.status) statusLabel.innerText=res.status;
-    if(res.crawl_progress) loadingBar.style.width=res.crawl_progress+'%';
+    if(res.status) document.getElementById('statusLabel').innerText = res.status;
+    if(res.crawl_progress) document.getElementById('loadingBar').style.width = res.crawl_progress + '%';
 
-    if(res.finished){
+    if(res.finished) {
       overlay.classList.remove('show');
       document.getElementById('resultsPanel').classList.remove('d-none');
+      
+      document.getElementById('ovScore').innerText = res.overall_score;
+      document.getElementById('gradeDisplay').innerText = `GRADE: ${res.grade}`;
+      document.getElementById('onpageScore').innerText = res.breakdown.seo;
+      document.getElementById('perfScore').innerText = Math.round(res.breakdown.performance.lcp_ms);
+      document.getElementById('coverageScore').innerText = res.breakdown.competitors.top_competitor_score;
+      
+      document.getElementById('intCount').innerText = res.breakdown.links.internal_links_count;
+      document.getElementById('warnCount').innerText = res.breakdown.links.warning_links_count;
+      document.getElementById('brkCount').innerText = res.breakdown.links.broken_internal_links;
 
-      document.getElementById('ovScore').innerText = res.overall_score ?? 0;
-      document.getElementById('gradeDisplay').innerText = `GRADE: ${res.grade ?? 'N/A'}`;
-      document.getElementById('onpageScore').innerText = res.breakdown?.seo ?? 0;
-      document.getElementById('perfScore').innerText = res.breakdown?.performance?.lcp_ms ?? 0;
-      document.getElementById('coverageScore').innerText = res.breakdown?.competitors?.top_competitor_score ?? 0;
-      document.getElementById('confScore').innerText = res.chart_data?.bar?.data?.[3] ?? 90;
-
-      document.getElementById('intCount').innerText = res.breakdown?.links?.internal_links_count ?? 0;
-      document.getElementById('extCount').innerText = res.breakdown?.links?.external_links_count ?? 0;
-      document.getElementById('brkCount').innerText = res.breakdown?.links?.broken_internal_links ?? 0;
-
-      initCharts(res);
+      updateCharts(res);
       ws.close();
     }
   };
 });
 
-// PDF download
-document.getElementById('btnDownload').addEventListener('click', async ()=>{
-  const { jsPDF } = window.jspdf;
+document.getElementById('btnDownload').addEventListener('click', async () => {
   const element = document.getElementById('printableArea');
-  const noPrint = document.querySelectorAll('.no-print');
-  noPrint.forEach(el=>el.style.display='none');
-
-  const canvas = await html2canvas(element, { backgroundColor:'#0a0e17', scale:2 });
+  const canvas = await html2canvas(element, { backgroundColor: '#0a0e17', scale: 2 });
   const imgData = canvas.toDataURL('image/png');
-
-  const pdf = new jsPDF('p','mm','a4');
-  const imgProps = pdf.getImageProperties(imgData);
-  const pdfWidth = pdf.internal.pageSize.getWidth();
-  const pdfHeight = (imgProps.height * pdfWidth)/imgProps.width;
-
-  pdf.addImage(imgData,'PNG',0,0,pdfWidth,pdfHeight);
-  pdf.save(`FF-Audit-Report-${new Date().toLocaleDateString()}.pdf`);
-
-  noPrint.forEach(el=>el.style.display='flex');
+  const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+  pdf.addImage(imgData, 'PNG', 0, 0, 210, (canvas.height * 210) / canvas.width);
+  pdf.save(`Audit-Report-${new Date().toISOString().split('T')[0]}.pdf`);
 });
 </script>
 </body>
