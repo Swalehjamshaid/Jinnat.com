@@ -188,6 +188,7 @@ document.getElementById('btnRun').addEventListener('click', () => {
 
   ws.onmessage = (event) => {
     const res = JSON.parse(event.data);
+
     if (res.status) statusLabel.innerText = res.status;
     if (res.crawl_progress) loadingBar.style.width = res.crawl_progress + '%';
 
@@ -213,6 +214,11 @@ document.getElementById('btnRun').addEventListener('click', () => {
       initCharts(res);
       ws.close();
     }
+  };
+
+  ws.onerror = (e) => {
+    overlay.classList.remove('show');
+    alert("WebSocket connection failed. Check server and URL.");
   };
 });
 
