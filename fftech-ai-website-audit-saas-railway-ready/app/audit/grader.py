@@ -1,156 +1,199 @@
-# fftech-ai-website-audit-saas-railway-ready/app/audit/grader.py
-
-"""
-Standalone page grader for FFTech AI Website Audit.
-Analyzes a single HTML document and computes SEO / Performance / Security / Content scores.
-Returns a nested breakdown suitable for dashboards or reports.
-"""
-
 import re
-from typing import Dict
+from typing import Dict, Any
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
 
-def grade_website(html: str, url: str) -> Dict:
-    soup = BeautifulSoup(html, 'html.parser')
-    breakdown = {}
+def grade_website(html: str, url: str) -> Dict[str, Any]:
+    """
+    Analyzes a single HTML document and computes SEO / Performance / Security / Content scores.
+    Returns a nested breakdown suitable for dashboards or reports.
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    parsed_url = urlparse(url)
+    base_domain = parsed_url.netloc
 
-    # ---------------------
-    # 1) SEO Score
-    # ---------------------
-    title = soup.title.string.strip() if soup.title and soup.title.string else ''
-    meta_desc_tag = soup.find('meta', attrs={'name': 'description'})
-    meta_desc = meta_desc_tag['content'].strip() if meta_desc_tag and meta_desc_tag.get('content') else ''
-    h1_tags = soup.find_all('h1')
-    images = soup.find_all('img')
-    images_without_alt = [img for img in images if not img.get('alt')]
+    breakdown: Dict[str, Any] = {
+        "seo": {"score": 0, "issues": [], "details": {}},
+        "performance": {"score": 0, "issues": [], "details": {}},
+        "security": {"score": 0, "issues": [], "details": {}},
+        "content": {"score": 0, "issues": [], "details": {}},
+    }
 
-    seo_score = 0
-    seo_issues = []
+    # ────────────────────────────────────────────────
+    # 1) SEO Score (max 100)
+    # ────────────────────────────────────────────────
+    seo = breakdown["seo"]
 
+    # Title
+    title_tag = soup.title
+    title = title_tag.string.strip() if title_tag and title_tag.string else ""
+    title_len = len(title)
     if title:
-        seo_score += 15
+        seo["score"] += 20
+        seo["details"]["title"] = title
+        if 10 <= title_len <= 70:
+            seo["score"] += 10
+        else:
+            seo["issues"].append(f"Title length {title_len} chars (ideal: 50–60)")
     else:
-        seo_issues.append('Missing <title> tag')
+        seo["issues"].append("Missing <title> tag")
 
+    # Meta description
+    meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+    meta_desc = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else ""
+    meta_len = len(meta_desc)
     if meta_desc:
-        seo_score += 15
+        seo["score"] += 20
+        seo["details"]["meta_description"] = meta_desc
+        if 50 <= meta_len <= 160:
+            seo["score"] += 10
+        else:
+            seo["issues"].append(f"Meta description length {meta_len} chars (ideal: 120–155)")
     else:
-        seo_issues.append('Missing meta description')
+        seo["issues"].append("Missing meta description")
 
-    if len(h1_tags) == 1:
-        seo_score += 10
-    elif len(h1_tags) == 0:
-        seo_issues.append('No H1 tag found')
+    # Headings structure
+    h1_count = len(soup.find_all("h1"))
+    if h1_count == 1:
+        seo["score"] += 15
+    elif h1_count == 0:
+        seo["issues"].append("No <h1> tag found")
     else:
-        seo_issues.append('Multiple H1 tags found')
+        seo["issues"].append(f"Multiple H1 tags ({h1_count}) – prefer only one")
 
-    if images:
-        alt_ratio = (len(images) - len(images_without_alt)) / len(images)
-        seo_score += int(10 * alt_ratio)
-        if images_without_alt:
-            seo_issues.append(f'{len(images_without_alt)} images missing alt attributes')
+    # Viewport (mobile)
+    if soup.find("meta", attrs={"name": "viewport"}):
+        seo["score"] += 10
     else:
-        seo_score += 5  # small score for pages without images
+        seo["issues"].append("Missing viewport meta tag (mobile friendliness)")
 
-    breakdown['seo'] = {'score': seo_score, 'issues': seo_issues}
-
-    # ---------------------
-    # 2) Performance Score (DOM heuristics only)
-    # ---------------------
-    scripts = soup.find_all('script')
-    stylesheets = soup.find_all('link', rel='stylesheet')
-    perf_score = 100
-    perf_issues = []
-
-    if len(scripts) > 20:
-        perf_score -= 15
-        perf_issues.append('Too many JavaScript files (>20)')
-    if len(stylesheets) > 10:
-        perf_score -= 10
-        perf_issues.append('Too many CSS files (>10)')
-    if not soup.find('meta', attrs={'name': 'viewport'}):
-        perf_score -= 15
-        perf_issues.append('Missing viewport meta tag for responsive design')
-
-    breakdown['performance'] = {'score': max(perf_score, 0), 'issues': perf_issues}
-
-    # ---------------------
-    # 3) Security Score
-    # ---------------------
-    parsed = urlparse(url)
-    security_score = 0
-    security_issues = []
-
-    if parsed.scheme == 'https':
-        security_score += 30
+    # Canonical
+    if soup.find("link", rel="canonical"):
+        seo["score"] += 8
     else:
-        security_issues.append('Website is not using HTTPS')
+        seo["issues"].append("Missing rel=canonical link")
 
-    if soup.find('meta', attrs={'http-equiv': 'Content-Security-Policy'}):
-        security_score += 20
+    seo["score"] = min(100, seo["score"])
+
+    # ────────────────────────────────────────────────
+    # 2) Performance Score (max 100) – client-side heuristics
+    # ────────────────────────────────────────────────
+    perf = breakdown["performance"]
+
+    scripts = soup.find_all("script", src=True)
+    styles = soup.find_all("link", rel="stylesheet")
+    blocking = soup.find_all(["script", "link"], attrs={"rel": "preload", "as": "script"})  # rough check
+
+    perf["score"] = 100
+
+    if len(scripts) > 15:
+        perf["score"] -= 20
+        perf["issues"].append(f"High number of JS files ({len(scripts)})")
+    if len(styles) > 8:
+        perf["score"] -= 15
+        perf["issues"].append(f"High number of CSS files ({len(styles)})")
+
+    if not soup.find("meta", attrs={"name": "viewport"}):
+        perf["score"] -= 15
+        perf["issues"].append("Missing viewport – impacts mobile performance")
+
+    if blocking:
+        perf["score"] -= 10
+        perf["issues"].append("Potential render-blocking resources detected")
+
+    perf["score"] = max(0, perf["score"])
+
+    # ────────────────────────────────────────────────
+    # 3) Security Score (max 100) – mostly header-based, limited by HTML
+    # ────────────────────────────────────────────────
+    sec = breakdown["security"]
+
+    sec["score"] = 0
+
+    if parsed_url.scheme == "https":
+        sec["score"] += 40
     else:
-        security_issues.append('Missing Content Security Policy')
+        sec["issues"].append("Not using HTTPS")
 
-    if soup.find('meta', attrs={'http-equiv': 'X-Frame-Options'}):
-        security_score += 10
+    # CSP (limited visibility in HTML)
+    if soup.find("meta", attrs={"http-equiv": "Content-Security-Policy"}):
+        sec["score"] += 25
     else:
-        security_issues.append('Missing X-Frame-Options')
+        sec["issues"].append("No Content-Security-Policy visible")
 
-    breakdown['security'] = {'score': security_score, 'issues': security_issues}
+    # X-Frame-Options / X-XSS-Protection (old but still used)
+    if soup.find("meta", attrs={"http-equiv": "X-Frame-Options"}):
+        sec["score"] += 15
+    if soup.find("meta", attrs={"http-equiv": "X-XSS-Protection"}):
+        sec["score"] += 10
 
-    # ---------------------
-    # 4) Content Score
-    # ---------------------
-    text = soup.get_text(separator=' ')
-    words = re.findall(r'\w+', text)  # fixed word counting regex
+    sec["score"] = min(100, sec["score"])
 
-    content_score = 0
-    content_issues = []
+    # ────────────────────────────────────────────────
+    # 4) Content Score (max 100)
+    # ────────────────────────────────────────────────
+    cont = breakdown["content"]
 
-    if len(words) > 300:
-        content_score += 30
+    text = soup.get_text(separator=" ", strip=True)
+    words = re.findall(r'\b\w+\b', text)
+    word_count = len(words)
+
+    cont["score"] = 0
+
+    if 300 <= word_count <= 2000:
+        cont["score"] += 40
+    elif word_count > 2000:
+        cont["score"] += 30
+        cont["issues"].append("Very high word count – consider breaking into subpages")
     else:
-        content_issues.append('Low text content on page (<300 words)')
+        cont["issues"].append(f"Low content volume ({word_count} words)")
 
+    # Internal links
     internal_links = [
-        a for a in soup.find_all('a', href=True)
-        if urlparse(a['href']).netloc == parsed.netloc
+        a["href"] for a in soup.find_all("a", href=True)
+        if urlparse(urljoin(url, a["href"])).netloc == base_domain
     ]
-
-    if len(internal_links) >= 5:
-        content_score += 20
+    if len(internal_links) >= 8:
+        cont["score"] += 30
+    elif len(internal_links) >= 3:
+        cont["score"] += 15
     else:
-        content_issues.append(f'Low internal linking ({len(internal_links)} internal links)')
+        cont["issues"].append(f"Low internal linking ({len(internal_links)} internal links)")
 
-    breakdown['content'] = {'score': content_score, 'issues': content_issues}
+    # Heading hierarchy (very basic)
+    headings = len(soup.find_all(["h2", "h3", "h4", "h5", "h6"]))
+    if headings >= 3:
+        cont["score"] += 20
+    elif headings == 0:
+        cont["issues"].append("No subheadings found")
 
-    # ---------------------
-    # Total Score and Grade
-    # ---------------------
-    total_score = (
-        breakdown['seo']['score'] +
-        breakdown['performance']['score'] +
-        breakdown['security']['score'] +
-        breakdown['content']['score']
+    cont["score"] = min(100, cont["score"])
+
+    # ────────────────────────────────────────────────
+    # Final total & grade
+    # ────────────────────────────────────────────────
+    # Weighted average – SEO & Content more important
+    total_score = int(
+        (breakdown["seo"]["score"] * 0.35) +
+        (breakdown["performance"]["score"] * 0.25) +
+        (breakdown["security"]["score"] * 0.15) +
+        (breakdown["content"]["score"] * 0.25)
     )
 
-    total_score = min(int(total_score / 4), 100)  # normalize to 100
-
     if total_score >= 90:
-        grade = 'A+'
+        grade = "A+"
     elif total_score >= 80:
-        grade = 'A'
+        grade = "A"
     elif total_score >= 70:
-        grade = 'B'
+        grade = "B"
     elif total_score >= 60:
-        grade = 'C'
+        grade = "C"
     else:
-        grade = 'D'
+        grade = "D"
 
     return {
-        'overall_score': total_score,
-        'grade': grade,
-        'breakdown': breakdown,
+        "overall_score": total_score,
+        "grade": grade,
+        "breakdown": breakdown,
     }
