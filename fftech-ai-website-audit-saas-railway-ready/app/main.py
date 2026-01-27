@@ -106,7 +106,8 @@ async def websocket_audit(websocket: WebSocket):
         # Run audit
         runner = WebsiteAuditRunner(
             url=normalized_url,
-            max_pages=15  # You can adjust max pages here
+            max_pages=20,  # Adjustable: number of pages to audit
+            psi_api_key=None  # Add your Google PSI API key here if available
         )
 
         audit_output = await runner.run_audit(progress_callback=stream_progress)
