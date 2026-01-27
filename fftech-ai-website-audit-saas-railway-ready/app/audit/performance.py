@@ -1,23 +1,21 @@
-# fftech-ai-website-audit-saas-railway-ready/app/audit/performance.py
-
-import requests
+# app/audit/performance.py
 import time
+import httpx
 from typing import Dict
 
-def analyze_performance(url: str) -> Dict[str, int]:
-    """Lightweight timing using requests: total time, ttfb, size."""
-    headers = {'User-Agent': 'FFTech AI Auditor'}
-    t0 = time.time()
+def fetch_timing(url: str, timeout: float = 10.0) -> Dict[str, int]:
+    """
+    Crude network timing (TTFB-like): time to first response using GET with redirects.
+    Returns lcp_ms-like number for illustrative purposes.
+    """
+    start = time.time()
     try:
-        r = requests.get(url, headers=headers, timeout=15, verify=False)
-        size = len(r.content)
-        ttfb = r.elapsed.total_seconds()
+        with httpx.Client(timeout=timeout, verify=False, follow_redirects=True) as client:
+            client.get(url)
+        elapsed_ms = int((time.time() - start) * 1000)
     except Exception:
-        size, ttfb = 0, 15
-    total_time = time.time() - t0
-    return {
-        'lcp_ms': min(4000, int(total_time * 1000)),
-        'fcp_ms': min(2500, int(ttfb * 1000)),
-        'total_page_size_kb': int(size / 1024),
-        'server_response_time_ms': int(ttfb * 1000),
-    }
+        elapsed_ms = 9999
+
+    # Make a pseudo-performance score from elapsed time
+    speed_score = max(0, min(100, int(100 - (elapsed_ms / 100))))
+    return {"lcp_ms": elapsed_ms, "speed_score": speed_score}
