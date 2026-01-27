@@ -9,55 +9,60 @@ logger = logging.getLogger("FFTech_Main")
 
 app = FastAPI(title="FFTech AI Website Audit")
 
-# Use relative path – safer on PaaS like Railway
-STATIC_DIR = "static"
+# Calculate absolute path to static folder (more reliable on Railway / containers)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-# Mount the entire static folder at root
-# html=True → auto-serve index.html for / and unknown directories
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
-
-# Debug endpoint – visit /debug after deploy to see what's really there
+# Debug endpoint – visit /debug after deploy to see real situation
 @app.get("/debug")
-async def debug_info():
+async def debug_paths():
     try:
-        cwd = os.getcwd()
-        static_abs = os.path.abspath(STATIC_DIR)
-        index_path = os.path.join(static_abs, "index.html")
-        
         return {
-            "status": "backend running",
-            "current_working_directory": cwd,
-            "static_directory": STATIC_DIR,
-            "static_directory_exists": os.path.exists(STATIC_DIR),
-            "static_directory_absolute": static_abs,
-            "index_file_exists": os.path.exists(index_path),
-            "files_in_static": os.listdir(STATIC_DIR) if os.path.exists(STATIC_DIR) else "directory missing",
-            "index_file_size": os.path.getsize(index_path) if os.path.exists(index_path) else "missing"
+            "status": "app loaded",
+            "current_working_dir": os.getcwd(),
+            "base_dir": BASE_DIR,
+            "static_dir_absolute": STATIC_DIR,
+            "static_dir_exists": os.path.isdir(STATIC_DIR),
+            "index_html_exists": os.path.isfile(os.path.join(STATIC_DIR, "index.html")),
+            "files_in_static": os.listdir(STATIC_DIR) if os.path.isdir(STATIC_DIR) else "directory missing"
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"debug_error": str(e)}
 
-# Catch-all fallback (protects API routes + serves index.html for client paths)
+# Mount static files
+# Use check_dir=False TEMPORARILY only if desperate (not recommended long-term)
+# Best fix = make sure static/ folder exists in git
+app.mount(
+    "/",
+    StaticFiles(
+        directory=STATIC_DIR,
+        html=True,
+        # check_dir=False   # ← uncomment ONLY for quick test, then remove
+    ),
+    name="static"
+)
+
+# Catch-all fallback for SPA / client routing (optional but useful)
 @app.get("/{full_path:path}")
-async def spa_fallback(full_path: str, request: Request):
-    # Skip special paths
-    if full_path.startswith(("ws/", "api/", "debug", "openapi.json", "docs", "redoc")):
+async def catch_all(full_path: str, request: Request):
+    if full_path.startswith(("ws/", "debug", "openapi.json", "docs", "redoc")):
         raise HTTPException(status_code=404, detail="Not found")
 
-    requested = os.path.join(STATIC_DIR, full_path)
+    requested_path = os.path.join(STATIC_DIR, full_path)
     
-    if os.path.isfile(requested):
-        return FileResponse(requested)
-    
+    if os.path.isfile(requested_path):
+        return FileResponse(requested_path)
+
     # Fallback to index.html
-    index = os.path.join(STATIC_DIR, "index.html")
-    if os.path.isfile(index):
-        logger.info(f"Serving fallback index.html for path: /{full_path}")
-        return FileResponse(index)
-    
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.isfile(index_path):
+        logger.info(f"Fallback to index.html for: /{full_path}")
+        return FileResponse(index_path)
+
     raise HTTPException(status_code=404, detail="Not found")
 
-# Your WebSocket (keep as-is)
+# ────────────────────────────────────────────────
+# Your WebSocket endpoint (unchanged)
 @app.websocket("/ws/audit-progress")
 async def audit_progress(websocket: WebSocket):
     await websocket.accept()
@@ -81,4 +86,4 @@ async def audit_progress(websocket: WebSocket):
     finally:
         await websocket.close()
 
-# No uvicorn block needed – Railway runs it automatically via uvicorn main:app
+# No need for if __name__ == "__main__" on Railway – Nixpacks/Uvicorn handles it
