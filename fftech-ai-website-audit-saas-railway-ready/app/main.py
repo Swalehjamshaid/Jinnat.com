@@ -1,3 +1,5 @@
+# app/main.py
+import os
 import time
 import logging
 from typing import Any, Dict
@@ -96,47 +98,49 @@ async def websocket_audit(websocket: WebSocket):
     try:
         logger.info(f"Starting audit for {normalized_url}")
 
+        # ✅ Read PSI API key from environment so LCP is populated when available
+        psi_api_key = os.getenv("PSI_API_KEY")
+
         runner = WebsiteAuditRunner(
             url=normalized_url,
             max_pages=20,
-            psi_api_key=None
+            psi_api_key=psi_api_key
         )
 
         # Run audit with streaming progress
         audit_output = await runner.run_audit(progress_callback=stream_progress)
 
-        # Structure the data for the frontend
+        # Helpful summary in logs for sanity
+        logger.info("Audit output summary: %s", {
+            "overall_score": audit_output.get("overall_score"),
+            "grade": audit_output.get("grade"),
+            "seo": audit_output.get("breakdown", {}).get("seo"),
+            "lcp_ms": audit_output.get("breakdown", {}).get("performance", {}).get("lcp_ms"),
+            "links": audit_output.get("breakdown", {}).get("links"),
+            "competitors": audit_output.get("breakdown", {}).get("competitors"),
+        })
+
+        # ✅ Pass-through the structure the frontend already expects from the runner
         final_output = {
             "overall_score": audit_output.get("overall_score", 0),
             "grade": audit_output.get("grade", "N/A"),
-            "breakdown": {
-                "seo": audit_output.get("seo_score", 0),
-                "performance": {
-                    "lcp_ms": audit_output.get("lcp_ms", 0),
-                    "cls": audit_output.get("cls", 0),
-                },
-                "competitors": {
-                    "top_competitor_score": audit_output.get("top_competitor_score", 0)
-                },
-                "links": {
-                    "internal_links_count": audit_output.get("internal_links", 0),
-                    "external_links_count": audit_output.get("external_links", 0),
-                    "broken_internal_links": audit_output.get("broken_links", 0)
-                }
-            },
+            "breakdown": audit_output.get("breakdown", {}),
             "chart_data": audit_output.get("chart_data", {
                 "bar": {
-                    "labels": ["SEO", "Performance", "Competitors", "AI Confidence"],
-                    "data": [0, 0, 0, 0]
+                    "labels": ["SEO", "Links", "Perf", "AI"],
+                    "data": [0, 0, 0, 90]
                 },
                 "radar": {
-                    "labels": ["SEO", "Performance", "Competitors", "AI Confidence"],
-                    "data": [0, 0, 0, 0]
+                    "labels": ["SEO", "Links", "Perf", "AI"],
+                    "data": [0, 0, 0, 90]
                 }
             }),
             "finished": True,
             "status": "Audit complete ✔",
-            "crawl_progress": 100
+            "crawl_progress": 100,
+            # Optional extras for future UI features:
+            "pages_graded": audit_output.get("pages_graded", []),
+            "audit_time": audit_output.get("audit_time", 0)
         }
 
         await websocket.send_json(final_output)
