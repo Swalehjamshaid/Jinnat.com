@@ -5,24 +5,24 @@ from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 
-# 1. This identifies the EXACT folder where main.py lives
+# Force Python to find the EXACT directory where main.py is running
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 2. Ensure static folder exists to prevent 'Directory not found' errors
+# Ensure the 'static' folder exists to prevent background crashes
 static_path = os.path.join(BASE_DIR, "static")
 os.makedirs(static_path, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
-    # 3. Force the server to look for index.html in the same folder as this script
+    # Force search in the same directory as main.py
     index_path = os.path.join(BASE_DIR, "index.html")
     
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return f.read()
     
-    # This debug message will appear in your browser if the path is still wrong
+    # This error message will help us verify the path in your browser
     return f"Deployment Error: index.html not found at {index_path}"
 
-# Rest of your WebSocket code...
+# WebSocket logic follows...
