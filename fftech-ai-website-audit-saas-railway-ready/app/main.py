@@ -72,7 +72,6 @@ async def home(request: Request):
 @app.websocket("/ws/audit-progress")
 async def websocket_audit(websocket: WebSocket):
     await websocket.accept()
-
     url = websocket.query_params.get("url")
     if not url:
         await websocket.send_json({"error": "URL is required"})
@@ -87,6 +86,7 @@ async def websocket_audit(websocket: WebSocket):
         return
 
     async def stream_progress(update: Dict[str, Any]):
+        """Send updates to frontend"""
         try:
             await websocket.send_json(update)
         except RuntimeError:
@@ -96,35 +96,34 @@ async def websocket_audit(websocket: WebSocket):
     try:
         logger.info(f"Starting audit for {normalized_url}")
 
-        # Initial progress
-        await stream_progress({
-            "status": "Initializing audit…",
-            "crawl_progress": 5,
-            "finished": False
-        })
-
-        # Run audit
+        # Create runner
         runner = WebsiteAuditRunner(
             url=normalized_url,
-            max_pages=20,  # Adjustable: number of pages to audit
-            psi_api_key=None  # Add your Google PSI API key here if available
+            max_pages=20,  # adjustable
+            psi_api_key=None  # Add your PSI key here if available
         )
 
+        # Run audit with streaming progress
         audit_output = await runner.run_audit(progress_callback=stream_progress)
 
-        # Final progress
-        await stream_progress({
-            **audit_output,
-            "status": "Audit completed ✔",
-            "crawl_progress": 100,
-            "finished": True
-        })
+        # Send final output to frontend in expected format
+        final_output = {
+            "overall_score": audit_output.get("overall_score", 0),
+            "grade": audit_output.get("grade", "N/A"),
+            "breakdown": audit_output.get("breakdown", {}),
+            "chart_data": audit_output.get("chart_data", {}),
+            "finished": True,
+            "status": "Audit complete ✔",
+            "crawl_progress": 100
+        }
+
+        await websocket.send_json(final_output)
 
     except WebSocketDisconnect:
         logger.info("Client disconnected from WebSocket")
     except Exception as e:
         logger.exception("Audit failed")
-        await stream_progress({
+        await websocket.send_json({
             "error": str(e),
             "status": "Audit failed",
             "finished": True
