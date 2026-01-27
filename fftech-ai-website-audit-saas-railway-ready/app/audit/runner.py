@@ -14,6 +14,43 @@ from .competitor_report import compare_with_competitors
 logger = logging.getLogger("audit_engine")
 
 
+# ---- Direct HTML fetch fallback for protected sites (Cloudflare/WAF) ----
+async def _direct_fetch_html(url: str) -> List[Dict[str, str]]:
+    """
+    A minimal, resilient fetch that mimics a browser to retrieve at least the
+    root HTML so SEO/Links/Grading have something to process if crawler fails.
+    """
+    try:
+        # Use httpx only when available in your environment
+        import httpx
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/121.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Upgrade-Insecure-Requests": "1",
+        }
+        timeout = httpx.Timeout(15.0, connect=10.0)
+        async with httpx.AsyncClient(
+            headers=headers,
+            follow_redirects=True,
+            timeout=timeout,
+            verify=True,
+        ) as client:
+            resp = await client.get(url)
+            text = resp.text or ""
+            if text.strip():
+                return [{"url": str(resp.url), "html": text}]
+    except Exception as e:
+        logger.warning("Direct fetch fallback failed for %s: %s", url, e)
+    return []
+
+
 class WebsiteAuditRunner:
     """
     Integrated runner for FFTech AI Website Audit.
@@ -38,17 +75,28 @@ class WebsiteAuditRunner:
 
         # ------------------- 1️⃣ Crawl pages -------------------
         await send_update(5, "Crawling internal pages…")
-        crawl_result = await crawl(self.url, max_pages=self.max_pages)
-        pages: List[Dict[str, Any]] = crawl_result.get("report", []) or []
-        if not pages:
-            logger.warning("No pages found during crawl!")
+        try:
+            crawl_result = await crawl(self.url, max_pages=self.max_pages)
+            pages: List[Dict[str, Any]] = crawl_result.get("report", []) or []
+        except Exception as e:
+            logger.exception("Crawler failed: %s", e)
+            pages = []
 
         # ------------------- 2️⃣ Fetch raw HTML -------------------
         await send_update(15, "Fetching page HTML…")
-        html_docs: List[Dict[str, Any]] = await asyncio.to_thread(fetch_site_html, self.url, self.max_pages)
+        try:
+            html_docs: List[Dict[str, Any]] = await asyncio.to_thread(fetch_site_html, self.url, self.max_pages)
+        except Exception as e:
+            logger.exception("fetch_site_html failed: %s", e)
+            html_docs = []
 
-        # Merge/fallback HTML for SEO analysis:
-        # Some crawlers list URLs without embedding HTML. Prefer html_docs when needed.
+        # If both are empty or don't contain HTML, try direct fetch fallback
+        has_html_in_pages = any(bool(p.get("html")) for p in pages)
+        if not html_docs and not has_html_in_pages:
+            await send_update(22, "Direct fetching homepage HTML…")
+            html_docs = await _direct_fetch_html(self.url)
+
+        # Prepare documents for SEO/grading
         pages_for_seo: List[Dict[str, Any]] = pages
         has_any_html_in_pages = any(bool(p.get("html")) for p in pages)
         if not pages or not has_any_html_in_pages:
@@ -57,9 +105,11 @@ class WebsiteAuditRunner:
                     {"url": d.get("url", self.url), "html": d.get("html", "")}
                     for d in html_docs[: self.max_pages]
                 ]
-                logger.info("Using html_docs for SEO analysis (crawler returned no/empty HTML).")
+                logger.info("Using html_docs for SEO/Grading (crawler pages lacked HTML).")
             else:
-                logger.warning("No html_docs available; SEO analysis may be minimal.")
+                # As a last resort, give at least one empty page to keep pipeline alive
+                pages_for_seo = [{"url": self.url, "html": ""}]
+                logger.warning("No HTML available; SEO analysis will be minimal.")
 
         # ------------------- 3️⃣ SEO Analysis -------------------
         await send_update(30, "Analyzing SEO heuristics…")
@@ -68,13 +118,12 @@ class WebsiteAuditRunner:
             onpage_score = round(seo_data.get("score", 0)) if isinstance(seo_data, dict) else 0
         except Exception as e:
             logger.exception("SEO analysis failed: %s", e)
-            seo_data = {}
             onpage_score = 0
 
         # ------------------- 4️⃣ Link Analysis -------------------
         await send_update(50, "Checking internal and external links…")
         try:
-            links_data_raw = await analyze_links_async(html_docs or [], self.url, progress_callback=progress_callback)
+            links_data_raw = await analyze_links_async(html_docs or pages_for_seo, self.url, progress_callback=progress_callback)
         except Exception as e:
             logger.exception("Link analysis failed: %s", e)
             links_data_raw = {}
@@ -88,12 +137,13 @@ class WebsiteAuditRunner:
 
         # ------------------- 5️⃣ Performance Metrics -------------------
         await send_update(70, "Fetching PageSpeed metrics…")
-        psi_data: Dict[str, Any] = {"lcp_ms": 0}
+        psi_data: Dict[str, Any] = {"lcp_ms": 0, "cls": 0}
         if self.psi_api_key:
             try:
                 psi_data = await asyncio.to_thread(fetch_lighthouse, self.url, api_key=self.psi_api_key)
             except Exception as e:
-                logger.warning(f"PSI fetch failed: {e}")
+                logger.warning("PSI fetch failed: %s", e)
+
         lcp_ms = float(psi_data.get("lcp_ms", 0) or 0.0)
         cls = float(psi_data.get("cls", 0) or 0.0)
 
@@ -120,12 +170,10 @@ class WebsiteAuditRunner:
         competitor_score = int(competitor_data.get("top_competitor_score", 0) or 0)
 
         # ------------------- 8️⃣ Aggregate final report -------------------
-        # Simple, bounded scoring for perf & links to avoid negatives or >100 values
         link_score = max(0, min(links_data.get("internal_links_count", 0), 100))
-        # Invert LCP into a rough 0-100 perf score; clamp range
-        perf_score = max(0, min(100 - (lcp_ms / 50.0), 100))  # 0ms => 100, 2000ms => 60, etc.
+        perf_score = max(0, min(100 - (lcp_ms / 50.0), 100))  # 0ms => 100
 
-        # Blend a steady AI confidence (90) as in your UI
+        # Keep AI confidence at 90 (as per your chart)
         overall_score = round((onpage_score + link_score + perf_score + 90) / 4)
         overall_score = max(0, min(overall_score, 100))
 
@@ -150,15 +198,17 @@ class WebsiteAuditRunner:
 
         await send_update(100, "Audit complete.")
 
+        grade_letter = (
+            "A+" if overall_score >= 90 else
+            "A"  if overall_score >= 80 else
+            "B"  if overall_score >= 70 else
+            "C"  if overall_score >= 60 else
+            "D"
+        )
+
         return {
             "overall_score": overall_score,
-            "grade": (
-                "A+" if overall_score >= 90 else
-                "A"  if overall_score >= 80 else
-                "B"  if overall_score >= 70 else
-                "C"  if overall_score >= 60 else
-                "D"
-            ),
+            "grade": grade_letter,
             "pages_graded": graded_pages,
             "breakdown": {
                 "seo": onpage_score,
