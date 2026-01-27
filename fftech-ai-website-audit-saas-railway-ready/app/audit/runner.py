@@ -3,68 +3,109 @@ import logging
 from typing import Optional, Callable, Dict, Any
 
 from .crawler import crawl
-from .seo import analyze_onpage  # Make sure your seo.py exists and returns {"score": ...}
+from .seo import analyze_onpage
+from .grader import grade_website
+from .links import analyze_links_async
+from .record import fetch_site_html
+from .psi import fetch_lighthouse
+from .competitor_report import compare_with_competitors
 
 logger = logging.getLogger("audit_engine")
 
-# -------------------------
-# Website Audit Runner
-# -------------------------
+
 class WebsiteAuditRunner:
-    def __init__(self, url: str, max_pages: int = 10):
+    """
+    Integrated runner for FFTech AI Website Audit.
+    Crawls, grades, analyzes SEO, links, performance, and competitors.
+    """
+
+    def __init__(self, url: str, max_pages: int = 20, psi_api_key: Optional[str] = None):
         self.url = url
         self.max_pages = max_pages
+        self.psi_api_key = psi_api_key
 
     async def run_audit(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         start_time = asyncio.get_event_loop().time()
 
-        async def send_update(pct, msg):
+        async def send_update(pct: float, msg: str):
             if progress_callback:
-                await progress_callback({
-                    "crawl_progress": pct,
-                    "status": msg,
-                    "finished": False
-                })
+                await progress_callback({"crawl_progress": pct, "status": msg, "finished": False})
 
-        # 1️⃣ Crawl
-        await send_update(10, "Crawling internal pages…")
+        # -------------------
+        # 1️⃣ Crawl pages
+        # -------------------
+        await send_update(5, "Crawling internal pages…")
         crawl_result = await crawl(self.url, max_pages=self.max_pages)
         pages = crawl_result.get("report", [])
 
-        # 2️⃣ SEO Analysis
-        await send_update(40, "Analyzing SEO heuristics…")
-        seo_data = await analyze_onpage(pages)  # Must return {"score": int}
+        # -------------------
+        # 2️⃣ Fetch raw HTML (for links, grading)
+        # -------------------
+        await send_update(15, "Fetching page HTML…")
+        html_docs = await fetch_site_html(self.url, max_pages=self.max_pages)
 
-        # 3️⃣ Real Scoring
+        # -------------------
+        # 3️⃣ SEO Analysis
+        # -------------------
+        await send_update(30, "Analyzing SEO heuristics…")
+        seo_data = await analyze_onpage(pages)
         onpage_score = round(seo_data.get("score", 80))
-        performance_score = min(100, len(pages) * 5 + 70)  # Simple performance formula
-        coverage_score = min(100, len(pages) * 10)
-        confidence_score = 90
 
-        overall_score = round((onpage_score + performance_score + coverage_score) / 3)
+        # -------------------
+        # 4️⃣ Link Analysis
+        # -------------------
+        await send_update(50, "Checking internal and external links…")
+        links_data = await analyze_links_async(html_docs, self.url, progress_callback=progress_callback)
 
-        # 4️⃣ Return structured audit data
+        # -------------------
+        # 5️⃣ Performance Metrics (PageSpeed Insights)
+        # -------------------
+        await send_update(70, "Fetching PageSpeed metrics…")
+        psi_data = {}
+        if self.psi_api_key:
+            try:
+                psi_data = fetch_lighthouse(self.url, api_key=self.psi_api_key)
+            except Exception as e:
+                logger.warning(f"PSI fetch failed: {e}")
+
+        # -------------------
+        # 6️⃣ Page Grading (SEO, Performance, Security, Content)
+        # -------------------
+        await send_update(80, "Grading pages…")
+        graded_pages = []
+        for page in pages:
+            grade = grade_website(page.get("html", ""), page.get("url"))
+            graded_pages.append({"url": page.get("url"), "grade": grade})
+
+        # -------------------
+        # 7️⃣ Competitor Comparison
+        # -------------------
+        await send_update(90, "Analyzing competitors…")
+        competitor_data = compare_with_competitors(self.url)
+        your_score_vs_top = competitor_data["top_competitor_score"] - onpage_score
+
+        # -------------------
+        # 8️⃣ Aggregate final report
+        # -------------------
+        overall_score = round((onpage_score + links_data["internal_links_count"] + psi_data.get("lcp_ms", 0) / 100 + 90) / 4)
+        grade = "A+" if overall_score >= 90 else "A" if overall_score >= 80 else "B" if overall_score >= 70 else "C" if overall_score >= 60 else "D"
+
+        await send_update(100, "Audit complete.")
+
         return {
             "overall_score": overall_score,
-            "grade": "A" if overall_score > 80 else "B",
+            "grade": grade,
+            "pages_graded": graded_pages,
             "breakdown": {
-                "onpage": onpage_score,
-                "performance": performance_score,
-                "coverage": coverage_score,
-                "confidence": confidence_score
-            },
-            "metrics": {
-                "internal_links": len(pages),
-                "external_links": 5,
-                "broken_internal_links": 0
+                "seo": onpage_score,
+                "links": links_data,
+                "performance": psi_data,
+                "competitors": competitor_data
             },
             "chart_data": {
-                "bar": {"labels": ["SEO", "Perf", "Links", "AI"],
-                        "data": [onpage_score, performance_score, coverage_score, confidence_score]},
-                "radar": {"labels": ["SEO", "Perf", "Links", "AI"],
-                          "data": [onpage_score, performance_score, coverage_score, confidence_score]},
-                "doughnut": {"labels": ["Good", "Warning", "Broken"],
-                             "data": [len(pages), 2, 0]}
+                "bar": {"labels": ["SEO", "Links", "Perf", "AI"], "data": [onpage_score, links_data["internal_links_count"], psi_data.get("lcp_ms", 0)//10, 90]},
+                "radar": {"labels": ["SEO", "Links", "Perf", "AI"], "data": [onpage_score, links_data["internal_links_count"], psi_data.get("lcp_ms", 0)//10, 90]},
+                "doughnut": {"labels": ["Good", "Warning", "Broken"], "data": [links_data["internal_links_count"], 2, links_data["broken_internal_links"]]}
             },
             "audit_time": round(asyncio.get_event_loop().time() - start_time, 2)
         }
