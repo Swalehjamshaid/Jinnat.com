@@ -105,11 +105,35 @@ async def websocket_audit(websocket: WebSocket):
         # Run audit with streaming progress
         audit_output = await runner.run_audit(progress_callback=stream_progress)
 
+        # Structure the data for the frontend
         final_output = {
             "overall_score": audit_output.get("overall_score", 0),
             "grade": audit_output.get("grade", "N/A"),
-            "breakdown": audit_output.get("breakdown", {}),
-            "chart_data": audit_output.get("chart_data", {}),
+            "breakdown": {
+                "seo": audit_output.get("seo_score", 0),
+                "performance": {
+                    "lcp_ms": audit_output.get("lcp_ms", 0),
+                    "cls": audit_output.get("cls", 0),
+                },
+                "competitors": {
+                    "top_competitor_score": audit_output.get("top_competitor_score", 0)
+                },
+                "links": {
+                    "internal_links_count": audit_output.get("internal_links", 0),
+                    "external_links_count": audit_output.get("external_links", 0),
+                    "broken_internal_links": audit_output.get("broken_links", 0)
+                }
+            },
+            "chart_data": audit_output.get("chart_data", {
+                "bar": {
+                    "labels": ["SEO", "Performance", "Competitors", "AI Confidence"],
+                    "data": [0, 0, 0, 0]
+                },
+                "radar": {
+                    "labels": ["SEO", "Performance", "Competitors", "AI Confidence"],
+                    "data": [0, 0, 0, 0]
+                }
+            }),
             "finished": True,
             "status": "Audit complete ✔",
             "crawl_progress": 100
