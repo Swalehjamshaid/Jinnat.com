@@ -1,4 +1,3 @@
-# app/audit/runner.py
 import asyncio
 import logging
 from typing import Optional, Callable, Dict, Any, List, Union
@@ -14,13 +13,11 @@ from .competitor_report import compare_with_competitors
 
 logger = logging.getLogger("audit_engine")
 
-
 # Helper: Direct browser-like fetch fallback
 try:
     import httpx
 except ImportError:
     httpx = None
-
 
 async def _direct_fetch_html(url: str) -> List[Dict[str, str]]:
     if httpx is None:
@@ -43,7 +40,6 @@ async def _direct_fetch_html(url: str) -> List[Dict[str, str]]:
     except Exception as e:
         logger.warning(f"Direct fetch failed for {url}: {e}")
     return []
-
 
 class WebsiteAuditRunner:
     """
@@ -85,7 +81,10 @@ class WebsiteAuditRunner:
         # 2. Fetch HTML (multi-page)
         await send_update(15, "Fetching page HTML…")
         try:
-            html_docs: List[Dict[str, Any]] = await asyncio.to_thread(fetch_site_html, self.url, self.max_pages)
+            # FIX: Properly await the thread execution to get a List, not a coroutine
+            html_docs = await asyncio.to_thread(fetch_site_html, self.url, self.max_pages)
+            if not isinstance(html_docs, list):
+                html_docs = []
         except Exception as e:
             logger.exception("fetch_site_html failed")
             html_docs = []
@@ -140,6 +139,7 @@ class WebsiteAuditRunner:
                 psi_data = await asyncio.to_thread(fetch_lighthouse, self.url, api_key=self.psi_api_key)
             except Exception as e:
                 logger.warning(f"PSI failed: {e}")
+        
         lcp_ms = float(psi_data.get("lcp_ms", 0) or 0.0)
         cls = float(psi_data.get("cls", 0) or 0.0)
 
@@ -165,13 +165,17 @@ class WebsiteAuditRunner:
             competitor_score = 85
 
         # 8. Scoring & Charts
-        link_score = min(links_data["internal_links_count"], 100)  # cap for chart
-        # Perf: realistic curve + CLS penalty
-        base_perf = max(0, 100 - (lcp_ms / 25.0))  # 0ms=100, 2500ms=0
+        # Refined Link Score: Deduct 10 points per broken link, starting from 100
+        total_internal = links_data["internal_links_count"]
+        broken_internal = links_data["broken_internal_links"]
+        link_score = 100 if total_internal == 0 else max(0, 100 - (broken_internal * 10))
+        
+        # Perf Score: Standard curve
+        base_perf = max(0, 100 - (lcp_ms / 30.0))
         cls_penalty = 20 if cls > 0.25 else 10 if cls > 0.1 else 0
         perf_score = max(0, min(100, base_perf - cls_penalty))
 
-        # Overall (average of 4 metrics)
+        # Overall Score calculation
         overall_raw = (onpage_score + link_score + perf_score + 90) / 4
         overall_score = round(max(0, min(100, overall_raw)))
 
@@ -195,7 +199,7 @@ class WebsiteAuditRunner:
             "doughnut": {
                 "labels": ["Good", "Warning", "Broken"],
                 "data": [
-                    links_data["internal_links_count"],
+                    max(0, links_data["internal_links_count"] - links_data["broken_internal_links"]),
                     links_data["warning_links_count"],
                     links_data["broken_internal_links"],
                 ],
