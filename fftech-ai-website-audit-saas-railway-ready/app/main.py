@@ -1,34 +1,23 @@
-from fastapi import FastAPI, WebSocket, Query
+import os
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from app.audit.runner import WebsiteAuditRunner
-import json
-import asyncio
 
 app = FastAPI()
 
-# Assuming your index.html is in a folder named 'templates'
+# This finds the folder where main.py actually lives
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @app.get("/")
 async def get():
-    with open("templates/index.html") as f:
-        return HTMLResponse(content=f.read())
-
-@app.websocket("/ws/audit-progress")
-async def websocket_endpoint(websocket: WebSocket, url: str = Query(...)):
-    await websocket.accept()
+    # This creates a reliable path to: app/templates/index.html
+    template_path = os.path.join(BASE_DIR, "templates", "index.html")
     
-    # Callback to send updates back to the frontend
-    async def progress_callback(data: dict):
-        await websocket.send_text(json.dumps(data))
-
-    runner = WebsiteAuditRunner(url)
     try:
-        await runner.run_audit(progress_callback)
-    except Exception as e:
-        await websocket.send_text(json.dumps({"error": str(e), "finished": True}))
-    finally:
-        await websocket.close()
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        with open(template_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        # If it still fails, this message will tell you exactly where it looked
+        return HTMLResponse(
+            content=f"Error: index.html not found. Backend searched: {template_path}", 
+            status_code=404
+        )
