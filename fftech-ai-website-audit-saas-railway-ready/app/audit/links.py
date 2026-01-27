@@ -9,7 +9,7 @@ async def analyze_links_async(html_dict, base_url, callback=None):
     Analyze links on a website:
     - Count internal links
     - Count external links
-    - Identify broken links (status != 200)
+    - Identify broken links (status >= 400)
     """
     html = html_dict.get(base_url, "")
     soup = BeautifulSoup(html, "html.parser")
@@ -20,6 +20,9 @@ async def analyze_links_async(html_dict, base_url, callback=None):
     broken_links = []
 
     async def check_link(link):
+        # Convert relative URLs to absolute
+        if not link.startswith("http"):
+            link = urljoin(base_url, link)
         try:
             async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
                 r = await client.head(link)
@@ -31,14 +34,11 @@ async def analyze_links_async(html_dict, base_url, callback=None):
     tasks = []
     for tag in links:
         href = tag["href"]
-        if href.startswith("http"):
-            if urlparse(href).netloc == urlparse(base_url).netloc:
-                internal_links.append(href)
-            else:
-                external_links.append(href)
+        parsed = urlparse(href)
+        if parsed.netloc and parsed.netloc != urlparse(base_url).netloc:
+            external_links.append(href)
         else:
-            full_url = urljoin(base_url, href)
-            internal_links.append(full_url)
+            internal_links.append(href)
         tasks.append(check_link(href))
 
     # Run async checks concurrently
