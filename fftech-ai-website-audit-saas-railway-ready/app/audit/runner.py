@@ -14,10 +14,7 @@ logger = logging.getLogger("audit_engine")
 
 
 class WebsiteAuditRunner:
-    """
-    Integrated runner for FFTech AI Website Audit.
-    Crawls, grades, analyzes SEO, links, performance, and competitors.
-    """
+    """Integrated runner for FFTech AI Website Audit"""
 
     def __init__(self, url: str, max_pages: int = 20, psi_api_key: Optional[str] = None):
         self.url = url
@@ -34,74 +31,49 @@ class WebsiteAuditRunner:
                 else:
                     progress_callback({"crawl_progress": pct, "status": msg, "finished": False})
 
-        # -------------------
         # 1️⃣ Crawl pages
-        # -------------------
         await send_update(5, "Crawling internal pages…")
         crawl_result = await crawl(self.url, max_pages=self.max_pages)
         pages = crawl_result.get("report", [])
 
-        # -------------------
-        # 2️⃣ Fetch raw HTML (for links, grading)
-        # -------------------
+        # 2️⃣ Fetch raw HTML for links
         await send_update(15, "Fetching page HTML…")
-        # CORRECTED: fetch_site_html is async, await it directly
         html_docs = await fetch_site_html(self.url, self.max_pages)
 
-        # -------------------
         # 3️⃣ SEO Analysis
-        # -------------------
         await send_update(30, "Analyzing SEO heuristics…")
         seo_data = await analyze_onpage(pages)
         onpage_score = round(seo_data.get("score", 80))
 
-        # -------------------
         # 4️⃣ Link Analysis
-        # -------------------
         await send_update(50, "Checking internal and external links…")
         links_data = await analyze_links_async(html_docs, self.url, progress_callback=progress_callback)
 
-        # -------------------
-        # 5️⃣ Performance Metrics (PageSpeed Insights)
-        # -------------------
+        # 5️⃣ Performance Metrics
         await send_update(70, "Fetching PageSpeed metrics…")
         psi_data: Dict[str, Any] = {}
         if self.psi_api_key:
             try:
-                psi_data = await fetch_lighthouse(self.url, api_key=self.psi_api_key)
+                psi_data = await asyncio.to_thread(fetch_lighthouse, self.url, api_key=self.psi_api_key)
             except Exception as e:
                 logger.warning(f"PSI fetch failed: {e}")
 
-        # -------------------
-        # 6️⃣ Page Grading (SEO, Performance, Security, Content)
-        # -------------------
+        # 6️⃣ Page Grading
         await send_update(80, "Grading pages…")
-        graded_pages = []
-        for page in pages:
-            html_content = page.get("html", "")
-            page_url = page.get("url", "")
-            grade = grade_website(html_content, page_url)
-            graded_pages.append({"url": page_url, "grade": grade})
+        graded_pages = [{"url": page.get("url", ""), "grade": grade_website(page.get("html", ""), page.get("url", ""))} for page in pages]
 
-        # -------------------
         # 7️⃣ Competitor Comparison
-        # -------------------
         await send_update(90, "Analyzing competitors…")
-        competitor_data = await compare_with_competitors(self.url)
+        competitor_data = await asyncio.to_thread(compare_with_competitors, self.url)
         top_score = competitor_data.get("top_competitor_score", 100)
-        your_score_vs_top = top_score - onpage_score
 
-        # -------------------
         # 8️⃣ Aggregate final report
-        # -------------------
         lcp_ms = psi_data.get("lcp_ms", 0)
-
-        # Normalize values for scoring
         link_score = min(links_data.get("internal_links_count", 0), 100)
-        perf_score = min(100 - lcp_ms / 50, 100)  # Example normalization for LCP
+        perf_score = min(100 - lcp_ms / 50, 100)
 
         overall_score = round((onpage_score + link_score + perf_score + 90) / 4)
-        overall_score = min(overall_score, 100)  # Cap at 100
+        overall_score = min(overall_score, 100)
 
         grade = (
             "A+" if overall_score >= 90 else
@@ -111,7 +83,6 @@ class WebsiteAuditRunner:
             "D"
         )
 
-        # Normalize chart data
         chart_data = {
             "bar": {
                 "labels": ["SEO", "Links", "Perf", "AI"],
@@ -132,7 +103,6 @@ class WebsiteAuditRunner:
         }
 
         await send_update(100, "Audit complete.")
-
         return {
             "overall_score": overall_score,
             "grade": grade,
