@@ -3,6 +3,8 @@ import httpx
 from bs4 import BeautifulSoup
 import time
 import traceback
+# Import the specialized link analyzer
+from app.audit.link import analyze_links_async
 
 class WebsiteAuditRunner:
     def __init__(self, url: str):
@@ -17,37 +19,41 @@ class WebsiteAuditRunner:
             start_time = time.time()
             
             # --- PHASE 1: HTTP REQUEST & PERFORMANCE ---
-            # verify=False handles sites with expired/local SSL certificates
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, verify=False) as client:
-                await callback({"status": "⚡ Measuring Response Latency...", "crawl_progress": 30})
+                await callback({"status": "⚡ Measuring Response Latency...", "crawl_progress": 25})
                 response = await client.get(self.url)
                 
-                # Performance Metric: Time to First Byte (TTFB) simulation
+                # Real Performance Metric
                 lcp_ms = int((time.time() - start_time) * 1000)
+                html_content = response.text
                 
             # --- PHASE 2: SEO & CONTENT SCRAPING ---
-            await callback({"status": "🔍 Scraping On-Page Metadata...", "crawl_progress": 60})
-            soup = BeautifulSoup(response.text, 'lxml')
+            await callback({"status": "🔍 Scraping On-Page Metadata...", "crawl_progress": 45})
+            soup = BeautifulSoup(html_content, 'lxml')
             
             # Real SEO checks
             title = soup.title.string if soup.title else None
             h1_tags = soup.find_all('h1')
             meta_desc = soup.find('meta', attrs={'name': 'description'})
             
-            # Real Scoring Logic (Not Random)
+            # Weighted Scoring Logic
             seo_points = 0
             if title: seo_points += 40
             if meta_desc: seo_points += 30
             if len(h1_tags) > 0: seo_points += 30
             
-            # --- PHASE 3: LINK ANALYSIS ---
-            await callback({"status": "🔗 Analyzing Link Integrity...", "crawl_progress": 85})
-            all_links = soup.find_all('a', href=True)
-            internal_links = [l for l in all_links if self.url in l['href'] or l['href'].startswith('/')]
-            broken_sim = 0 # In a real deep crawl, you'd loop these and check status codes
+            # --- PHASE 3: REAL LINK INTEGRITY (Using your link.py) ---
+            # This replaces the old loop and simulation
+            link_data = await analyze_links_async(
+                html_input={self.url: html_content}, 
+                base_url=self.url,
+                progress_callback=callback
+            )
 
-            # --- FINAL PAYLOAD ---
-            overall_score = int((seo_points + max(0, 100 - (lcp_ms/100))) / 2)
+            # --- PHASE 4: FINAL CALCULATION ---
+            # Speed score: Perfect (100) if under 500ms, drops as time increases
+            speed_score = max(0, 100 - (lcp_ms // 50)) 
+            overall_score = int((seo_points * 0.6) + (speed_score * 0.4))
             
             final_payload = {
                 "overall_score": overall_score,
@@ -55,21 +61,21 @@ class WebsiteAuditRunner:
                 "breakdown": {
                     "seo": seo_points,
                     "performance": {"lcp_ms": lcp_ms},
-                    "competitors": {"top_competitor_score": 72}, # Benchmarked static
-                    "links": {
-                        "internal_links_count": len(internal_links),
-                        "warning_links_count": len(all_links) - len(internal_links),
-                        "broken_internal_links": broken_sim
-                    }
+                    "competitors": {"top_competitor_score": 72}, 
+                    "links": link_data # Now contains real 'broken_internal_links'
                 },
                 "chart_data": {
                     "bar": {
                         "labels": ["SEO", "Speed", "Links", "AI Trust"],
-                        "data": [seo_points, max(0, 100 - (lcp_ms/100)), 85, 90]
+                        "data": [seo_points, speed_score, 85, 90]
                     },
                     "doughnut": {
                         "labels": ["Healthy", "Warning", "Broken"],
-                        "data": [len(internal_links), len(all_links) - len(internal_links), broken_sim]
+                        "data": [
+                            link_data["internal_links_count"], 
+                            link_data["warning_links_count"], 
+                            link_data["broken_internal_links"]
+                        ]
                     }
                 },
                 "finished": True
@@ -77,6 +83,5 @@ class WebsiteAuditRunner:
             await callback(final_payload)
 
         except Exception as e:
-            # Send the error to the frontend instead of just closing
             await callback({"error": f"Audit Failed: {str(e)}", "finished": True})
             print(f"TRACEBACK: {traceback.format_exc()}")
