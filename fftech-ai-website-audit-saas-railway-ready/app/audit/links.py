@@ -1,5 +1,3 @@
-# fftech-ai-website-audit-saas-railway-ready/app/audit/links.py
-
 from typing import Dict, Any, Set
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
@@ -11,7 +9,6 @@ logger = logging.getLogger("audit_engine")
 MAX_CONCURRENT_LINKS = 10
 LINK_TIMEOUT = 5
 
-
 async def check_link(client: httpx.AsyncClient, url: str) -> bool:
     """Returns True if link is broken."""
     try:
@@ -20,9 +17,7 @@ async def check_link(client: httpx.AsyncClient, url: str) -> bool:
     except Exception:
         return True
 
-
 async def analyze_links_async(html_docs: Dict[str, str], base_url: str, progress_callback=None) -> Dict[str, Any]:
-    """Async link analysis."""
     internal_links: Set[str] = set()
     external_links: Set[str] = set()
     broken_internal: Set[str] = set()
@@ -40,10 +35,8 @@ async def analyze_links_async(html_docs: Dict[str, str], base_url: str, progress
             href = a['href']
             parsed = urlparse(urljoin(base_url, href))
             normalized = parsed._replace(fragment="").geturl()
-
             if parsed.scheme not in ("http", "https"):
                 continue
-
             if parsed.netloc == base_domain:
                 internal_links.add(normalized)
                 urls_to_check.append((normalized, True))
