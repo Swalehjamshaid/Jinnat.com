@@ -13,39 +13,39 @@ class WebsiteAuditRunner:
 
     async def run_audit(self, callback):
         try:
-            await callback({"status": "🚀 Initializing Real-Time Engine...", "crawl_progress": 10})
+            await callback({"status": "🚀 Initializing Engine...", "crawl_progress": 10})
             start_time = time.time()
             
-            # Global 10s timeout to prevent hanging
+            # Global 10s timeout to prevent hanging on slow servers
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, verify=False) as client:
-                await callback({"status": "⚡ Connecting to Server...", "crawl_progress": 25})
+                await callback({"status": "⚡ Establishing Secure Connection...", "crawl_progress": 25})
                 response = await client.get(self.url)
                 lcp_ms = int((time.time() - start_time) * 1000)
                 html_content = response.text
 
-                # --- SECURITY CHECK ---
+                # SECURITY CHECK
                 is_https = response.url.scheme == "https"
                 security_headers = ["X-Frame-Options", "Content-Security-Policy", "Strict-Transport-Security"]
                 headers_found = sum(1 for h in security_headers if h in response.headers)
                 security_score = (50 if is_https else 0) + (headers_found * 16)
                 
-            await callback({"status": "🔍 Scraping Metadata...", "crawl_progress": 50})
+            await callback({"status": "🔍 Scraping Page Metadata...", "crawl_progress": 50})
             soup = BeautifulSoup(html_content, 'lxml')
             
-            # Real SEO Logic
+            # SEO Logic
             title = soup.title.string if soup.title else None
             h1_count = len(soup.find_all('h1'))
             meta_desc = soup.find('meta', attrs={'name': 'description'})
             seo_points = (40 if title else 0) + (30 if meta_desc else 0) + (30 if h1_count > 0 else 0)
             
-            # Link analysis
+            # Link Analysis
             link_data = await analyze_links_async(
                 html_input={self.url: html_content}, 
                 base_url=self.url,
                 progress_callback=callback
             )
 
-            # Final Score Calculation
+            # Scoring
             speed_score = max(0, 100 - (lcp_ms // 50))
             overall_score = int((seo_points * 0.4) + (speed_score * 0.3) + (security_score * 0.3))
             
