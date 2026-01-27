@@ -9,46 +9,56 @@ logger = logging.getLogger("FFTech_Main")
 
 app = FastAPI(title="FFTech AI Website Audit")
 
-# Use relative path - this is correct for Railway
+# ────────────────────────────────────────────────
+# Create the folder automatically if it doesn't exist
+# This prevents the startup crash
+# (you still need to add index.html later via git or build step)
 STATIC_DIR = "static"
+os.makedirs(STATIC_DIR, exist_ok=True)
 
-# Mount static files at root level
+# Mount the static files
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
-# Optional debug endpoint - helps you see what Railway actually sees
+# ────────────────────────────────────────────────
+# Debug endpoint → visit /debug after deploy
 @app.get("/debug")
 async def debug_info():
     try:
+        files = os.listdir(STATIC_DIR) if os.path.exists(STATIC_DIR) else []
+        index_path = os.path.join(STATIC_DIR, "index.html")
         return {
-            "status": "app loaded",
-            "working_directory": os.getcwd(),
-            "static_directory": STATIC_DIR,
+            "status": "app is running",
+            "working_dir": os.getcwd(),
+            "static_dir": STATIC_DIR,
             "static_exists": os.path.isdir(STATIC_DIR),
-            "index_exists": os.path.isfile(os.path.join(STATIC_DIR, "index.html")),
-            "files_in_static": os.listdir(STATIC_DIR) if os.path.isdir(STATIC_DIR) else "folder missing"
+            "index_exists": os.path.exists(index_path),
+            "files_in_static": files,
+            "index_size_bytes": os.path.getsize(index_path) if os.path.exists(index_path) else 0
         }
     except Exception as e:
-        return {"debug_error": str(e)}
+        return {"error": str(e)}
 
-# Catch-all route to serve index.html for unknown paths (SPA style)
+# ────────────────────────────────────────────────
+# Catch-all fallback (important for SPA / client-side routes)
 @app.get("/{full_path:path}")
-async def catch_all(full_path: str, request: Request):
+async def catch_all(full_path: str):
     if full_path.startswith(("ws/", "debug", "openapi.json", "docs", "redoc")):
         raise HTTPException(status_code=404, detail="Not found")
 
-    requested_file = os.path.join(STATIC_DIR, full_path)
-
-    if os.path.isfile(requested_file):
-        return FileResponse(requested_file)
+    requested = os.path.join(STATIC_DIR, full_path)
+    
+    if os.path.isfile(requested):
+        return FileResponse(requested)
 
     # fallback to index.html
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    if os.path.isfile(index_path):
-        return FileResponse(index_path)
+    index = os.path.join(STATIC_DIR, "index.html")
+    if os.path.isfile(index):
+        return FileResponse(index)
 
     raise HTTPException(status_code=404, detail="Not found")
 
-# Your websocket endpoint
+# ────────────────────────────────────────────────
+# Your WebSocket endpoint
 @app.websocket("/ws/audit-progress")
 async def audit_progress(websocket: WebSocket):
     await websocket.accept()
