@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  
+
   <style>
     :root {
       --bg: #0a0e17;
@@ -19,24 +19,19 @@
       --gold: #ffd700;
       --gold-dark: #d4af37;
     }
-    body {
-      background: linear-gradient(135deg, #0a0e17 0%, #111827 100%);
-      color: #e2e8f0;
-      min-height: 100vh;
-      font-family: 'Inter', system-ui, sans-serif;
-    }
+    body { background: linear-gradient(135deg, #0a0e17 0%, #111827 100%); color: #e2e8f0; min-height:100vh; font-family:'Inter', system-ui, sans-serif; }
     .main-container { max-width: 1300px; margin: 0 auto; padding: 4rem 1rem; }
-    .header-title { font-size: 3.5rem; font-weight: 800; background: linear-gradient(90deg, var(--gold), #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 2.5rem; text-align: center; }
-    .card-glass { background: var(--glass); border: 1px solid var(--border); backdrop-filter: blur(15px); border-radius: 1.5rem; padding: 2.5rem; box-shadow: 0 20px 50px rgba(0,0,0,0.4); }
-    #loadingOverlay { position: fixed; inset: 0; background: rgba(10,14,23,0.95); color: var(--gold); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.3s ease; }
-    #loadingOverlay.show { display: flex; opacity: 1; }
-    .metric-box { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255,215,0,0.1); border-radius: 1rem; padding: 1.5rem; text-align: center; transition: 0.3s; }
+    .header-title { font-size:3.5rem; font-weight:800; background:linear-gradient(90deg, var(--gold), #fff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:2.5rem; text-align:center; }
+    .card-glass { background: var(--glass); border:1px solid var(--border); backdrop-filter: blur(15px); border-radius:1.5rem; padding:2.5rem; box-shadow: 0 20px 50px rgba(0,0,0,0.4); }
+    #loadingOverlay { position: fixed; inset:0; background: rgba(10,14,23,0.95); color: var(--gold); display:none; flex-direction:column; justify-content:center; align-items:center; z-index:9999; transition: opacity 0.3s ease; }
+    #loadingOverlay.show { display:flex; opacity:1; }
+    .metric-box { background: rgba(255,255,255,0.03); border:1px solid rgba(255,215,0,0.1); border-radius:1rem; padding:1.5rem; text-align:center; transition:0.3s; }
     .metric-box:hover { border-color: var(--gold); transform: translateY(-5px); }
-    .metric-value { font-size: 2.5rem; font-weight: 800; color: var(--gold); }
-    .metric-label { font-size: 0.9rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; }
-    .chart-container { background: rgba(255,255,255,0.02); border-radius: 1rem; padding: 1.5rem; margin-bottom: 2rem; }
-    .btn-gold { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); border: none; color: #000; font-weight: 700; }
-    .btn-gold:hover { opacity: 0.9; transform: scale(1.02); }
+    .metric-value { font-size:2.5rem; font-weight:800; color: var(--gold); }
+    .metric-label { font-size:0.9rem; color:#9ca3af; text-transform:uppercase; letter-spacing:1px; }
+    .chart-container { background: rgba(255,255,255,0.02); border-radius:1rem; padding:1.5rem; margin-bottom:2rem; }
+    .btn-gold { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); border:none; color:#000; font-weight:700; }
+    .btn-gold:hover { opacity:0.9; transform: scale(1.02); }
   </style>
 </head>
 <body>
@@ -45,14 +40,14 @@
   <div class="spinner-border text-warning mb-4" style="width:4rem;height:4rem;"></div>
   <h3 id="statusLabel">Initializing Engine...</h3>
   <div class="w-50 mt-3">
-    <div class="progress" style="height: 10px;">
-      <div id="loadingBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 5%"></div>
+    <div class="progress" style="height:10px;">
+      <div id="loadingBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width:5%"></div>
     </div>
   </div>
 </div>
 
 <div class="main-container">
-  <h1 class="header-title">Audit Engine <span style="font-weight: 300;">v4.2</span></h1>
+  <h1 class="header-title">Audit Engine <span style="font-weight:300;">v4.2</span></h1>
 
   <div class="row g-4">
     <div class="col-lg-8">
@@ -199,50 +194,46 @@ document.getElementById('btnRun').addEventListener('click', () => {
     if (res.finished) {
       overlay.classList.remove('show');
       document.getElementById('resultsPanel').classList.remove('d-none');
-      
-      // Corrected Data Mapping for Python Backend
+
+      // Update Metrics
       document.getElementById('ovScore').innerText = res.overall_score || 0;
       document.getElementById('gradeDisplay').innerText = `GRADE: ${res.grade || 'N/A'}`;
       document.getElementById('onpageScore').innerText = res.breakdown.seo || 0;
-      
-      // Format Performance (LCP) from psi_data dict
+
       const lcp = res.breakdown.performance.lcp_ms || 0;
-      document.getElementById('perfScore').innerText = lcp > 1000 ? (lcp/1000).toFixed(1) + 's' : lcp + 'ms';
-      
+      document.getElementById('perfScore').innerText = lcp > 1000 ? (lcp/1000).toFixed(1)+'s' : lcp+'ms';
+
       document.getElementById('coverageScore').innerText = res.breakdown.competitors.top_competitor_score || 0;
       document.getElementById('confScore').innerText = res.chart_data.bar.data[3] || 90;
-      
-      // Link Metrics
+
       document.getElementById('intCount').innerText = res.breakdown.links.internal_links_count || 0;
       document.getElementById('extCount').innerText = res.breakdown.links.external_links_count || 0;
       document.getElementById('brkCount').innerText = res.breakdown.links.broken_internal_links || 0;
-      
+
       initCharts(res);
       ws.close();
     }
   };
 });
 
-// PDF Generation Logic
+// PDF Download
 document.getElementById('btnDownload').addEventListener('click', async () => {
   const { jsPDF } = window.jspdf;
   const element = document.getElementById('printableArea');
-  
-  // Hide UI elements that shouldn't be in the PDF
   const noPrint = document.querySelectorAll('.no-print');
   noPrint.forEach(el => el.style.display = 'none');
 
   const canvas = await html2canvas(element, { backgroundColor: '#0a0e17', scale: 2 });
   const imgData = canvas.toDataURL('image/png');
-  
+
   const pdf = new jsPDF('p', 'mm', 'a4');
   const imgProps = pdf.getImageProperties(imgData);
   const pdfWidth = pdf.internal.pageSize.getWidth();
   const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-  
+
   pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
   pdf.save(`FF-Audit-Report-${new Date().toLocaleDateString()}.pdf`);
-  
+
   noPrint.forEach(el => el.style.display = 'flex');
 });
 </script>
