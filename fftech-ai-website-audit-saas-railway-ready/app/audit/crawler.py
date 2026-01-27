@@ -1,67 +1,57 @@
 # app/audit/crawler.py
 import asyncio
+from typing import Dict, Set, Tuple
+from urllib.parse import urljoin, urlparse
+
 import httpx
-from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 
-MAX_PAGES = 50
-CONCURRENCY = 10
-TIMEOUT = 5.0
+def _same_site(a: str, b: str) -> bool:
+    return a.lower().lstrip("www.") == b.lower().lstrip("www.")
 
-async def fast_fetch(client: httpx.AsyncClient, url: str):
-    """Fetch a URL asynchronously and return HTML and status."""
-    try:
-        resp = await client.get(url, timeout=TIMEOUT, follow_redirects=True, verify=False)
-        return resp.text, resp.status_code
-    except Exception:
-        return "", 0
 
-async def crawl(start_url: str, max_pages: int = MAX_PAGES):
-    """Crawl website starting from start_url up to max_pages."""
-    domain = urlparse(start_url).netloc
-    visited = {start_url}
-    to_crawl = [start_url]
-    results = []
+async def crawl_site(
+    start_url: str,
+    max_pages: int = 10,
+    timeout: float = 10.0,
+) -> Dict[str, str]:
+    """
+    Minimal async crawler: fetch up to `max_pages` pages on the same site.
+    Returns dict {url: html}.
+    """
+    parsed_start = urlparse(start_url)
+    base_netloc = parsed_start.netloc
+    to_visit: Set[str] = {start_url}
+    seen: Set[str] = set()
+    pages: Dict[str, str] = {}
 
-    limits = httpx.Limits(max_connections=CONCURRENCY, max_keepalive_connections=5)
+    async with httpx.AsyncClient(timeout=timeout, verify=False) as client:
+        while to_visit and len(pages) < max_pages:
+            url = to_visit.pop()
+            if url in seen:
+                continue
+            seen.add(url)
 
-    async with httpx.AsyncClient(limits=limits) as client:
-        while to_crawl and len(results) < max_pages:
-            batch = to_crawl[:CONCURRENCY]
-            to_crawl = to_crawl[CONCURRENCY:]
-            tasks = [fast_fetch(client, url) for url in batch]
-            responses = await asyncio.gather(*tasks)
+            try:
+                resp = await client.get(url, follow_redirects=True)
+                html = resp.text
+                pages[url] = html
+            except Exception:
+                continue
 
-            new_links = []
-            for i, (html, status) in enumerate(responses):
-                url = batch[i]
-                if status == 200:
-                    soup = BeautifulSoup(html, "lxml")
-                    internal_links = external_links = broken_links = 0
+            # Extract internal links from this page
+            soup = BeautifulSoup(html or "", "html.parser")
+            for a in soup.find_all("a"):
+                href = (a.get("href") or "").strip()
+                if not href or href.startswith(("mailto:", "tel:", "javascript:", "#")):
+                    continue
+                abs_url = urljoin(url, href)
+                parsed = urlparse(abs_url)
+                if parsed.scheme and parsed.netloc and _same_site(parsed.netloc, base_netloc):
+                    if abs_url not in seen and len(pages) + len(to_visit) < max_pages:
+                        to_visit.add(abs_url)
 
-                    for a in soup.find_all("a", href=True):
-                        link = urljoin(url, a["href"])
-                        if urlparse(link).netloc == domain:
-                            internal_links += 1
-                            if not link.startswith("http"):
-                                broken_links += 1
-                        else:
-                            external_links += 1
+            # be polite
+            await asyncio.sleep(0.05)
 
-                        if urlparse(link).netloc == domain and link not in visited:
-                            visited.add(link)
-                            new_links.append(link)
-
-                    # Placeholder for LCP / performance / SEO
-                    results.append({
-                        "url": url,
-                        "title": soup.title.string if soup.title else "N/A",
-                        "html": html,
-                        "internal_links_count": internal_links,
-                        "external_links_count": external_links,
-                        "broken_internal_links": broken_links,
-                        "lcp_ms": None,  # To be filled by performance metrics
-                        "top_competitor_score": None  # Placeholder for competitor comparison
-                    })
-            to_crawl.extend(new_links)
-    return {"report": results}
+    return pages
