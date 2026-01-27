@@ -1,147 +1,113 @@
+# app/audit/runner.py
 import asyncio
 import logging
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Dict, Callable
+from urllib.parse import urlparse
 
 from .crawler import crawl
-from .seo import analyze_onpage
-from .grader import grade_website
-from .links import analyze_links_async
-from .record import fetch_site_html
-from .psi import fetch_lighthouse
-from .competitor_report import compare_with_competitors
 
 logger = logging.getLogger("audit_engine")
 
 
 class WebsiteAuditRunner:
     """
-    Integrated runner for FFTech AI Website Audit.
-    Crawls, grades, analyzes SEO, links, performance, and competitors.
+    Core Audit Runner to handle website crawling, metrics aggregation,
+    and progress streaming.
     """
 
-    def __init__(self, url: str, max_pages: int = 20, psi_api_key: Optional[str] = None):
+    def __init__(self, url: str, max_pages: int = 50, psi_api_key: str = None):
         self.url = url
         self.max_pages = max_pages
-        self.psi_api_key = psi_api_key
+        self.psi_api_key = psi_api_key  # Optional for Google PSI metrics
+        self.results = []
 
-    async def run_audit(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-        start_time = asyncio.get_event_loop().time()
+    async def run_audit(self, progress_callback: Callable[[Dict[str, Any]], Any] = None) -> Dict[str, Any]:
+        """
+        Run the full website audit asynchronously.
+        """
+        try:
+            logger.info(f"Starting crawl for {self.url}")
+            crawl_data = await crawl(self.url, max_pages=self.max_pages)
+            self.results = crawl_data.get("report", [])
 
-        async def send_update(pct: float, msg: str):
-            if progress_callback:
-                if asyncio.iscoroutinefunction(progress_callback):
-                    await progress_callback({"crawl_progress": pct, "status": msg, "finished": False})
-                else:
-                    progress_callback({"crawl_progress": pct, "status": msg, "finished": False})
+            # Aggregate link counts and metrics
+            total_internal = sum(page.get("internal_links_count", 0) for page in self.results)
+            total_external = sum(page.get("external_links_count", 0) for page in self.results)
+            total_broken = sum(page.get("broken_internal_links", 0) for page in self.results)
 
-        # -------------------
-        # 1️⃣ Crawl pages
-        # -------------------
-        await send_update(5, "Crawling internal pages…")
-        crawl_result = await crawl(self.url, max_pages=self.max_pages)
-        pages = crawl_result.get("report", [])
+            # Placeholder for performance and SEO metrics
+            lcp_values = [page.get("lcp_ms") for page in self.results if page.get("lcp_ms") is not None]
+            avg_lcp = round(sum(lcp_values)/len(lcp_values), 2) if lcp_values else None
 
-        # -------------------
-        # 2️⃣ Fetch raw HTML (for links, grading)
-        # -------------------
-        await send_update(15, "Fetching page HTML…")
-        html_docs = await asyncio.to_thread(fetch_site_html, self.url, self.max_pages)
+            seo_scores = [80 for _ in self.results]  # Placeholder SEO score for each page
+            overall_seo = round(sum(seo_scores)/len(seo_scores)) if seo_scores else 0
 
-        # -------------------
-        # 3️⃣ SEO Analysis
-        # -------------------
-        await send_update(30, "Analyzing SEO heuristics…")
-        seo_data = await analyze_onpage(pages)
-        onpage_score = round(seo_data.get("score", 80))
+            competitor_scores = [page.get("top_competitor_score") or 0 for page in self.results]
+            top_competitor_score = max(competitor_scores) if competitor_scores else 0
 
-        # -------------------
-        # 4️⃣ Link Analysis
-        # -------------------
-        await send_update(50, "Checking internal and external links…")
-        links_data = await analyze_links_async(html_docs, self.url, progress_callback=progress_callback)
-
-        # -------------------
-        # 5️⃣ Performance Metrics (PageSpeed Insights)
-        # -------------------
-        await send_update(70, "Fetching PageSpeed metrics…")
-        psi_data: Dict[str, Any] = {}
-        if self.psi_api_key:
-            try:
-                psi_data = await asyncio.to_thread(fetch_lighthouse, self.url, api_key=self.psi_api_key)
-            except Exception as e:
-                logger.warning(f"PSI fetch failed: {e}")
-
-        # -------------------
-        # 6️⃣ Page Grading (SEO, Performance, Security, Content)
-        # -------------------
-        await send_update(80, "Grading pages…")
-        graded_pages = []
-        for page in pages:
-            html_content = page.get("html", "")
-            page_url = page.get("url", "")
-            grade = grade_website(html_content, page_url)
-            graded_pages.append({"url": page_url, "grade": grade})
-
-        # -------------------
-        # 7️⃣ Competitor Comparison
-        # -------------------
-        await send_update(90, "Analyzing competitors…")
-        competitor_data = await asyncio.to_thread(compare_with_competitors, self.url)
-        top_score = competitor_data.get("top_competitor_score", 100)
-        your_score_vs_top = top_score - onpage_score
-
-        # -------------------
-        # 8️⃣ Aggregate final report
-        # -------------------
-        lcp_ms = psi_data.get("lcp_ms", 0)
-
-        # Normalize values for scoring
-        link_score = min(links_data.get("internal_links_count", 0), 100)
-        perf_score = min(100 - lcp_ms / 50, 100)  # Example normalization for LCP
-
-        overall_score = round((onpage_score + link_score + perf_score + 90) / 4)
-        overall_score = min(overall_score, 100)  # Cap at 100
-
-        grade = (
-            "A+" if overall_score >= 90 else
-            "A" if overall_score >= 80 else
-            "B" if overall_score >= 70 else
-            "C" if overall_score >= 60 else
-            "D"
-        )
-
-        # Normalize chart data
-        chart_data = {
-            "bar": {
-                "labels": ["SEO", "Links", "Perf", "AI"],
-                "data": [onpage_score, link_score, perf_score, 90]
-            },
-            "radar": {
-                "labels": ["SEO", "Links", "Perf", "AI"],
-                "data": [onpage_score, link_score, perf_score, 90]
-            },
-            "doughnut": {
-                "labels": ["Good", "Warning", "Broken"],
-                "data": [
-                    links_data.get("internal_links_count", 0),
-                    links_data.get("warning_links_count", 0),
-                    links_data.get("broken_internal_links", 0)
-                ]
+            # Aggregate data for charts (example)
+            chart_data = {
+                "bar": {
+                    "labels": ["SEO", "Perf (LCP)", "Competitors", "AI Confidence"],
+                    "data": [overall_seo, avg_lcp or 0, top_competitor_score, 90]
+                },
+                "radar": {
+                    "labels": ["SEO", "Performance", "Links", "Competitors"],
+                    "data": [overall_seo, avg_lcp or 0, total_internal, top_competitor_score]
+                }
             }
-        }
 
-        await send_update(100, "Audit complete.")
+            # Streaming updates to frontend (optional)
+            if progress_callback:
+                await progress_callback({
+                    "status": "Crawl completed, calculating metrics...",
+                    "crawl_progress": 90
+                })
 
-        return {
-            "overall_score": overall_score,
-            "grade": grade,
-            "pages_graded": graded_pages,
-            "breakdown": {
-                "seo": onpage_score,
-                "links": links_data,
-                "performance": psi_data,
-                "competitors": competitor_data
-            },
-            "chart_data": chart_data,
-            "audit_time": round(asyncio.get_event_loop().time() - start_time, 2)
-        }
+            # Final result
+            result = {
+                "overall_score": round(sum(chart_data["bar"]["data"])/len(chart_data["bar"]["data"])),
+                "grade": self.compute_grade(sum(chart_data["bar"]["data"])/len(chart_data["bar"]["data"])),
+                "breakdown": {
+                    "links": {
+                        "internal_links_count": total_internal,
+                        "external_links_count": total_external,
+                        "broken_internal_links": total_broken
+                    },
+                    "performance": {
+                        "lcp_ms": avg_lcp
+                    },
+                    "seo": overall_seo,
+                    "competitors": {
+                        "top_competitor_score": top_competitor_score
+                    }
+                },
+                "chart_data": chart_data
+            }
+
+            if progress_callback:
+                await progress_callback({
+                    "status": "Audit complete ✔",
+                    "crawl_progress": 100,
+                    "finished": True,
+                    **result
+                })
+
+            return result
+
+        except Exception as e:
+            logger.exception("Error during audit")
+            raise e
+
+    def compute_grade(self, score: float) -> str:
+        """Compute letter grade based on overall score"""
+        if score >= 90:
+            return "A+"
+        elif score >= 80:
+            return "A"
+        elif score >= 70:
+            return "B"
+        elif score >= 60:
+            return "C"
+        else:
+            return "D"
