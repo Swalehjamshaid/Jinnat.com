@@ -45,7 +45,7 @@ class WebsiteAuditRunner:
         # 2️⃣ Fetch raw HTML (for links, grading)
         # -------------------
         await send_update(15, "Fetching page HTML…")
-        html_docs = await fetch_site_html(self.url, max_pages=self.max_pages)
+        html_docs = await asyncio.to_thread(fetch_site_html, self.url, self.max_pages)
 
         # -------------------
         # 3️⃣ SEO Analysis
@@ -86,7 +86,7 @@ class WebsiteAuditRunner:
         # 7️⃣ Competitor Comparison
         # -------------------
         await send_update(90, "Analyzing competitors…")
-        competitor_data = compare_with_competitors(self.url)
+        competitor_data = await asyncio.to_thread(compare_with_competitors, self.url)
         top_score = competitor_data.get("top_competitor_score", 100)
         your_score_vs_top = top_score - onpage_score
 
@@ -94,7 +94,14 @@ class WebsiteAuditRunner:
         # 8️⃣ Aggregate final report
         # -------------------
         lcp_ms = psi_data.get("lcp_ms", 0)
-        overall_score = round((onpage_score + links_data.get("internal_links_count", 0) + lcp_ms / 100 + 90) / 4)
+
+        # Normalize values for scoring
+        link_score = min(links_data.get("internal_links_count", 0), 100)
+        perf_score = min(100 - lcp_ms / 50, 100)  # Example normalization for LCP
+
+        overall_score = round((onpage_score + link_score + perf_score + 90) / 4)
+        overall_score = min(overall_score, 100)  # Cap at 100
+
         grade = (
             "A+" if overall_score >= 90 else
             "A" if overall_score >= 80 else
@@ -102,6 +109,26 @@ class WebsiteAuditRunner:
             "C" if overall_score >= 60 else
             "D"
         )
+
+        # Normalize chart data
+        chart_data = {
+            "bar": {
+                "labels": ["SEO", "Links", "Perf", "AI"],
+                "data": [onpage_score, link_score, perf_score, 90]
+            },
+            "radar": {
+                "labels": ["SEO", "Links", "Perf", "AI"],
+                "data": [onpage_score, link_score, perf_score, 90]
+            },
+            "doughnut": {
+                "labels": ["Good", "Warning", "Broken"],
+                "data": [
+                    links_data.get("internal_links_count", 0),
+                    links_data.get("warning_links_count", 0),
+                    links_data.get("broken_internal_links", 0)
+                ]
+            }
+        }
 
         await send_update(100, "Audit complete.")
 
@@ -115,19 +142,6 @@ class WebsiteAuditRunner:
                 "performance": psi_data,
                 "competitors": competitor_data
             },
-            "chart_data": {
-                "bar": {
-                    "labels": ["SEO", "Links", "Perf", "AI"],
-                    "data": [onpage_score, links_data.get("internal_links_count", 0), lcp_ms // 10, 90]
-                },
-                "radar": {
-                    "labels": ["SEO", "Links", "Perf", "AI"],
-                    "data": [onpage_score, links_data.get("internal_links_count", 0), lcp_ms // 10, 90]
-                },
-                "doughnut": {
-                    "labels": ["Good", "Warning", "Broken"],
-                    "data": [links_data.get("internal_links_count", 0), 2, links_data.get("broken_internal_links", 0)]
-                }
-            },
+            "chart_data": chart_data,
             "audit_time": round(asyncio.get_event_loop().time() - start_time, 2)
         }
