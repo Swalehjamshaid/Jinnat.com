@@ -5,14 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>FF Tech Audit Engine v4.3</title>
 
-  <!-- Bootstrap 5.3 + Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-  <!-- Chart.js v4 -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- html2canvas + jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
@@ -69,6 +66,7 @@
       border-radius: 0.75rem;
       border: 1px solid #444;
       font-size: 0.9rem;
+      font-family: 'Courier New', Courier, monospace;
     }
   </style>
 </head>
@@ -90,7 +88,6 @@
   <div class="row g-4">
     <div class="col-lg-8">
       <div class="card-glass" id="printableArea">
-        <!-- Input area -->
         <div class="input-group input-group-lg mb-4">
           <span class="input-group-text bg-dark text-warning border-secondary">
             <i class="bi bi-globe"></i>
@@ -100,7 +97,6 @@
           <button id="btnRun" class="btn btn-warning fw-bold px-5">RUN AUDIT</button>
         </div>
 
-        <!-- Results -->
         <div id="resultsPanel" class="d-none">
           <div class="text-center mb-4">
             <h1 id="ovScore" class="display-2 fw-black text-warning">—</h1>
@@ -129,9 +125,9 @@
             <div class="col-md-5">
               <canvas id="doughnutChart" height="200"></canvas>
               <div class="mt-3 p-3 bg-dark rounded border border-secondary small">
-                <div class="d-flex justify-content-between mb-1"><span>Internal:</span><span id="intCount">—</span></div>
-                <div class="d-flex justify-content-between mb-1"><span>External:</span><span id="extCount">—</span></div>
-                <div class="d-flex justify-content-between"><span>Broken:</span><span id="brkCount">—</span></div>
+                <div class="d-flex justify-content-between mb-1"><span>Internal Links:</span><span id="intCount">—</span></div>
+                <div class="d-flex justify-content-between mb-1"><span>External Links:</span><span id="extCount">—</span></div>
+                <div class="d-flex justify-content-between"><span>Broken Links:</span><span id="brkCount" class="text-danger">—</span></div>
               </div>
             </div>
           </div>
@@ -139,11 +135,10 @@
       </div>
     </div>
 
-    <!-- Log panel -->
     <div class="col-lg-4">
       <div class="card-glass h-100">
         <h6 class="text-warning mb-3">Live Audit Log</h6>
-        <pre id="auditLog" class="small text-secondary mt-3">> Engine ready. Enter URL and click RUN AUDIT</pre>
+        <div id="auditLog" class="small text-secondary mt-3">> Engine ready. Enter URL and click RUN AUDIT</div>
       </div>
     </div>
   </div>
@@ -157,86 +152,107 @@ const loadingBar = document.getElementById("loadingBar");
 const overlay    = document.getElementById("loadingOverlay");
 const results    = document.getElementById("resultsPanel");
 
-// Simple logger
 function log(msg, isError = false) {
-  const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  logEl.textContent += `\n[${time}] ${isError ? 'ERROR: ' : ''}${msg}`;
+  const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const entry = document.createElement("div");
+  entry.style.color = isError ? "#ef4444" : "#9ca3af";
+  entry.textContent = `[${time}] ${msg}`;
+  logEl.appendChild(entry);
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-// ──────────────────────────────
 document.getElementById("btnRun").onclick = () => {
   let url = document.getElementById("urlInput").value.trim();
   if (!url) return alert("Please enter a URL");
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  try { new URL(url); } catch { return alert("Invalid URL"); }
-
+  
   overlay.classList.add("show");
   results.classList.add("d-none");
-  logEl.textContent = "> Starting new audit...";
-  statusEl.textContent = "Connecting...";
+  logEl.innerHTML = "<div>> Starting new audit sequence...</div>";
+  statusEl.textContent = "Connecting to FF Engine...";
   loadingBar.style.width = "5%";
 
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+  // FIXED: Connects to the specific path defined in main.py
   const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
 
-  ws.onopen = () => { log("Connected to audit engine"); statusEl.textContent = "Engine initialized – analyzing..."; };
+  ws.onopen = () => { log("Connection established"); statusEl.textContent = "Engine initialized..."; };
+  
   ws.onmessage = (e) => {
     try {
       const r = JSON.parse(e.data);
       if (r.status) { statusEl.textContent = r.status; log(r.status); }
       if (r.crawl_progress) loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
       if (r.error) log(r.error, true);
+      
       if (r.finished) {
         overlay.classList.remove("show");
         results.classList.remove("d-none");
 
+        // Map data to UI
         document.getElementById("ovScore").textContent     = r.overall_score ?? "—";
         document.getElementById("gradeDisplay").textContent = `GRADE: ${r.grade ?? "—"}`;
         document.getElementById("seoScore").textContent    = r.breakdown?.seo ?? "—";
         document.getElementById("lcpScore").textContent    = r.breakdown?.performance?.lcp_ms ?? "—";
         document.getElementById("compScore").textContent   = r.breakdown?.competitors?.top_competitor_score ?? "—";
-        document.getElementById("intCount").textContent   = r.breakdown?.links?.internal_links_count ?? "—";
-        document.getElementById("extCount").textContent   = r.breakdown?.links?.external_links_count ?? "—";
-        document.getElementById("brkCount").textContent   = r.breakdown?.links?.broken_internal_links ?? "—";
+        
+        // Link Metrics
+        const links = r.breakdown?.links || {};
+        document.getElementById("intCount").textContent    = links.internal_links_count ?? "0";
+        document.getElementById("extCount").textContent    = links.external_links_count ?? "0";
+        document.getElementById("brkCount").textContent    = links.broken_internal_links ?? "0";
 
+        // Update Charts
         barChart?.destroy();
         doughnutChart?.destroy();
 
-        if (r.chart_data?.bar) barChart = new Chart(document.getElementById("barChart"), { type: "bar", data: r.chart_data.bar, options: { scales: { y: { max: 100, beginAtZero: true } }, responsive: true } });
-        if (r.chart_data?.doughnut) doughnutChart = new Chart(document.getElementById("doughnutChart"), { type: "doughnut", data: r.chart_data.doughnut, options: { responsive: true } });
+        if (r.chart_data?.bar) {
+          barChart = new Chart(document.getElementById("barChart"), { 
+            type: "bar", 
+            data: r.chart_data.bar, 
+            options: { scales: { y: { max: 100, beginAtZero: true } }, responsive: true } 
+          });
+        }
+        if (r.chart_data?.doughnut) {
+          doughnutChart = new Chart(document.getElementById("doughnutChart"), { 
+            type: "doughnut", 
+            data: r.chart_data.doughnut, 
+            options: { responsive: true } 
+          });
+        }
 
-        log("Audit completed");
+        log("Audit complete. Data synchronized.");
         ws.close();
       }
-    } catch(err) { log("Parse error: "+err.message, true); }
+    } catch(err) { log("Data handling error: "+err.message, true); }
   };
-  ws.onerror = () => { log("Connection failed", true); overlay.classList.remove("show"); alert("Could not connect to audit engine"); };
-  ws.onclose = () => log("Connection closed");
+
+  ws.onerror = () => { 
+    log("Connection failure", true); 
+    overlay.classList.remove("show"); 
+    alert("Audit Engine Connection Failed. Ensure backend is running."); 
+  };
 };
 
-// Reset
 document.getElementById("btnReset").onclick = () => {
   results.classList.add("d-none");
   document.getElementById("urlInput").value = "";
-  logEl.textContent = "> Results cleared. Ready for new audit.";
+  logEl.innerHTML = "<div>> Results cleared. Ready.</div>";
   document.getElementById("urlInput").focus();
 };
 
-// PDF Export
 document.getElementById("btnDownload").onclick = async () => {
   try {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const canvas = await html2canvas(document.getElementById("printableArea"), {scale: 2});
     const imgData = canvas.toDataURL("image/png");
-    const imgProps = doc.getImageProperties(imgData);
     const pdfWidth = doc.internal.pageSize.getWidth();
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
     doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    doc.save(`audit-report-${new Date().toISOString().slice(0,10)}.pdf`);
-    log("PDF exported");
-  } catch(err) { log("PDF export failed: "+err.message, true); }
+    doc.save(`audit-report-${new Date().getTime()}.pdf`);
+    log("Report exported to PDF.");
+  } catch(err) { log("PDF error: "+err.message, true); }
 };
 </script>
 
