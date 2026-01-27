@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>FF Tech Audit Engine v4.3</title>
 
-  <!-- Bootstrap 5.3 -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <!-- Bootstrap 5.3 + Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- Chart.js v4 -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- html2canvas + jsPDF for PDF export -->
+  <!-- html2canvas + jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
@@ -20,73 +20,77 @@
     body {
       background: radial-gradient(circle at top right, #1e293b, #0a0e17);
       color: #e5e7eb;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       min-height: 100vh;
     }
     .card-glass {
       background: rgba(17, 24, 39, 0.92);
-      border: 1px solid rgba(255, 215, 0, 0.14);
+      border: 1px solid rgba(255, 215, 0, 0.16);
       border-radius: 1.25rem;
       padding: 1.8rem;
       backdrop-filter: blur(10px);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
     .metric-box {
       background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,215,0,0.09);
+      border: 1px solid rgba(255,215,0,0.10);
       border-radius: 0.85rem;
       padding: 1.2rem;
       text-align: center;
-      transition: transform 0.15s;
     }
-    .metric-box:hover { transform: translateY(-3px); }
-    .metric-value { font-size: 2.4rem; font-weight: 800; color: #ffd700; }
-    .metric-label { font-size: 0.8rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-value {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: #ffd700;
+    }
+    .metric-label {
+      font-size: 0.85rem;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
     #loadingOverlay {
-      position: fixed; inset: 0;
+      position: fixed;
+      inset: 0;
       background: rgba(10,14,23,0.97);
-      display: none; align-items: center; justify-content: center;
-      flex-direction: column; z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 9999;
     }
     #loadingOverlay.show { display: flex; }
     #auditLog {
       white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 380px;
+      word-break: break-all;
+      max-height: 420px;
       overflow-y: auto;
-      background: rgba(0,0,0,0.4);
+      background: rgba(0,0,0,0.45);
       padding: 1rem;
       border-radius: 0.75rem;
       border: 1px solid #444;
+      font-size: 0.9rem;
     }
-    .btn-warning { --bs-btn-hover-bg: #e6c200; }
   </style>
 </head>
 <body>
 
-<!-- Loading Overlay -->
 <div id="loadingOverlay">
-  <div class="spinner-border text-warning mb-4" style="width: 3.5rem; height: 3.5rem;"></div>
+  <div class="spinner-border text-warning mb-4" style="width:3.5rem;height:3.5rem;"></div>
   <h4 id="statusLabel" class="mb-3">Initializing Audit Engine...</h4>
-  <div class="progress w-75" style="height: 8px; max-width: 500px;">
-    <div id="loadingBar" class="progress-bar bg-warning" style="width: 5%"></div>
+  <div class="progress w-75" style="height:8px;max-width:500px;">
+    <div id="loadingBar" class="progress-bar bg-warning" style="width:5%"></div>
   </div>
 </div>
 
 <div class="container py-5">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="fw-bold text-warning mb-0">
-      FF Tech Audit Engine <span class="fw-light fs-4">v4.3</span>
-    </h1>
-    <button id="themeToggle" class="btn btn-outline-secondary btn-sm" title="Toggle Theme">
-      <i class="bi bi-moon-stars-fill"></i>
-    </button>
-  </div>
+  <h1 class="text-center fw-bold mb-5 text-warning">
+    FF Tech Audit Engine <span class="fw-light fs-4">v4.3</span>
+  </h1>
 
   <div class="row g-4">
     <div class="col-lg-8">
       <div class="card-glass" id="printableArea">
-        <!-- URL Input + Controls -->
+        <!-- Input area -->
         <div class="input-group input-group-lg mb-4">
           <span class="input-group-text bg-dark text-warning border-secondary">
             <i class="bi bi-globe"></i>
@@ -96,7 +100,7 @@
           <button id="btnRun" class="btn btn-warning fw-bold px-5">RUN AUDIT</button>
         </div>
 
-        <!-- Results Area -->
+        <!-- Results -->
         <div id="resultsPanel" class="d-none">
           <div class="text-center mb-4">
             <h1 id="ovScore" class="display-2 fw-black text-warning">—</h1>
@@ -105,16 +109,12 @@
               <button id="btnDownload" class="btn btn-outline-warning me-2">
                 <i class="bi bi-file-earmark-pdf"></i> Export PDF
               </button>
-              <button id="btnCopyScore" class="btn btn-outline-light">
-                <i class="bi bi-copy"></i> Copy Score
-              </button>
-              <button id="btnClear" class="btn btn-outline-danger ms-2">
-                <i class="bi bi-trash"></i> Clear
+              <button id="btnReset" class="btn btn-outline-danger">
+                <i class="bi bi-arrow-repeat"></i> Reset
               </button>
             </div>
           </div>
 
-          <!-- Metrics Row -->
           <div class="row g-3 mb-4 text-center">
             <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">SEO</div><div id="seoScore" class="metric-value">—</div></div></div>
             <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">LCP (ms)</div><div id="lcpScore" class="metric-value">—</div></div></div>
@@ -122,7 +122,6 @@
             <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">AI Trust</div><div class="metric-value">95</div></div></div>
           </div>
 
-          <!-- Charts -->
           <div class="row g-4">
             <div class="col-md-7">
               <canvas id="barChart" height="200"></canvas>
@@ -140,11 +139,11 @@
       </div>
     </div>
 
-    <!-- Live Log Panel -->
+    <!-- Log panel -->
     <div class="col-lg-4">
-      <div class="card-glass h-100 d-flex flex-column">
+      <div class="card-glass h-100">
         <h6 class="text-warning mb-3">Live Audit Log</h6>
-        <pre id="auditLog" class="flex-grow-1 small text-secondary p-3 mb-0">> Engine Ready. Enter URL and click RUN AUDIT</pre>
+        <pre id="auditLog" class="small text-secondary mt-3">> Engine ready. Enter URL and click RUN AUDIT</pre>
       </div>
     </div>
   </div>
@@ -153,28 +152,21 @@
 <script>
 // ────────────────────────────────────────────────
 let barChart, doughnutChart;
-const logEl = document.getElementById("auditLog");
-const statusLabel = document.getElementById("statusLabel");
+const logEl      = document.getElementById("auditLog");
+const statusEl   = document.getElementById("statusLabel");
 const loadingBar = document.getElementById("loadingBar");
-const loadingOverlay = document.getElementById("loadingOverlay");
-const resultsPanel = document.getElementById("resultsPanel");
+const overlay    = document.getElementById("loadingOverlay");
+const results    = document.getElementById("resultsPanel");
 
 // Simple logger
 function log(msg, isError = false) {
-  const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-  logEl.textContent += `\n[${time}] ${isError ? 'ERROR: ' : '> '}${msg}`;
+  const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  logEl.textContent += `\n[${time}] ${isError ? 'ERROR: ' : ''}${msg}`;
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-// Theme toggle
-document.getElementById("themeToggle").onclick = () => {
-  const html = document.documentElement;
-  html.setAttribute("data-bs-theme", html.getAttribute("data-bs-theme") === "dark" ? "light" : "dark");
-  log("Theme switched");
-};
-
 // ────────────────────────────────────────────────
-document.getElementById("btnRun").onclick = async () => {
+document.getElementById("btnRun").onclick = () => {
   let url = document.getElementById("urlInput").value.trim();
 
   if (!url) {
@@ -182,157 +174,132 @@ document.getElementById("btnRun").onclick = async () => {
     return;
   }
 
-  // Basic URL normalization
-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    url = "https://" + url;
+  // Add https:// if missing
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
   }
 
-  // Very basic validation
+  // Basic URL check
   try {
     new URL(url);
   } catch {
-    alert("Please enter a valid URL (example.com or https://example.com)");
+    alert("Please enter a valid URL");
     return;
   }
 
   // Reset UI
-  loadingOverlay.classList.add("show");
-  resultsPanel.classList.add("d-none");
+  overlay.classList.add("show");
+  results.classList.add("d-none");
   logEl.textContent = "> Starting new audit...";
-  statusLabel.textContent = "Connecting to audit engine...";
+  statusEl.textContent = "Connecting...";
   loadingBar.style.width = "5%";
 
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
+  const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
 
-  let ws;
-  try {
-    ws = new WebSocket(wsUrl);
+  ws.onopen = () => {
+    log("Connected to audit engine");
+    statusEl.textContent = "Engine initialized – analyzing...";
+  };
 
-    ws.onopen = () => {
-      log("WebSocket connected");
-      statusLabel.textContent = "Engine initialized – analyzing...";
-    };
+  ws.onmessage = (e) => {
+    try {
+      const r = JSON.parse(e.data);
 
-    ws.onmessage = (e) => {
-      try {
-        const r = JSON.parse(e.data);
-
-        if (r.status) {
-          statusLabel.textContent = r.status;
-          log(r.status);
-        }
-
-        if (r.crawl_progress) {
-          loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
-        }
-
-        if (r.error) {
-          log(r.error, true);
-          alert("Audit error: " + r.error);
-        }
-
-        if (r.finished) {
-          loadingOverlay.classList.remove("show");
-          resultsPanel.classList.remove("d-none");
-
-          document.getElementById("ovScore").textContent = r.overall_score || "—";
-          document.getElementById("gradeDisplay").textContent = `GRADE: ${r.grade || "—"}`;
-          document.getElementById("seoScore").textContent = r.breakdown?.seo ?? "—";
-          document.getElementById("lcpScore").textContent = r.breakdown?.performance?.lcp_ms ?? "—";
-          document.getElementById("compScore").textContent = r.breakdown?.competitors?.top_competitor_score ?? "—";
-
-          document.getElementById("intCount").textContent = r.breakdown?.links?.internal_links_count ?? "—";
-          document.getElementById("extCount").textContent = r.breakdown?.links?.external_links_count ?? "—";
-          document.getElementById("brkCount").textContent = r.breakdown?.links?.broken_internal_links ?? "—";
-
-          // Update charts
-          barChart?.destroy();
-          doughnutChart?.destroy();
-
-          if (r.chart_data?.bar) {
-            barChart = new Chart(document.getElementById("barChart"), {
-              type: "bar",
-              data: r.chart_data.bar,
-              options: {
-                scales: { y: { max: 100, beginAtZero: true } },
-                plugins: { legend: { display: false } },
-                responsive: true,
-                maintainAspectRatio: false
-              }
-            });
-          }
-
-          if (r.chart_data?.doughnut) {
-            doughnutChart = new Chart(document.getElementById("doughnutChart"), {
-              type: "doughnut",
-              data: r.chart_data.doughnut,
-              options: { responsive: true, maintainAspectRatio: false }
-            });
-          }
-
-          log("Audit completed ✓");
-          ws.close();
-        }
-      } catch (err) {
-        log("Message parse error: " + err.message, true);
+      if (r.status) {
+        statusEl.textContent = r.status;
+        log(r.status);
       }
-    };
 
-    ws.onerror = (err) => {
-      log("WebSocket error – server may be down or URL blocked", true);
-      loadingOverlay.classList.remove("show");
-      alert("Connection failed. Check your internet or try again later.");
-    };
+      if (r.crawl_progress) {
+        loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
+      }
 
-    ws.onclose = () => {
-      log("WebSocket closed");
-    };
+      if (r.error) {
+        log(r.error, true);
+      }
 
-  } catch (err) {
-    log("Failed to connect: " + err.message, true);
-    loadingOverlay.classList.remove("show");
-  }
+      if (r.finished) {
+        overlay.classList.remove("show");
+        results.classList.remove("d-none");
+
+        document.getElementById("ovScore").textContent     = r.overall_score ?? "—";
+        document.getElementById("gradeDisplay").textContent = `GRADE: ${r.grade ?? "—"}`;
+        document.getElementById("seoScore").textContent    = r.breakdown?.seo ?? "—";
+        document.getElementById("lcpScore").textContent    = r.breakdown?.performance?.lcp_ms ?? "—";
+        document.getElementById("compScore").textContent   = r.breakdown?.competitors?.top_competitor_score ?? "—";
+
+        document.getElementById("intCount").textContent = r.breakdown?.links?.internal_links_count ?? "—";
+        document.getElementById("extCount").textContent = r.breakdown?.links?.external_links_count ?? "—";
+        document.getElementById("brkCount").textContent = r.breakdown?.links?.broken_internal_links ?? "—";
+
+        // Update charts
+        barChart?.destroy();
+        doughnutChart?.destroy();
+
+        if (r.chart_data?.bar) {
+          barChart = new Chart(document.getElementById("barChart"), {
+            type: "bar",
+            data: r.chart_data.bar,
+            options: { scales: { y: { max: 100, beginAtZero: true } }, responsive: true }
+          });
+        }
+
+        if (r.chart_data?.doughnut) {
+          doughnutChart = new Chart(document.getElementById("doughnutChart"), {
+            type: "doughnut",
+            data: r.chart_data.doughnut,
+            options: { responsive: true }
+          });
+        }
+
+        log("Audit completed");
+        ws.close();
+      }
+    } catch (err) {
+      log("Parse error: " + err.message, true);
+    }
+  };
+
+  ws.onerror = () => {
+    log("Connection failed", true);
+    overlay.classList.remove("show");
+    alert("Could not connect to audit engine");
+  };
+
+  ws.onclose = () => log("Connection closed");
 };
 
 // ────────────────────────────────────────────────
-// Export PDF
+// Reset button
+document.getElementById("btnReset").onclick = () => {
+  results.classList.add("d-none");
+  document.getElementById("urlInput").value = "";
+  logEl.textContent = "> Results cleared. Ready for new audit.";
+  document.getElementById("urlInput").focus();
+};
+
+// ────────────────────────────────────────────────
+// PDF export
 document.getElementById("btnDownload").onclick = async () => {
   try {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-    const canvas = await html2canvas(document.getElementById("printableArea"), { scale: 2 });
+    const canvas = await html2canvas(document.getElementById("printableArea"), {scale: 2});
     const imgData = canvas.toDataURL("image/png");
     const imgProps = doc.getImageProperties(imgData);
     const pdfWidth = doc.internal.pageSize.getWidth();
     const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
     doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    doc.save(`FFTech_Audit_${new Date().toISOString().slice(0,10)}.pdf`);
-    log("PDF exported successfully");
+    doc.save(`audit-report-${new Date().toISOString().slice(0,10)}.pdf`);
+    log("PDF exported");
   } catch (err) {
     log("PDF export failed: " + err.message, true);
   }
 };
-
-// Copy score
-document.getElementById("btnCopyScore").onclick = () => {
-  const score = document.getElementById("ovScore").textContent;
-  const grade = document.getElementById("gradeDisplay").textContent;
-  navigator.clipboard.writeText(`FF Tech Audit Score: ${score} (${grade})`);
-  alert("Score copied to clipboard!");
-  log("Score copied");
-};
-
-// Clear results
-document.getElementById("btnClear").onclick = () => {
-  resultsPanel.classList.add("d-none");
-  logEl.textContent = "> Results cleared. Ready for new audit.";
-  document.getElementById("urlInput").focus();
-};
 </script>
 
-<!-- Bootstrap JS (for tooltips etc. if needed later) -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
