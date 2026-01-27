@@ -1,7 +1,7 @@
 # app/audit/performance.py
 def calculate_performance_score(lcp_ms: int) -> int:
     """
-    Calculate page performance score based on LCP (Largest Contentful Paint)
+    Calculate page performance score based on LCP (Largest Contentful Paint in ms)
     """
     if lcp_ms < 1000:
         return 100
