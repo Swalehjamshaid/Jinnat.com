@@ -3,14 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FF Tech Audit Engine v4.2</title>
+  <title>FF Tech Audit Engine v4.3</title>
 
-  <!-- Bootstrap -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap 5.3 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-  <!-- Charts & Export -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+  <!-- html2canvas + jsPDF for PDF export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
@@ -18,175 +20,319 @@
     body {
       background: radial-gradient(circle at top right, #1e293b, #0a0e17);
       color: #e5e7eb;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
     }
     .card-glass {
-      background: rgba(17, 24, 39, 0.9);
-      border: 1px solid rgba(255, 215, 0, 0.15);
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid rgba(255, 215, 0, 0.14);
       border-radius: 1.25rem;
-      padding: 2rem;
-      backdrop-filter: blur(12px);
+      padding: 1.8rem;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
     .metric-box {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,215,0,0.08);
-      border-radius: .75rem;
-      padding: 1.25rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,215,0,0.09);
+      border-radius: 0.85rem;
+      padding: 1.2rem;
       text-align: center;
+      transition: transform 0.15s;
     }
-    .metric-value { font-size: 2rem; font-weight: 700; color: #ffd700; }
-    .metric-label { font-size: .75rem; color: #9ca3af; text-transform: uppercase; }
+    .metric-box:hover { transform: translateY(-3px); }
+    .metric-value { font-size: 2.4rem; font-weight: 800; color: #ffd700; }
+    .metric-label { font-size: 0.8rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
     #loadingOverlay {
       position: fixed; inset: 0;
-      background: rgba(10,14,23,.95);
+      background: rgba(10,14,23,0.97);
       display: none; align-items: center; justify-content: center;
       flex-direction: column; z-index: 9999;
     }
     #loadingOverlay.show { display: flex; }
+    #auditLog {
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 380px;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.4);
+      padding: 1rem;
+      border-radius: 0.75rem;
+      border: 1px solid #444;
+    }
+    .btn-warning { --bs-btn-hover-bg: #e6c200; }
   </style>
 </head>
-
 <body>
 
 <!-- Loading Overlay -->
 <div id="loadingOverlay">
-  <div class="spinner-border text-warning mb-3"></div>
-  <h5 id="statusLabel">Initializing Audit Engine...</h5>
-  <div class="progress w-50 mt-3" style="height:6px;">
-    <div id="loadingBar" class="progress-bar bg-warning" style="width:5%"></div>
+  <div class="spinner-border text-warning mb-4" style="width: 3.5rem; height: 3.5rem;"></div>
+  <h4 id="statusLabel" class="mb-3">Initializing Audit Engine...</h4>
+  <div class="progress w-75" style="height: 8px; max-width: 500px;">
+    <div id="loadingBar" class="progress-bar bg-warning" style="width: 5%"></div>
   </div>
 </div>
 
 <div class="container py-5">
-  <h1 class="text-center fw-bold mb-4 text-warning">FF Tech Audit Engine <span class="fw-light">v4.2</span></h1>
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="fw-bold text-warning mb-0">
+      FF Tech Audit Engine <span class="fw-light fs-4">v4.3</span>
+    </h1>
+    <button id="themeToggle" class="btn btn-outline-secondary btn-sm" title="Toggle Theme">
+      <i class="bi bi-moon-stars-fill"></i>
+    </button>
+  </div>
 
   <div class="row g-4">
     <div class="col-lg-8">
       <div class="card-glass" id="printableArea">
-
-        <!-- URL Input -->
+        <!-- URL Input + Controls -->
         <div class="input-group input-group-lg mb-4">
           <span class="input-group-text bg-dark text-warning border-secondary">
             <i class="bi bi-globe"></i>
           </span>
           <input id="urlInput" class="form-control bg-dark text-white border-secondary"
-                 placeholder="www.example.com">
-          <button id="btnRun" class="btn btn-warning fw-bold px-4">RUN AUDIT</button>
+                 placeholder="example.com or https://www.example.com" autofocus>
+          <button id="btnRun" class="btn btn-warning fw-bold px-5">RUN AUDIT</button>
         </div>
 
-        <!-- Results -->
+        <!-- Results Area -->
         <div id="resultsPanel" class="d-none">
-
-          <!-- Score -->
           <div class="text-center mb-4">
-            <h1 id="ovScore" class="display-3 fw-bold text-warning">0</h1>
-            <h4 id="gradeDisplay">GRADE: —</h4>
-            <button id="btnDownload" class="btn btn-outline-warning btn-sm mt-2">
-              <i class="bi bi-file-earmark-pdf"></i> Export PDF
-            </button>
+            <h1 id="ovScore" class="display-2 fw-black text-warning">—</h1>
+            <h4 id="gradeDisplay" class="text-muted">GRADE: —</h4>
+            <div class="mt-3">
+              <button id="btnDownload" class="btn btn-outline-warning me-2">
+                <i class="bi bi-file-earmark-pdf"></i> Export PDF
+              </button>
+              <button id="btnCopyScore" class="btn btn-outline-light">
+                <i class="bi bi-copy"></i> Copy Score
+              </button>
+              <button id="btnClear" class="btn btn-outline-danger ms-2">
+                <i class="bi bi-trash"></i> Clear
+              </button>
+            </div>
           </div>
 
-          <!-- Metrics -->
-          <div class="row g-3 mb-4">
-            <div class="col-md-3"><div class="metric-box"><div class="metric-label">SEO</div><div id="seoScore" class="metric-value">0</div></div></div>
-            <div class="col-md-3"><div class="metric-box"><div class="metric-label">LCP (ms)</div><div id="lcpScore" class="metric-value">0</div></div></div>
-            <div class="col-md-3"><div class="metric-box"><div class="metric-label">Competitor</div><div id="compScore" class="metric-value">0</div></div></div>
-            <div class="col-md-3"><div class="metric-box"><div class="metric-label">AI Trust</div><div class="metric-value">95</div></div></div>
+          <!-- Metrics Row -->
+          <div class="row g-3 mb-4 text-center">
+            <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">SEO</div><div id="seoScore" class="metric-value">—</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">LCP (ms)</div><div id="lcpScore" class="metric-value">—</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">Competitor</div><div id="compScore" class="metric-value">—</div></div></div>
+            <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">AI Trust</div><div class="metric-value">95</div></div></div>
           </div>
 
           <!-- Charts -->
           <div class="row g-4">
             <div class="col-md-7">
-              <canvas id="barChart" height="220"></canvas>
+              <canvas id="barChart" height="200"></canvas>
             </div>
             <div class="col-md-5">
-              <canvas id="doughnutChart" height="220"></canvas>
-              <div class="mt-3 small bg-dark p-3 rounded border border-secondary">
-                <div class="d-flex justify-content-between"><span>Internal</span><span id="intCount">0</span></div>
-                <div class="d-flex justify-content-between"><span>External</span><span id="extCount">0</span></div>
-                <div class="d-flex justify-content-between"><span>Broken</span><span id="brkCount">0</span></div>
+              <canvas id="doughnutChart" height="200"></canvas>
+              <div class="mt-3 p-3 bg-dark rounded border border-secondary small">
+                <div class="d-flex justify-content-between mb-1"><span>Internal:</span><span id="intCount">—</span></div>
+                <div class="d-flex justify-content-between mb-1"><span>External:</span><span id="extCount">—</span></div>
+                <div class="d-flex justify-content-between"><span>Broken:</span><span id="brkCount">—</span></div>
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>
 
-    <!-- Log Panel -->
+    <!-- Live Log Panel -->
     <div class="col-lg-4">
-      <div class="card-glass h-100">
-        <h6 class="text-warning">Live Audit Log</h6>
-        <pre id="auditLog" class="small text-secondary mt-3">> Engine Ready</pre>
+      <div class="card-glass h-100 d-flex flex-column">
+        <h6 class="text-warning mb-3">Live Audit Log</h6>
+        <pre id="auditLog" class="flex-grow-1 small text-secondary p-3 mb-0">> Engine Ready. Enter URL and click RUN AUDIT</pre>
       </div>
     </div>
   </div>
 </div>
 
 <script>
+// ────────────────────────────────────────────────
 let barChart, doughnutChart;
+const logEl = document.getElementById("auditLog");
+const statusLabel = document.getElementById("statusLabel");
+const loadingBar = document.getElementById("loadingBar");
+const loadingOverlay = document.getElementById("loadingOverlay");
+const resultsPanel = document.getElementById("resultsPanel");
 
-function log(msg) {
-  const logEl = document.getElementById("auditLog");
-  logEl.textContent += `\n> ${msg}`;
+// Simple logger
+function log(msg, isError = false) {
+  const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  logEl.textContent += `\n[${time}] ${isError ? 'ERROR: ' : '> '}${msg}`;
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-document.getElementById("btnRun").onclick = () => {
-  const url = document.getElementById("urlInput").value.trim();
-  if (!url) return alert("Enter a valid URL");
+// Theme toggle
+document.getElementById("themeToggle").onclick = () => {
+  const html = document.documentElement;
+  html.setAttribute("data-bs-theme", html.getAttribute("data-bs-theme") === "dark" ? "light" : "dark");
+  log("Theme switched");
+};
 
-  document.getElementById("loadingOverlay").classList.add("show");
-  document.getElementById("resultsPanel").classList.add("d-none");
+// ────────────────────────────────────────────────
+document.getElementById("btnRun").onclick = async () => {
+  let url = document.getElementById("urlInput").value.trim();
 
-  const ws = new WebSocket(
-    `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`
-  );
+  if (!url) {
+    alert("Please enter a URL");
+    return;
+  }
 
-  ws.onmessage = e => {
-    const r = JSON.parse(e.data);
+  // Basic URL normalization
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    url = "https://" + url;
+  }
 
-    if (r.status) {
-      document.getElementById("statusLabel").innerText = r.status;
-      log(r.status);
-    }
+  // Very basic validation
+  try {
+    new URL(url);
+  } catch {
+    alert("Please enter a valid URL (example.com or https://example.com)");
+    return;
+  }
 
-    if (r.crawl_progress)
-      document.getElementById("loadingBar").style.width = r.crawl_progress + "%";
+  // Reset UI
+  loadingOverlay.classList.add("show");
+  resultsPanel.classList.add("d-none");
+  logEl.textContent = "> Starting new audit...";
+  statusLabel.textContent = "Connecting to audit engine...";
+  loadingBar.style.width = "5%";
 
-    if (r.finished) {
-      document.getElementById("loadingOverlay").classList.remove("show");
-      document.getElementById("resultsPanel").classList.remove("d-none");
+  const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
 
-      document.getElementById("ovScore").innerText = r.overall_score;
-      document.getElementById("gradeDisplay").innerText = `GRADE: ${r.grade}`;
-      document.getElementById("seoScore").innerText = r.breakdown.seo;
-      document.getElementById("lcpScore").innerText = r.breakdown.performance.lcp_ms;
-      document.getElementById("compScore").innerText = r.breakdown.competitors.top_competitor_score;
+  let ws;
+  try {
+    ws = new WebSocket(wsUrl);
 
-      document.getElementById("intCount").innerText = r.breakdown.links.internal_links_count;
-      document.getElementById("extCount").innerText = r.breakdown.links.external_links_count;
-      document.getElementById("brkCount").innerText = r.breakdown.links.broken_internal_links;
+    ws.onopen = () => {
+      log("WebSocket connected");
+      statusLabel.textContent = "Engine initialized – analyzing...";
+    };
 
-      // Charts
-      barChart?.destroy();
-      doughnutChart?.destroy();
+    ws.onmessage = (e) => {
+      try {
+        const r = JSON.parse(e.data);
 
-      barChart = new Chart(barChartEl = document.getElementById("barChart"), {
-        type: "bar",
-        data: r.chart_data.bar,
-        options: { scales: { y: { max: 100 } }, plugins:{legend:{display:false}} }
-      });
+        if (r.status) {
+          statusLabel.textContent = r.status;
+          log(r.status);
+        }
 
-      doughnutChart = new Chart(document.getElementById("doughnutChart"), {
-        type: "doughnut",
-        data: r.chart_data.doughnut
-      });
+        if (r.crawl_progress) {
+          loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
+        }
 
-      ws.close();
-    }
-  };
+        if (r.error) {
+          log(r.error, true);
+          alert("Audit error: " + r.error);
+        }
+
+        if (r.finished) {
+          loadingOverlay.classList.remove("show");
+          resultsPanel.classList.remove("d-none");
+
+          document.getElementById("ovScore").textContent = r.overall_score || "—";
+          document.getElementById("gradeDisplay").textContent = `GRADE: ${r.grade || "—"}`;
+          document.getElementById("seoScore").textContent = r.breakdown?.seo ?? "—";
+          document.getElementById("lcpScore").textContent = r.breakdown?.performance?.lcp_ms ?? "—";
+          document.getElementById("compScore").textContent = r.breakdown?.competitors?.top_competitor_score ?? "—";
+
+          document.getElementById("intCount").textContent = r.breakdown?.links?.internal_links_count ?? "—";
+          document.getElementById("extCount").textContent = r.breakdown?.links?.external_links_count ?? "—";
+          document.getElementById("brkCount").textContent = r.breakdown?.links?.broken_internal_links ?? "—";
+
+          // Update charts
+          barChart?.destroy();
+          doughnutChart?.destroy();
+
+          if (r.chart_data?.bar) {
+            barChart = new Chart(document.getElementById("barChart"), {
+              type: "bar",
+              data: r.chart_data.bar,
+              options: {
+                scales: { y: { max: 100, beginAtZero: true } },
+                plugins: { legend: { display: false } },
+                responsive: true,
+                maintainAspectRatio: false
+              }
+            });
+          }
+
+          if (r.chart_data?.doughnut) {
+            doughnutChart = new Chart(document.getElementById("doughnutChart"), {
+              type: "doughnut",
+              data: r.chart_data.doughnut,
+              options: { responsive: true, maintainAspectRatio: false }
+            });
+          }
+
+          log("Audit completed ✓");
+          ws.close();
+        }
+      } catch (err) {
+        log("Message parse error: " + err.message, true);
+      }
+    };
+
+    ws.onerror = (err) => {
+      log("WebSocket error – server may be down or URL blocked", true);
+      loadingOverlay.classList.remove("show");
+      alert("Connection failed. Check your internet or try again later.");
+    };
+
+    ws.onclose = () => {
+      log("WebSocket closed");
+    };
+
+  } catch (err) {
+    log("Failed to connect: " + err.message, true);
+    loadingOverlay.classList.remove("show");
+  }
+};
+
+// ────────────────────────────────────────────────
+// Export PDF
+document.getElementById("btnDownload").onclick = async () => {
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const canvas = await html2canvas(document.getElementById("printableArea"), { scale: 2 });
+    const imgData = canvas.toDataURL("image/png");
+    const imgProps = doc.getImageProperties(imgData);
+    const pdfWidth = doc.internal.pageSize.getWidth();
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+    doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    doc.save(`FFTech_Audit_${new Date().toISOString().slice(0,10)}.pdf`);
+    log("PDF exported successfully");
+  } catch (err) {
+    log("PDF export failed: " + err.message, true);
+  }
+};
+
+// Copy score
+document.getElementById("btnCopyScore").onclick = () => {
+  const score = document.getElementById("ovScore").textContent;
+  const grade = document.getElementById("gradeDisplay").textContent;
+  navigator.clipboard.writeText(`FF Tech Audit Score: ${score} (${grade})`);
+  alert("Score copied to clipboard!");
+  log("Score copied");
+};
+
+// Clear results
+document.getElementById("btnClear").onclick = () => {
+  resultsPanel.classList.add("d-none");
+  logEl.textContent = "> Results cleared. Ready for new audit.";
+  document.getElementById("urlInput").focus();
 };
 </script>
+
+<!-- Bootstrap JS (for tooltips etc. if needed later) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
