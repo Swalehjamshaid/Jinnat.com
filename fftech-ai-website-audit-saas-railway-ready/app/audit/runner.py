@@ -45,9 +45,7 @@ class WebsiteAuditRunner:
         # 2️⃣ Fetch raw HTML (for links, grading)
         # -------------------
         await send_update(15, "Fetching page HTML…")
-        html_docs = await fetch_site_html(self.url, self.max_pages)
-        if asyncio.iscoroutine(html_docs):
-            html_docs = await html_docs
+        html_docs = await asyncio.to_thread(fetch_site_html, self.url, self.max_pages)
 
         # -------------------
         # 3️⃣ SEO Analysis
@@ -90,6 +88,7 @@ class WebsiteAuditRunner:
         await send_update(90, "Analyzing competitors…")
         competitor_data = await asyncio.to_thread(compare_with_competitors, self.url)
         top_score = competitor_data.get("top_competitor_score", 100)
+        your_score_vs_top = top_score - onpage_score
 
         # -------------------
         # 8️⃣ Aggregate final report
