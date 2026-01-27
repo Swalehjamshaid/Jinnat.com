@@ -97,7 +97,8 @@ async def websocket_audit(websocket: WebSocket):
     try:
         logger.info(f"Starting audit for {normalized_url}")
 
-        psi_api_key = os.getenv("PSI_API_KEY")  # ✅ enable real LCP if provided
+        # ✅ Enable real LCP when PSI key is configured in Railway variables
+        psi_api_key = os.getenv("PSI_API_KEY")
 
         runner = WebsiteAuditRunner(
             url=normalized_url,
@@ -107,6 +108,9 @@ async def websocket_audit(websocket: WebSocket):
 
         # Run audit with streaming progress
         audit_output = await runner.run_audit(progress_callback=stream_progress)
+
+        if not isinstance(audit_output, dict):
+            audit_output = {}
 
         # Helpful summary in logs for sanity
         bd = audit_output.get("breakdown", {})
@@ -119,20 +123,25 @@ async def websocket_audit(websocket: WebSocket):
             "competitors": bd.get("competitors"),
         })
 
-        # ✅ Pass through the runner structure; the UI already expects this
+        # ✅ Pass through structure; fill safe defaults if any part is missing
         final_output = {
             "overall_score": audit_output.get("overall_score", 0),
-            "grade": audit_output.get("grade", "N/A"),
-            "breakdown": audit_output.get("breakdown", {}),
-            "chart_data": audit_output.get("chart_data", {
-                "bar": {
-                    "labels": ["SEO", "Links", "Perf", "AI"],
-                    "data": [0, 0, 0, 90]
+            "grade": audit_output.get("grade", "D" if audit_output else "N/A"),
+            "breakdown": audit_output.get("breakdown", {
+                "seo": 0,
+                "links": {
+                    "internal_links_count": 0,
+                    "external_links_count": 0,
+                    "broken_internal_links": 0,
+                    "warning_links_count": 0
                 },
-                "radar": {
-                    "labels": ["SEO", "Links", "Perf", "AI"],
-                    "data": [0, 0, 0, 90]
-                }
+                "performance": {"lcp_ms": 0, "cls": 0},
+                "competitors": {"top_competitor_score": 0}
+            }),
+            "chart_data": audit_output.get("chart_data", {
+                "bar": {"labels": ["SEO", "Links", "Perf", "AI"], "data": [0, 0, 0, 90]},
+                "radar": {"labels": ["SEO", "Links", "Perf", "AI"], "data": [0, 0, 0, 90]},
+                "doughnut": {"labels": ["Good", "Warning", "Broken"], "data": [0, 0, 0]}
             }),
             "pages_graded": audit_output.get("pages_graded", []),
             "audit_time": audit_output.get("audit_time", 0),
