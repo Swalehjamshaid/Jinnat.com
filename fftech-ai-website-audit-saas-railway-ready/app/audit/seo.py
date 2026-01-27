@@ -3,11 +3,12 @@ from bs4 import BeautifulSoup
 
 def calculate_seo_score(soup: BeautifulSoup) -> int:
     """
-    Basic SEO scoring based on:
-    - Title presence
-    - Meta description
-    - H1 tags
-    - Image alt attributes
+    SEO scoring based on:
+    - Title tag (20 points)
+    - Meta description (20 points)
+    - H1 tags (20 points)
+    - Image alt attributes (20 points)
+    - Penalize too many nofollow links (-10 max)
     """
     score = 0
 
@@ -25,15 +26,14 @@ def calculate_seo_score(soup: BeautifulSoup) -> int:
     if h1_tags:
         score += 20
 
-    # Images with alt text
+    # Images with alt
     images = soup.find_all("img")
     images_with_alt = [img for img in images if img.get("alt")]
     if images:
         score += int(20 * len(images_with_alt) / len(images))
 
-    # Links with rel="nofollow" (penalty)
+    # Penalize nofollow links
     nofollow_links = soup.find_all("a", rel="nofollow")
-    if nofollow_links:
-        score -= min(len(nofollow_links) * 2, 10)
+    score -= min(len(nofollow_links) * 2, 10)
 
     return max(0, min(score, 100))
