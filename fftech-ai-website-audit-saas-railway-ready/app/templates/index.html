@@ -61,7 +61,7 @@
     #loadingOverlay.show { display: flex; }
     #auditLog {
       white-space: pre-wrap;
-      word-break: break-all;
+      word-break: break-word;
       max-height: 420px;
       overflow-y: auto;
       background: rgba(0,0,0,0.45);
@@ -150,7 +150,6 @@
 </div>
 
 <script>
-// ────────────────────────────────────────────────
 let barChart, doughnutChart;
 const logEl      = document.getElementById("auditLog");
 const statusEl   = document.getElementById("statusLabel");
@@ -165,29 +164,13 @@ function log(msg, isError = false) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-// ────────────────────────────────────────────────
+// ──────────────────────────────
 document.getElementById("btnRun").onclick = () => {
   let url = document.getElementById("urlInput").value.trim();
+  if (!url) return alert("Please enter a URL");
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  try { new URL(url); } catch { return alert("Invalid URL"); }
 
-  if (!url) {
-    alert("Please enter a URL");
-    return;
-  }
-
-  // Add https:// if missing
-  if (!/^https?:\/\//i.test(url)) {
-    url = 'https://' + url;
-  }
-
-  // Basic URL check
-  try {
-    new URL(url);
-  } catch {
-    alert("Please enter a valid URL");
-    return;
-  }
-
-  // Reset UI
   overlay.classList.add("show");
   results.classList.add("d-none");
   logEl.textContent = "> Starting new audit...";
@@ -197,28 +180,13 @@ document.getElementById("btnRun").onclick = () => {
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
 
-  ws.onopen = () => {
-    log("Connected to audit engine");
-    statusEl.textContent = "Engine initialized – analyzing...";
-  };
-
+  ws.onopen = () => { log("Connected to audit engine"); statusEl.textContent = "Engine initialized – analyzing..."; };
   ws.onmessage = (e) => {
     try {
       const r = JSON.parse(e.data);
-
-      if (r.status) {
-        statusEl.textContent = r.status;
-        log(r.status);
-      }
-
-      if (r.crawl_progress) {
-        loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
-      }
-
-      if (r.error) {
-        log(r.error, true);
-      }
-
+      if (r.status) { statusEl.textContent = r.status; log(r.status); }
+      if (r.crawl_progress) loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
+      if (r.error) log(r.error, true);
       if (r.finished) {
         overlay.classList.remove("show");
         results.classList.remove("d-none");
@@ -228,50 +196,26 @@ document.getElementById("btnRun").onclick = () => {
         document.getElementById("seoScore").textContent    = r.breakdown?.seo ?? "—";
         document.getElementById("lcpScore").textContent    = r.breakdown?.performance?.lcp_ms ?? "—";
         document.getElementById("compScore").textContent   = r.breakdown?.competitors?.top_competitor_score ?? "—";
+        document.getElementById("intCount").textContent   = r.breakdown?.links?.internal_links_count ?? "—";
+        document.getElementById("extCount").textContent   = r.breakdown?.links?.external_links_count ?? "—";
+        document.getElementById("brkCount").textContent   = r.breakdown?.links?.broken_internal_links ?? "—";
 
-        document.getElementById("intCount").textContent = r.breakdown?.links?.internal_links_count ?? "—";
-        document.getElementById("extCount").textContent = r.breakdown?.links?.external_links_count ?? "—";
-        document.getElementById("brkCount").textContent = r.breakdown?.links?.broken_internal_links ?? "—";
-
-        // Update charts
         barChart?.destroy();
         doughnutChart?.destroy();
 
-        if (r.chart_data?.bar) {
-          barChart = new Chart(document.getElementById("barChart"), {
-            type: "bar",
-            data: r.chart_data.bar,
-            options: { scales: { y: { max: 100, beginAtZero: true } }, responsive: true }
-          });
-        }
-
-        if (r.chart_data?.doughnut) {
-          doughnutChart = new Chart(document.getElementById("doughnutChart"), {
-            type: "doughnut",
-            data: r.chart_data.doughnut,
-            options: { responsive: true }
-          });
-        }
+        if (r.chart_data?.bar) barChart = new Chart(document.getElementById("barChart"), { type: "bar", data: r.chart_data.bar, options: { scales: { y: { max: 100, beginAtZero: true } }, responsive: true } });
+        if (r.chart_data?.doughnut) doughnutChart = new Chart(document.getElementById("doughnutChart"), { type: "doughnut", data: r.chart_data.doughnut, options: { responsive: true } });
 
         log("Audit completed");
         ws.close();
       }
-    } catch (err) {
-      log("Parse error: " + err.message, true);
-    }
+    } catch(err) { log("Parse error: "+err.message, true); }
   };
-
-  ws.onerror = () => {
-    log("Connection failed", true);
-    overlay.classList.remove("show");
-    alert("Could not connect to audit engine");
-  };
-
+  ws.onerror = () => { log("Connection failed", true); overlay.classList.remove("show"); alert("Could not connect to audit engine"); };
   ws.onclose = () => log("Connection closed");
 };
 
-// ────────────────────────────────────────────────
-// Reset button
+// Reset
 document.getElementById("btnReset").onclick = () => {
   results.classList.add("d-none");
   document.getElementById("urlInput").value = "";
@@ -279,8 +223,7 @@ document.getElementById("btnReset").onclick = () => {
   document.getElementById("urlInput").focus();
 };
 
-// ────────────────────────────────────────────────
-// PDF export
+// PDF Export
 document.getElementById("btnDownload").onclick = async () => {
   try {
     const { jsPDF } = window.jspdf;
@@ -290,13 +233,10 @@ document.getElementById("btnDownload").onclick = async () => {
     const imgProps = doc.getImageProperties(imgData);
     const pdfWidth = doc.internal.pageSize.getWidth();
     const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
     doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
     doc.save(`audit-report-${new Date().toISOString().slice(0,10)}.pdf`);
     log("PDF exported");
-  } catch (err) {
-    log("PDF export failed: " + err.message, true);
-  }
+  } catch(err) { log("PDF export failed: "+err.message, true); }
 };
 </script>
 
