@@ -7,25 +7,22 @@ import httpx
 
 logger = logging.getLogger("audit_engine")
 
+# Limit concurrency: Only 10 pings can happen at the exact same time
+sem = asyncio.Semaphore(10)
+
 async def check_single_link(client: httpx.AsyncClient, link: str) -> bool:
-    """Returns True if the link is broken (4xx or 5xx), False otherwise."""
-    try:
-        # Use HEAD request for speed; it doesn't download the whole page body
-        resp = await client.head(link, follow_redirects=True, timeout=5.0)
-        return resp.status_code >= 400
-    except Exception:
-        # If the request fails (timeout, DNS error), we treat it as broken
-        return True
+    """Returns True if the link is broken (4xx/5xx) or times out."""
+    async with sem:
+        try:
+            # Strict 3-second timeout per link to prevent getting stuck
+            resp = await client.head(link, follow_redirects=True, timeout=3.0)
+            return resp.status_code >= 400
+        except Exception:
+            return True # Connection errors/timeouts are counted as broken
 
 async def extract_links_from_html(html: str, base_url: str) -> Dict[str, int]:
-    """Extract and classify links and verify if internal ones are broken."""
     if not html.strip():
-        return {
-            "internal_links_count": 0,
-            "external_links_count": 0,
-            "broken_internal_links": 0,
-            "warning_links_count": 0
-        }
+        return {"internal_links_count": 0, "external_links_count": 0, "broken_internal_links": 0, "warning_links_count": 0}
 
     soup = BeautifulSoup(html, "html.parser")
     internal = set()
@@ -53,12 +50,14 @@ async def extract_links_from_html(html: str, base_url: str) -> Dict[str, int]:
         else:
             external.add(full_url)
 
-    # --- REAL BROKEN LINK CHECKER ---
+    # --- REAL-TIME VALIDATION WITH LIMITS ---
     broken_internal_count = 0
-    if internal:
+    # Limit to 15 internal links to keep the audit under 10-15 seconds total
+    to_check = list(internal)[:15] 
+    
+    if to_check:
         async with httpx.AsyncClient(verify=False) as client:
-            # We check the first 20 internal links to maintain speed
-            tasks = [check_single_link(client, link) for link in list(internal)[:20]]
+            tasks = [check_single_link(client, link) for link in to_check]
             results = await asyncio.gather(*tasks)
             broken_internal_count = sum(1 for is_broken in results if is_broken)
 
@@ -69,4 +68,12 @@ async def extract_links_from_html(html: str, base_url: str) -> Dict[str, int]:
         "warning_links_count": len(warnings)
     }
 
-# analyze_links_async remains the same as your provided code
+async def analyze_links_async(html_input: Dict[str, str], base_url: str, progress_callback: Optional[Any] = None) -> Dict[str, Any]:
+    # Taking the first HTML doc provided for primary analysis
+    page_url = next(iter(html_input))
+    html = html_input[page_url]
+    
+    if progress_callback:
+        await progress_callback({"status": "🔗 Validating link integrity...", "crawl_progress": 75})
+    
+    return await extract_links_from_html(html, base_url)
