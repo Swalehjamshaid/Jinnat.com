@@ -45,6 +45,7 @@ class WebsiteAuditRunner:
         # 2️⃣ Fetch raw HTML (for links, grading)
         # -------------------
         await send_update(15, "Fetching page HTML…")
+        # fetch_site_html is sync; run it in a thread
         html_docs = await asyncio.to_thread(fetch_site_html, self.url, self.max_pages)
 
         # -------------------
