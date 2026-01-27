@@ -1,3 +1,4 @@
+# app/main.py
 import os
 import logging
 from fastapi import FastAPI, WebSocket, Request, HTTPException
@@ -10,10 +11,10 @@ logger = logging.getLogger("FFTech_Main")
 app = FastAPI(title="FFTech AI Website Audit")
 
 # Paths
-TEMPLATES_DIR = os.path.join("app", "templates")  # your SPA lives here
-STATIC_DIR = "static"  # optional assets folder at repo root (create if you need)
+TEMPLATES_DIR = os.path.join("app", "templates")  # where index.html is
+STATIC_DIR = "static"  # optional repo-level folder for CSS/JS/images
 
-# Serve /static/* if folder exists (CSS/JS/images). Safe because it is NOT at root.
+# Serve /static/* if folder exists (safe because not mounted at root)
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -50,14 +51,14 @@ async def debug_info():
     except Exception as e:
         return {"error": str(e)}
 
-# SPA fallback so client-side routes (e.g., /about) render the same index.html
+# SPA fallback so client-side routes render index.html
 @app.get("/{full_path:path}")
 async def spa_fallback(full_path: str, request: Request):
     # Let API/WS/system paths 404 normally
     if full_path.startswith(("ws/", "api/", "openapi.json", "docs", "redoc", "debug", "static/")):
         raise HTTPException(status_code=404, detail="Not found")
 
-    # If someone requested a file under /static by path, let StaticFiles serve it
+    # If a real file under /static is requested, let StaticFiles serve it
     requested_static = os.path.join(STATIC_DIR, full_path)
     if os.path.isfile(requested_static):
         return FileResponse(requested_static)
