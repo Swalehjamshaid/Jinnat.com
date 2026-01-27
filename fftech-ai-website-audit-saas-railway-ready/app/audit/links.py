@@ -20,15 +20,20 @@ async def analyze_links_async(html_input, base_url, progress_callback=None):
     
     page_url = next(iter(html_input))
     html = html_input[page_url]
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html or "", "html.parser")
     
     internal, external = set(), set()
+    warning_count = 0  # Track insecure http links for the Warning slice
     domain = urlparse(base_url).netloc
     
     for a in soup.find_all("a", href=True):
         href = a["href"].split('#')[0].strip()
         if not href or any(href.startswith(s) for s in ["tel:", "mailto:", "javascript:"]): 
             continue
+        
+        # Logic: Flag internal links that use http instead of https as Warnings
+        if href.startswith("http://") and domain in urlparse(href).netloc:
+            warning_count += 1
         
         full_url = urljoin(base_url, href)
         if domain in urlparse(full_url).netloc:
@@ -43,8 +48,10 @@ async def analyze_links_async(html_input, base_url, progress_callback=None):
         results = await asyncio.gather(*tasks)
         broken_count = sum(1 for r in results if r)
 
+    # Output structure remains the same but now includes the warning count
     return {
         "internal_links_count": len(internal),
         "external_links_count": len(external),
-        "broken_internal_links": broken_count
+        "broken_internal_links": broken_count,
+        "warning_links_count": warning_count  # Sent to runner.py for the chart
     }
