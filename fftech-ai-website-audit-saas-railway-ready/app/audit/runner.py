@@ -2,8 +2,12 @@
 import time
 import httpx
 from bs4 import BeautifulSoup
-# FIXED: Added 's' to match your links.py filename on GitHub
 from app.audit.links import analyze_links_async
+from app.audit.seo import calculate_seo_score
+from app.audit.performance import calculate_performance_score
+from app.audit.competitor_report import get_top_competitor_score
+from app.audit.grader import compute_grade
+from app.audit.record import save_audit_record
 
 class WebsiteAuditRunner:
     def __init__(self, url: str):
@@ -11,44 +15,41 @@ class WebsiteAuditRunner:
 
     async def run_audit(self, callback):
         try:
-            # 1) Initialize
+            # 1️⃣ Initializing
             await callback({"status": "🚀 Initializing Engine...", "crawl_progress": 10})
-            start = time.time()
+            start_time = time.time()
 
-            # 2) Fetch page
+            # 2️⃣ Fetch Page
             await callback({"status": "🌐 Fetching page...", "crawl_progress": 20})
             async with httpx.AsyncClient(timeout=12.0, verify=False) as client:
                 res = await client.get(self.url, follow_redirects=True)
-                lcp_ms = int((time.time() - start) * 1000)
                 html = res.text
 
-            # 3) Parse and simple SEO scoring
-            await callback({"status": "🔍 Analyzing SEO & Security...", "crawl_progress": 50})
+            # Measure LCP / Speed
+            lcp_ms = int((time.time() - start_time) * 1000)
+            perf_score = calculate_performance_score(lcp_ms)
+
+            # 3️⃣ Parse HTML and SEO Analysis
+            await callback({"status": "🔍 Analyzing SEO...", "crawl_progress": 50})
             soup = BeautifulSoup(html, "html.parser")
+            seo_score = calculate_seo_score(soup)
 
-            has_title = 1 if soup.title else 0
-            has_h1 = 1 if soup.find("h1") else 0
-            seo_score = (has_title * 50) + (has_h1 * 50)
+            # 4️⃣ Link Analysis
+            links_data = await analyze_links_async({self.url: html}, self.url, callback)
 
-            # 4) Link Analysis
-            links = await analyze_links_async({self.url: html}, self.url, callback)
+            # 5️⃣ Competitor Comparison
+            competitor_score = get_top_competitor_score(self.url)
 
-            # Scores for charts
-            speed_score = max(0, min(100, int(100 - (lcp_ms / 100))))
-            security_score = 90  
-            ai_trust_score = 95  
+            # 6️⃣ Compute Overall Grade
+            overall, grade = compute_grade(seo_score, perf_score, competitor_score)
 
-            overall = int((seo_score * 0.7) + (speed_score * 0.3))
-            grade = "A" if overall > 80 else "B" if overall > 60 else "C"
-
-            # Chart.js Data Objects
+            # 7️⃣ Prepare Chart Data
             bar_data = {
                 "labels": ["SEO", "Speed", "Security", "AI"],
                 "datasets": [{
                     "label": "Scores",
-                    "data": [seo_score, speed_score, security_score, ai_trust_score],
-                    "backgroundColor": ["rgba(255, 215, 0, 0.6)", "rgba(59, 130, 246, 0.6)", "rgba(34, 197, 94, 0.6)", "rgba(147, 51, 234, 0.6)"],
-                    "borderColor": ["rgba(255, 215, 0, 1)", "rgba(59, 130, 246, 1)", "rgba(34, 197, 94, 1)", "rgba(147, 51, 234, 1)"],
+                    "data": [seo_score, perf_score, 90, 95],
+                    "backgroundColor": ["#ffd700", "#3b82f6", "#10b981", "#9333ea"],
                     "borderWidth": 1,
                 }]
             }
@@ -57,32 +58,38 @@ class WebsiteAuditRunner:
                 "labels": ["Healthy", "Warning", "Broken"],
                 "datasets": [{
                     "data": [
-                        int(links.get("internal_links_count", 0)),
-                        int(links.get("warning_links_count", 0)),
-                        int(links.get("broken_internal_links", 0)),
+                        links_data.get("internal_links_count", 0),
+                        links_data.get("warning_links_count", 0),
+                        links_data.get("broken_internal_links", 0),
                     ],
-                    "backgroundColor": ["rgba(34, 197, 94, 0.7)", "rgba(234, 179, 8, 0.7)", "rgba(239, 68, 68, 0.7)"],
-                    "borderColor": ["rgba(34, 197, 94, 1)", "rgba(234, 179, 8, 1)", "rgba(239, 68, 68, 1)"],
+                    "backgroundColor": ["#22c55e", "#eab308", "#ef4444"],
                     "borderWidth": 1,
                 }]
             }
 
-            # This payload populates all — with real numbers
+            # 8️⃣ Send Final Result to UI
             await callback({
                 "overall_score": overall,
                 "grade": grade,
                 "breakdown": {
                     "seo": seo_score,
-                    "performance": {"lcp_ms": lcp_ms},
-                    "competitors": {"top_competitor_score": 75},
-                    "links": {
-                        "internal_links_count": int(links.get("internal_links_count", 0)),
-                        "external_links_count": int(links.get("external_links_count", 0)),
-                        "broken_internal_links": int(links.get("broken_internal_links", 0)),
-                    },
+                    "performance": {"lcp_ms": lcp_ms, "score": perf_score},
+                    "competitors": {"top_competitor_score": competitor_score},
+                    "links": links_data
                 },
                 "chart_data": {"bar": bar_data, "doughnut": doughnut_data},
                 "finished": True
+            })
+
+            # 9️⃣ Save Audit Record
+            save_audit_record(self.url, {
+                "seo": seo_score,
+                "performance": perf_score,
+                "competitor": competitor_score,
+                "links": links_data,
+                "overall": overall,
+                "grade": grade,
+                "lcp_ms": lcp_ms,
             })
 
         except Exception as e:
