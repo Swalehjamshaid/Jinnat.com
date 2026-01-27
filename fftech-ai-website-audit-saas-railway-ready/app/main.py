@@ -5,7 +5,6 @@ import logging
 from typing import Any, Dict
 from urllib.parse import urlparse
 from contextlib import asynccontextmanager
-import asyncio
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -98,8 +97,7 @@ async def websocket_audit(websocket: WebSocket):
     try:
         logger.info(f"Starting audit for {normalized_url}")
 
-        # ✅ Read PSI API key from environment so LCP is populated when available
-        psi_api_key = os.getenv("PSI_API_KEY")
+        psi_api_key = os.getenv("PSI_API_KEY")  # ✅ enable real LCP if provided
 
         runner = WebsiteAuditRunner(
             url=normalized_url,
@@ -111,16 +109,17 @@ async def websocket_audit(websocket: WebSocket):
         audit_output = await runner.run_audit(progress_callback=stream_progress)
 
         # Helpful summary in logs for sanity
+        bd = audit_output.get("breakdown", {})
         logger.info("Audit output summary: %s", {
             "overall_score": audit_output.get("overall_score"),
             "grade": audit_output.get("grade"),
-            "seo": audit_output.get("breakdown", {}).get("seo"),
-            "lcp_ms": audit_output.get("breakdown", {}).get("performance", {}).get("lcp_ms"),
-            "links": audit_output.get("breakdown", {}).get("links"),
-            "competitors": audit_output.get("breakdown", {}).get("competitors"),
+            "seo": bd.get("seo"),
+            "lcp_ms": bd.get("performance", {}).get("lcp_ms"),
+            "links": bd.get("links"),
+            "competitors": bd.get("competitors"),
         })
 
-        # ✅ Pass-through the structure the frontend already expects from the runner
+        # ✅ Pass through the runner structure; the UI already expects this
         final_output = {
             "overall_score": audit_output.get("overall_score", 0),
             "grade": audit_output.get("grade", "N/A"),
@@ -135,12 +134,11 @@ async def websocket_audit(websocket: WebSocket):
                     "data": [0, 0, 0, 90]
                 }
             }),
+            "pages_graded": audit_output.get("pages_graded", []),
+            "audit_time": audit_output.get("audit_time", 0),
             "finished": True,
             "status": "Audit complete ✔",
-            "crawl_progress": 100,
-            # Optional extras for future UI features:
-            "pages_graded": audit_output.get("pages_graded", []),
-            "audit_time": audit_output.get("audit_time", 0)
+            "crawl_progress": 100
         }
 
         await websocket.send_json(final_output)
