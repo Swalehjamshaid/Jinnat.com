@@ -1,17 +1,14 @@
-# fftech-ai-website-audit-saas-railway-ready/app/audit/competitor_report.py
-
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-
-def build_competitor_pdf(comp_result: dict, out_path: str):
-    """Tiny PDF example; can expand later."""
-    doc = SimpleDocTemplate(out_path)
-    story = []
-    styles = getSampleStyleSheet()
-    base_url = comp_result.get('base', {}).get('url','N/A')
-    story.append(Paragraph(f'<b>Audit Report: {base_url}</b>', styles['Title']))
-    story.append(Spacer(1,12))
-    score = comp_result.get('base', {}).get('result', {}).get('overall_score',0)
-    story.append(Paragraph(f'Score: {score}', styles['Normal']))
-    doc.build(story)
-    return out_path
+def compare_with_competitors(url: str) -> dict:
+    """
+    Example competitor comparison. Replace with real implementation.
+    Returns dummy comparison for now.
+    """
+    return {
+        "top_competitor_score": 85,
+        "your_score_vs_top": 0,  # will be calculated in runner
+        "competitors": [
+            {"name": "Competitor 1", "score": 85},
+            {"name": "Competitor 2", "score": 80},
+            {"name": "Competitor 3", "score": 75},
+        ]
+    }
