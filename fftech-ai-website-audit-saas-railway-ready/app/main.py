@@ -1,59 +1,63 @@
 import os
 import logging
-from fastapi import FastAPI, WebSocket, HTTPException, Request
+from fastapi import FastAPI, WebSocket, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("FFTech_Main")
 
-# Create the FastAPI app FIRST
 app = FastAPI(title="FFTech AI Website Audit")
 
-# Define paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
+# Use relative path – safer on PaaS like Railway
+STATIC_DIR = "static"
 
-# Create the static folder if it doesn't exist (safe to do)
-os.makedirs(STATIC_DIR, exist_ok=True)
-
-# Mount static files at root (recommended for single-page apps / simple HTML)
-# html=True enables automatic index.html serving for directories
+# Mount the entire static folder at root
+# html=True → auto-serve index.html for / and unknown directories
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
-# Root route - serves index.html directly (your original logic, improved)
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def serve_index():
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    if not os.path.exists(index_path):
-        logger.error("index.html missing in static/")
-        return HTMLResponse(
-            content="<h1>Deployment Error</h1><p>index.html missing in /static/</p><p>Make sure static/index.html exists in your repo.</p>",
-            status_code=500
-        )
-    with open(index_path, "r", encoding="utf-8") as f:
-        return f.read()
+# Debug endpoint – visit /debug after deploy to see what's really there
+@app.get("/debug")
+async def debug_info():
+    try:
+        cwd = os.getcwd()
+        static_abs = os.path.abspath(STATIC_DIR)
+        index_path = os.path.join(static_abs, "index.html")
+        
+        return {
+            "status": "backend running",
+            "current_working_directory": cwd,
+            "static_directory": STATIC_DIR,
+            "static_directory_exists": os.path.exists(STATIC_DIR),
+            "static_directory_absolute": static_abs,
+            "index_file_exists": os.path.exists(index_path),
+            "files_in_static": os.listdir(STATIC_DIR) if os.path.exists(STATIC_DIR) else "directory missing",
+            "index_file_size": os.path.getsize(index_path) if os.path.exists(index_path) else "missing"
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
-# Catch-all fallback for SPA-style paths (important if you add client-side routing later)
-# This serves index.html for any non-file path, but skips API/websocket paths
-@app.get("/{full_path:path}", include_in_schema=False)
-async def catch_all(full_path: str, request: Request):
-    # Protect special paths
-    if full_path.startswith(("ws/", "api/", "docs", "redoc", "openapi.json")):
+# Catch-all fallback (protects API routes + serves index.html for client paths)
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str, request: Request):
+    # Skip special paths
+    if full_path.startswith(("ws/", "api/", "debug", "openapi.json", "docs", "redoc")):
         raise HTTPException(status_code=404, detail="Not found")
 
-    requested_file = os.path.join(STATIC_DIR, full_path)
-    if os.path.isfile(requested_file):
-        return FileResponse(requested_file)
-
-    # Fallback to index.html for client-side routing
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    if os.path.isfile(index_path):
-        return FileResponse(index_path)
-
+    requested = os.path.join(STATIC_DIR, full_path)
+    
+    if os.path.isfile(requested):
+        return FileResponse(requested)
+    
+    # Fallback to index.html
+    index = os.path.join(STATIC_DIR, "index.html")
+    if os.path.isfile(index):
+        logger.info(f"Serving fallback index.html for path: /{full_path}")
+        return FileResponse(index)
+    
     raise HTTPException(status_code=404, detail="Not found")
 
-# Your WebSocket endpoint (unchanged)
+# Your WebSocket (keep as-is)
 @app.websocket("/ws/audit-progress")
 async def audit_progress(websocket: WebSocket):
     await websocket.accept()
@@ -77,14 +81,4 @@ async def audit_progress(websocket: WebSocket):
     finally:
         await websocket.close()
 
-
-# IMPORTANT: Run the server ONLY AFTER all routes are defined
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=port,
-        log_level="info"
-    )
+# No uvicorn block needed – Railway runs it automatically via uvicorn main:app
