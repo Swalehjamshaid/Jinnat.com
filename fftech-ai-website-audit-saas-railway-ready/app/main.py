@@ -1,10 +1,9 @@
-# app/main.py
-import os
 import time
 import logging
 from typing import Any, Dict
 from urllib.parse import urlparse
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -28,7 +27,7 @@ logger = logging.getLogger("audit_engine")
 # ----------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 FF Tech International Audit Engine v4.2 initializing...")
+    logger.info("🚀 FF Tech International Audit Engine initializing...")
     yield
     logger.info("🛑 FF Tech International Audit Engine shutting down...")
 
@@ -53,8 +52,8 @@ def normalize_url(url: str) -> str:
     if not url:
         raise ValueError("URL cannot be empty")
     url = url.strip()
-    if not url.startswith(("http://", "https://")):
-        url = "https://" + url.lstrip("/")
+    if "://" not in url:
+        url = "https://" + url
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
         raise ValueError("Invalid URL format")
@@ -73,83 +72,44 @@ async def home(request: Request):
 @app.websocket("/ws/audit-progress")
 async def websocket_audit(websocket: WebSocket):
     await websocket.accept()
-
-    url_param = websocket.query_params.get("url")
-    if not url_param:
-        await websocket.send_json({"error": "URL parameter is required"})
+    url = websocket.query_params.get("url")
+    if not url:
+        await websocket.send_json({"error": "URL is required"})
         await websocket.close(code=1008)
         return
 
     try:
-        normalized_url = normalize_url(url_param)
+        normalized_url = normalize_url(url)
     except ValueError as e:
-        await websocket.send_json({"error": f"Invalid URL: {str(e)}"})
+        await websocket.send_json({"error": str(e)})
         await websocket.close()
         return
 
     async def stream_progress(update: Dict[str, Any]):
-        """Safely send progress updates to the client"""
+        """Send updates to frontend safely"""
         try:
             await websocket.send_json(update)
-        except WebSocketDisconnect:
-            logger.info("WebSocket disconnected during progress streaming")
-            raise  # Let outer except handle closure
-        except Exception as e:
-            logger.warning(f"Failed to send WebSocket update: {e}")
+        except Exception:
+            logger.warning("WebSocket disconnected during progress update")
+            raise WebSocketDisconnect()
 
     try:
-        logger.info(f"Starting audit for: {normalized_url}")
-
-        # Load PSI API key from environment (Railway vars or .env)
-        psi_api_key = os.getenv("PSI_API_KEY")  # Set this in Railway for real LCP/CLS
+        logger.info(f"Starting audit for {normalized_url}")
 
         runner = WebsiteAuditRunner(
             url=normalized_url,
             max_pages=20,
-            psi_api_key=psi_api_key
+            psi_api_key=None
         )
 
-        # Run the audit and stream progress
+        # Run audit with streaming progress
         audit_output = await runner.run_audit(progress_callback=stream_progress)
 
-        # Ensure output is a dict
-        audit_output = audit_output or {}
-
-        # Log summary for debugging
-        bd = audit_output.get("breakdown", {})
-        logger.info("Audit completed: %s", {
-            "overall_score": audit_output.get("overall_score"),
-            "grade": audit_output.get("grade"),
-            "seo": bd.get("seo"),
-            "lcp_ms": bd.get("performance", {}).get("lcp_ms"),
-            "cls": bd.get("performance", {}).get("cls"),
-            "internal_links": bd.get("links", {}).get("internal_links_count"),
-            "competitor_score": bd.get("competitors", {}).get("top_competitor_score"),
-            "audit_time_sec": audit_output.get("audit_time")
-        })
-
-        # Build final safe payload for frontend (matches updated runner.py structure)
         final_output = {
             "overall_score": audit_output.get("overall_score", 0),
-            "grade": audit_output.get("grade", "D"),
-            "breakdown": audit_output.get("breakdown", {
-                "seo": 0,
-                "links": {
-                    "internal_links_count": 0,
-                    "external_links_count": 0,
-                    "broken_internal_links": 0,
-                    "warning_links_count": 0
-                },
-                "performance": {"lcp_ms": 0, "cls": 0},
-                "competitors": {"top_competitor_score": 0}
-            }),
-            "chart_data": audit_output.get("chart_data", {
-                "bar": {"labels": ["SEO", "Links", "Perf", "AI"], "data": [0, 0, 0, 90]},
-                "radar": {"labels": ["SEO", "Links", "Perf", "AI"], "data": [0, 0, 0, 90]},
-                "doughnut": {"labels": ["Good", "Warning", "Broken"], "data": [0, 0, 0]}
-            }),
-            "pages_graded": audit_output.get("pages_graded", []),
-            "audit_time": audit_output.get("audit_time", 0.0),
+            "grade": audit_output.get("grade", "N/A"),
+            "breakdown": audit_output.get("breakdown", {}),
+            "chart_data": audit_output.get("chart_data", {}),
             "finished": True,
             "status": "Audit complete ✔",
             "crawl_progress": 100
@@ -158,31 +118,26 @@ async def websocket_audit(websocket: WebSocket):
         await websocket.send_json(final_output)
 
     except WebSocketDisconnect:
-        logger.info("Client disconnected during audit")
+        logger.info("Client disconnected from WebSocket")
     except Exception as e:
-        logger.exception("Audit execution failed")
+        logger.exception("Audit failed")
         await websocket.send_json({
             "error": str(e),
-            "status": "Audit failed ❌",
-            "finished": True,
-            "crawl_progress": 0
+            "status": "Audit failed",
+            "finished": True
         })
     finally:
-        try:
-            await websocket.close()
-        except Exception:
-            pass  # Already closed or errored
+        await websocket.close()
 
 # ----------------------------
-# Health Check Endpoints
+# Health Check
 # ----------------------------
 @app.get("/health")
 @app.get("/healthz")
 async def health():
     return {
-        "status": "healthy",
+        "status": "ok",
         "engine": "FF Tech Audit Engine",
         "version": "4.2",
-        "timestamp": time.time(),
-        "psi_enabled": bool(os.getenv("PSI_API_KEY"))
+        "time": time.time()
     }
