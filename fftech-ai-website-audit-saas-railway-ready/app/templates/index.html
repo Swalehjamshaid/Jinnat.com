@@ -32,6 +32,8 @@
     .chart-container { background: rgba(255,255,255,0.02); border-radius:1rem; padding:1.5rem; margin-bottom:2rem; }
     .btn-gold { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); border:none; color:#000; font-weight:700; }
     .btn-gold:hover { opacity:0.9; transform: scale(1.02); }
+    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 10000; }
+    .badge-soft { background: rgba(255,215,0,0.15); border: 1px solid rgba(255,215,0,0.3); color: #ffd700; }
   </style>
 </head>
 <body>
@@ -46,6 +48,9 @@
   </div>
 </div>
 
+<!-- Toasts -->
+<div class="toast-container" id="toastArea"></div>
+
 <div class="main-container">
   <h1 class="header-title">Audit Engine <span style="font-weight:300;">v4.2</span></h1>
 
@@ -53,10 +58,14 @@
     <!-- Left Panel -->
     <div class="col-lg-8">
       <div class="card-glass" id="printableArea">
-        <div class="input-group input-group-lg mb-5 no-print">
+        <div class="input-group input-group-lg mb-3 no-print">
           <span class="input-group-text bg-dark border-secondary text-warning"><i class="bi bi-globe"></i></span>
           <input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="https://example.com">
           <button id="btnRun" class="btn btn-gold px-5">START AUDIT</button>
+        </div>
+
+        <div class="no-print mb-4">
+          <span class="badge badge-soft rounded-pill px-3 py-2" id="envHint">Tip: set PSI_API_KEY in server env to enable LCP (Perf).</span>
         </div>
 
         <div id="resultsPanel" class="d-none">
@@ -121,7 +130,7 @@
               </div>
             </div>
           </div>
-        </div>
+        </div> <!-- /resultsPanel -->
       </div>
     </div>
 
@@ -142,67 +151,206 @@
 </div>
 
 <script>
-let charts = {};
+/* -----------------------
+   Helpers / UI utilities
+------------------------*/
+function showToast(message, type = 'warning') {
+  const id = 't' + Date.now();
+  const bg = type === 'error' ? 'bg-danger' : (type === 'success' ? 'bg-success' : 'bg-warning text-dark');
+  const el = document.createElement('div');
+  el.className = `toast align-items-center ${bg} border-0 show mb-2`;
+  el.id = id;
+  el.setAttribute('role','alert');
+  el.innerHTML = `
+    <div class="d-flex">
+      <div class="toast-body">${message}</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="document.getElementById('${id}').remove()"></button>
+    </div>`;
+  document.getElementById('toastArea').appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
 
+function formatPerf(lcpMs) {
+  const n = Number(lcpMs || 0);
+  if (n >= 1000) return (n/1000).toFixed(1) + 's';
+  return Math.max(0, Math.round(n)) + 'ms';
+}
+
+/* -----------------------
+   Charts
+------------------------*/
+let charts = {};
 function initCharts(data) {
-  if (charts.bar) charts.bar.destroy();
+  const safeBar = (data?.chart_data?.bar) || { labels: ["SEO","Links","Perf","AI"], data: [0,0,0,90] };
+  const safeRadar = (data?.chart_data?.radar) || { labels: ["SEO","Links","Perf","AI"], data: [0,0,0,90] };
+
+  if (charts.bar) { charts.bar.destroy(); }
   charts.bar = new Chart(document.getElementById('mainChart'), {
     type: 'bar',
-    data: { labels: data.chart_data.bar.labels, datasets: [{ label: 'Metrics', data: data.chart_data.bar.data, backgroundColor:['#ffd700','#3b82f6','#10b981','#ef4444'] }] },
-    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ max:100 } } }
+    data: {
+      labels: safeBar.labels,
+      datasets: [{
+        label: 'Metrics',
+        data: safeBar.data,
+        backgroundColor:['#ffd700','#3b82f6','#10b981','#ef4444']
+      }]
+    },
+    options: {
+      plugins:{ legend:{ display:false } },
+      scales:{ y:{ max:100, beginAtZero:true } }
+    }
   });
 
-  if (charts.radar) charts.radar.destroy();
+  if (charts.radar) { charts.radar.destroy(); }
   charts.radar = new Chart(document.getElementById('radarChart'), {
     type: 'radar',
-    data: { labels: data.chart_data.radar.labels, datasets:[{ label:'Profile', data:data.chart_data.radar.data, borderColor:'#ffd700', backgroundColor:'rgba(255,215,0,0.2)' }] },
-    options:{ scales:{ r:{ max:100, ticks:{ display:false } } } }
+    data: {
+      labels: safeRadar.labels,
+      datasets:[{
+        label:'Profile',
+        data: safeRadar.data,
+        borderColor:'#ffd700',
+        backgroundColor:'rgba(255,215,0,0.2)'
+      }]
+    },
+    options:{ scales:{ r:{ max:100, beginAtZero:true, ticks:{ display:false } } } }
   });
 }
 
-document.getElementById('btnRun').addEventListener('click', () => {
-  const url = document.getElementById('urlInput').value;
-  if (!url) return alert("Enter a URL");
+/* -----------------------
+   Audit Flow
+------------------------*/
+let ws = null;
+let isRunning = false;
+
+function startAudit() {
+  const urlInput = document.getElementById('urlInput');
+  const url = (urlInput.value || '').trim();
+  if (!url) {
+    showToast('Please enter a URL to audit.', 'warning');
+    urlInput.focus();
+    return;
+  }
+  if (isRunning) return;
+
+  isRunning = true;
+  const btn = document.getElementById('btnRun');
+  btn.disabled = true;
+  btn.innerText = 'RUNNING...';
 
   const overlay = document.getElementById('loadingOverlay');
   const statusLabel = document.getElementById('statusLabel');
   const loadingBar = document.getElementById('loadingBar');
-  
+
   overlay.classList.add('show');
   document.getElementById('resultsPanel').classList.add('d-none');
+  statusLabel.innerText = 'Starting...';
+  loadingBar.style.width = '5%';
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
+  // Construct WS url (supports http/https)
+  const useSecure = window.location.protocol === 'https:';
+  const protocol = useSecure ? 'wss:' : 'ws:';
+  const wsURL = `${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
+
+  try {
+    ws = new WebSocket(wsURL);
+  } catch (err) {
+    showToast('Unable to open WebSocket: ' + (err?.message || err), 'error');
+    overlay.classList.remove('show');
+    btn.disabled = false; btn.innerText = 'START AUDIT';
+    isRunning = false;
+    return;
+  }
+
+  ws.onopen = () => {
+    statusLabel.innerText = 'Connected. Crawling...';
+  };
 
   ws.onmessage = (event) => {
-    const res = JSON.parse(event.data);
-    if (res.status) statusLabel.innerText = res.status;
-    if (res.crawl_progress) loadingBar.style.width = res.crawl_progress + '%';
+    let res = {};
+    try { res = JSON.parse(event.data); } catch (e) {}
+
+    if (res?.error) {
+      showToast('Audit error: ' + res.error, 'error');
+    }
+    if (typeof res.status === 'string') {
+      statusLabel.innerText = res.status;
+    }
+    if (typeof res.crawl_progress === 'number') {
+      const pct = Math.max(0, Math.min(100, Math.round(res.crawl_progress)));
+      loadingBar.style.width = pct + '%';
+    }
 
     if (res.finished) {
       overlay.classList.remove('show');
       document.getElementById('resultsPanel').classList.remove('d-none');
 
-      document.getElementById('ovScore').innerText = res.overall_score ?? 0;
-      document.getElementById('gradeDisplay').innerText = `GRADE: ${res.grade ?? 'N/A'}`;
-      document.getElementById('onpageScore').innerText = res.breakdown?.seo ?? 0;
+      const overall = Number(res.overall_score ?? 0);
+      const grade = res.grade ?? 'N/A';
+      const bd = res.breakdown || {};
 
-      const perf = res.breakdown?.performance?.lcp_ms ?? 0;
-      document.getElementById('perfScore').innerText = (perf >= 1000) ? (perf/1000).toFixed(1)+'s' : perf+'ms';
+      const seo = Number(bd.seo ?? 0);
+      const lcp = Number((bd.performance || {}).lcp_ms ?? 0);
+      const comp = Number((bd.competitors || {}).top_competitor_score ?? 0);
+      const links = (bd.links || {});
+      const internalC = Number(links.internal_links_count ?? 0);
+      const externalC = Number(links.external_links_count ?? 0);
+      const brokenC = Number(links.broken_internal_links ?? 0);
 
-      document.getElementById('coverageScore').innerText = res.breakdown?.competitors?.top_competitor_score ?? 0;
-      document.getElementById('confScore').innerText = res.chart_data?.bar?.data?.[3] ?? 90;
+      document.getElementById('ovScore').innerText = isFinite(overall) ? overall : 0;
+      document.getElementById('gradeDisplay').innerText = `GRADE: ${grade}`;
+      document.getElementById('onpageScore').innerText = isFinite(seo) ? seo : 0;
+      document.getElementById('perfScore').innerText = formatPerf(lcp);
+      document.getElementById('coverageScore').innerText = isFinite(comp) ? comp : 0;
+      document.getElementById('confScore').innerText = (res.chart_data?.bar?.data?.[3] ?? 90);
 
-      document.getElementById('intCount').innerText = res.breakdown?.links?.internal_links_count ?? 0;
-      document.getElementById('extCount').innerText = res.breakdown?.links?.external_links_count ?? 0;
-      document.getElementById('brkCount').innerText = res.breakdown?.links?.broken_internal_links ?? 0;
+      document.getElementById('intCount').innerText = isFinite(internalC) ? internalC : 0;
+      document.getElementById('extCount').innerText = isFinite(externalC) ? externalC : 0;
+      document.getElementById('brkCount').innerText = isFinite(brokenC) ? brokenC : 0;
 
       initCharts(res);
-      ws.close();
+
+      // finalize
+      try { ws.close(); } catch (_) {}
+      ws = null;
+      isRunning = false;
+      btn.disabled = false; btn.innerText = 'START AUDIT';
+
+      // Informational tip when PSI is likely missing
+      if (!lcp || lcp === 0) {
+        document.getElementById('envHint').innerText = 'Perf (LCP) is 0. Set PSI_API_KEY in server env to enable PageSpeed metrics.';
+      } else {
+        document.getElementById('envHint').innerText = 'Perf (LCP) loaded via PSI. Great!';
+      }
     }
   };
 
-  ws.onerror = (e) => { alert("WebSocket error: " + e.message); overlay.classList.remove('show'); }
+  ws.onerror = (e) => {
+    showToast('WebSocket error occurred. Check server logs.', 'error');
+    overlay.classList.remove('show');
+    isRunning = false;
+    btn.disabled = false; btn.innerText = 'START AUDIT';
+  };
+
+  ws.onclose = () => {
+    // If closed before finished flag, ensure UI isn’t stuck
+    if (isRunning) {
+      overlay.classList.remove('show');
+      isRunning = false;
+      btn.disabled = false; btn.innerText = 'START AUDIT';
+    }
+  };
+}
+
+// Button click
+document.getElementById('btnRun').addEventListener('click', startAudit);
+
+// Enter key triggers audit
+document.getElementById('urlInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    startAudit();
+  }
 });
 
 // PDF Download
@@ -220,10 +368,24 @@ document.getElementById('btnDownload').addEventListener('click', async () => {
   const pdfWidth = pdf.internal.pageSize.getWidth();
   const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-  pdf.save(`FF-Audit-Report-${new Date().toLocaleDateString()}.pdf`);
+  // Add image and auto add pages if needed
+  let y = 0;
+  if (pdfHeight <= pdf.internal.pageSize.getHeight()) {
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+  } else {
+    // If content is taller than a page, scale to fit height
+    const scaledWidth = (imgProps.width * pdf.internal.pageSize.getHeight()) / imgProps.height;
+    pdf.addImage(imgData, 'PNG', 0, 0, scaledWidth, pdf.internal.pageSize.getHeight());
+  }
 
-  noPrint.forEach(el => el.style.display = 'flex');
+  const stamp = new Date().toLocaleString();
+  pdf.setTextColor(150);
+  pdf.setFontSize(8);
+  pdf.text(`Generated: ${stamp} • FF Tech Audit v4.2`, 10, pdf.internal.pageSize.getHeight() - 6);
+
+  pdf.save(`FF-Audit-Report-${new Date().toLocaleDateString().replace(/\//g,'-')}.pdf`);
+
+  noPrint.forEach(el => el.style.display = '');
 });
 </script>
 </body>
