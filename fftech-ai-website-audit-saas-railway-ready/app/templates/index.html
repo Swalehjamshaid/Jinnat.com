@@ -3,46 +3,110 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FF Tech Audit – Professional Website Auditor</title>
+  <title>FF Tech Audit – Professional Website Auditor v4.2</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
   <style>
     :root {
       --bg: #0a0e17;
       --card: #111827;
-      --glass: rgba(17, 24, 39, 0.85);
-      --border: rgba(255, 215, 0, 0.2);
+      --glass: rgba(17, 24, 39, 0.88);
+      --border: rgba(255, 215, 0, 0.18);
       --gold: #ffd700;
       --gold-dark: #d4af37;
+      --success: #10b981;
+      --danger: #ef4444;
+      --info: #3b82f6;
     }
-    body { background: linear-gradient(135deg, var(--bg) 0%, var(--card) 100%); color: #e2e8f0; min-height:100vh; font-family:'Inter', system-ui, sans-serif; }
-    .main-container { max-width: 1300px; margin: 0 auto; padding: 4rem 1rem; }
-    .header-title { font-size:3.5rem; font-weight:800; background:linear-gradient(90deg, var(--gold), #fff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:2.5rem; text-align:center; }
-    .card-glass { background: var(--glass); border:1px solid var(--border); backdrop-filter: blur(15px); border-radius:1.5rem; padding:2.5rem; box-shadow: 0 20px 50px rgba(0,0,0,0.4); }
-    #loadingOverlay { position: fixed; inset:0; background: rgba(10,14,23,0.95); color: var(--gold); display:none; flex-direction:column; justify-content:center; align-items:center; z-index:9999; transition: opacity 0.3s ease; }
-    #loadingOverlay.show { display:flex; opacity:1; }
-    .metric-box { background: rgba(255,255,255,0.03); border:1px solid rgba(255,215,0,0.1); border-radius:1rem; padding:1.5rem; text-align:center; transition:0.3s; }
-    .metric-box:hover { border-color: var(--gold); transform: translateY(-5px); }
-    .metric-value { font-size:2.5rem; font-weight:800; color: var(--gold); }
-    .metric-label { font-size:0.9rem; color:#9ca3af; text-transform:uppercase; letter-spacing:1px; }
-    .chart-container { background: rgba(255,255,255,0.02); border-radius:1rem; padding:1.5rem; margin-bottom:2rem; }
-    .btn-gold { background: linear-gradient(90deg, var(--gold), var(--gold-dark)); border:none; color:#000; font-weight:700; }
-    .btn-gold:hover { opacity:0.9; transform: scale(1.02); }
-    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 10000; }
-    .badge-soft { background: rgba(255,215,0,0.15); border: 1px solid rgba(255,215,0,0.3); color: #ffd700; }
+    body {
+      background: linear-gradient(135deg, var(--bg) 0%, var(--card) 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+    .main-container { max-width: 1400px; margin: 0 auto; padding: 4rem 1.5rem; }
+    .header-title {
+      font-size: 3.8rem;
+      font-weight: 800;
+      background: linear-gradient(90deg, var(--gold), #ffffff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 3rem;
+      text-align: center;
+      letter-spacing: -1px;
+    }
+    .card-glass {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+      border-radius: 1.6rem;
+      padding: 2.8rem;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.45);
+    }
+    #loadingOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(10,14,23,0.97);
+      color: var(--gold);
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      transition: opacity 0.4s ease;
+    }
+    #loadingOverlay.show { display: flex; opacity: 1; }
+    .metric-box {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,215,0,0.12);
+      border-radius: 1.2rem;
+      padding: 1.8rem 1.2rem;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+    .metric-box:hover {
+      border-color: var(--gold);
+      transform: translateY(-6px);
+      box-shadow: 0 15px 35px rgba(255,215,0,0.1);
+    }
+    .metric-value { font-size: 2.8rem; font-weight: 800; color: var(--gold); line-height: 1; }
+    .metric-label { font-size: 0.95rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 1.2px; margin-top: 0.4rem; }
+    .chart-container {
+      background: rgba(255,255,255,0.025);
+      border-radius: 1.2rem;
+      padding: 1.8rem;
+      margin-bottom: 2.2rem;
+      border: 1px solid rgba(255,215,0,0.08);
+    }
+    .btn-gold {
+      background: linear-gradient(90deg, var(--gold), var(--gold-dark));
+      border: none;
+      color: #000;
+      font-weight: 700;
+      padding: 0.8rem 2.5rem;
+    }
+    .btn-gold:hover { opacity: 0.92; transform: scale(1.03); }
+    .toast-container { position: fixed; top: 25px; right: 25px; z-index: 10000; }
+    .badge-soft {
+      background: rgba(255,215,0,0.14);
+      border: 1px solid rgba(255,215,0,0.28);
+      color: var(--gold);
+      font-weight: 500;
+    }
+    .links-info { font-size: 0.95rem; }
+    .links-info strong { font-weight: 600; }
+    footer { margin-top: 5rem; text-align: center; color: #6b7280; font-size: 0.9rem; }
   </style>
 </head>
 <body>
-
 <div id="loadingOverlay">
-  <div class="spinner-border text-warning mb-4" style="width:4rem;height:4rem;"></div>
-  <h3 id="statusLabel">Initializing Engine...</h3>
+  <div class="spinner-border text-warning mb-5" style="width:5rem;height:5rem;"></div>
+  <h3 id="statusLabel" class="mb-4">Initializing Audit Engine...</h3>
   <div class="w-50 mt-3">
-    <div class="progress" style="height:10px;">
+    <div class="progress" style="height:12px; border-radius:6px; background:rgba(255,255,255,0.08);">
       <div id="loadingBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width:5%"></div>
     </div>
   </div>
@@ -52,182 +116,184 @@
 <div class="toast-container" id="toastArea"></div>
 
 <div class="main-container">
-  <h1 class="header-title">Audit Engine <span style="font-weight:300;">v4.2</span></h1>
+  <h1 class="header-title">FF Tech Audit Engine <span style="font-weight:300; opacity:0.9;">v4.2</span></h1>
 
   <div class="row g-4">
-    <!-- Left Panel -->
+    <!-- Left Panel – Main Audit Area -->
     <div class="col-lg-8">
       <div class="card-glass" id="printableArea">
-        <div class="input-group input-group-lg mb-3 no-print">
-          <span class="input-group-text bg-dark border-secondary text-warning"><i class="bi bi-globe"></i></span>
-          <input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="https://example.com">
+        <div class="input-group input-group-lg mb-4 no-print">
+          <span class="input-group-text bg-dark border-secondary text-warning"><i class="bi bi-globe2"></i></span>
+          <input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="https://www.example.com" autofocus>
           <button id="btnRun" class="btn btn-gold px-5">START AUDIT</button>
         </div>
 
-        <div class="no-print mb-4">
-          <span class="badge badge-soft rounded-pill px-3 py-2" id="envHint">Tip: set PSI_API_KEY in server env to enable LCP (Perf).</span>
+        <div class="no-print mb-4 text-center">
+          <span class="badge badge-soft rounded-pill px-4 py-2" id="envHint">
+            Tip: Set PSI_API_KEY in server env for real Core Web Vitals (LCP & CLS)
+          </span>
         </div>
 
         <div id="resultsPanel" class="d-none">
           <div class="text-center mb-5">
-            <div class="d-inline-block p-4 rounded-circle border border-warning mb-3">
-              <h2 id="ovScore" class="display-2 fw-bold mb-0" style="color: var(--gold);">0</h2>
+            <div class="d-inline-block p-5 rounded-circle border border-3 border-warning mb-4 shadow">
+              <h2 id="ovScore" class="display-1 fw-extrabold mb-0" style="color: var(--gold);">—</h2>
             </div>
-            <h3 id="gradeDisplay" class="fw-bold">GRADE: —</h3>
-            <p class="text-muted">Comprehensive AI Analysis Report</p>
-            <button id="btnDownload" class="btn btn-sm btn-outline-warning mt-2 no-print">
-              <i class="bi bi-file-earmark-pdf me-2"></i>Download Report
+            <h3 id="gradeDisplay" class="fw-bold text-warning mb-2">GRADE: —</h3>
+            <p class="text-muted fs-5">Comprehensive AI-Driven Website Analysis Report</p>
+            <button id="btnDownload" class="btn btn-outline-warning mt-3 no-print">
+              <i class="bi bi-file-earmark-arrow-down me-2"></i>Download PDF Report
             </button>
           </div>
 
-          <div class="row g-3 mb-5">
-            <div class="col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">On-Page SEO</div>
-                <div id="onpageScore" class="metric-value">0</div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">Perf (LCP)</div>
-                <div id="perfScore" class="metric-value">0</div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">Competitors</div>
-                <div id="coverageScore" class="metric-value">0</div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="metric-box">
-                <div class="metric-label">AI Confidence</div>
-                <div id="confScore" class="metric-value">0</div>
-              </div>
-            </div>
+          <div class="row g-4 mb-5">
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">On-Page SEO</div><div id="onpageScore" class="metric-value">—</div></div></div>
+            <div class="col-md-3"><div class="metric-box position-relative">
+              <div class="metric-label">Performance (LCP)</div>
+              <div id="perfScore" class="metric-value">—</div>
+              <small id="clsHint" class="position-absolute bottom-0 start-50 translate-middle-x text-muted" style="font-size:0.75rem;"></small>
+            </div></div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">Competitors</div><div id="coverageScore" class="metric-value">—</div></div></div>
+            <div class="col-md-3"><div class="metric-box"><div class="metric-label">AI Confidence</div><div id="confScore" class="metric-value">90</div></div></div>
           </div>
 
           <div class="row">
             <div class="col-md-7">
               <div class="chart-container">
-                <canvas id="mainChart" height="250"></canvas>
+                <canvas id="mainChart" height="280"></canvas>
               </div>
             </div>
             <div class="col-md-5">
               <div class="chart-container">
-                <canvas id="radarChart" height="250"></canvas>
+                <canvas id="radarChart" height="280"></canvas>
               </div>
-              <div class="mt-3 p-3 bg-dark rounded border border-secondary">
-                <div class="d-flex justify-content-between mb-2">
-                  <span>Internal Links:</span> <strong id="intCount" class="text-success">0</strong>
+              <div class="mt-4 p-4 bg-dark rounded border border-secondary links-info">
+                <div class="d-flex justify-content-between mb-3">
+                  <span>Internal Links:</span> <strong id="intCount" class="text-success">—</strong>
                 </div>
-                <div class="d-flex justify-content-between mb-2">
-                  <span>External Links:</span> <strong id="extCount" class="text-primary">0</strong>
+                <div class="d-flex justify-content-between mb-3">
+                  <span>External Links:</span> <strong id="extCount" class="text-info">—</strong>
                 </div>
                 <div class="d-flex justify-content-between">
-                  <span>Broken Links:</span> <strong id="brkCount" class="text-danger">0</strong>
+                  <span>Broken Internal Links:</span> <strong id="brkCount" class="text-danger">—</strong>
                 </div>
               </div>
             </div>
           </div>
-        </div> <!-- /resultsPanel -->
+        </div>
       </div>
     </div>
 
-    <!-- Right Panel -->
+    <!-- Right Panel – Account / Info -->
     <div class="col-lg-4">
-      <div class="card-glass h-100">
-        <h4 class="text-warning mb-4"><i class="bi bi-shield-lock me-2"></i>Account Access</h4>
+      <div class="card-glass h-100 d-flex flex-column">
+        <h4 class="text-warning mb-4"><i class="bi bi-shield-lock-fill me-2"></i>Account Access</h4>
         <div class="mb-4">
           <label class="small text-muted mb-2">Email Address</label>
           <input type="email" class="form-control bg-dark text-white border-secondary mb-3" placeholder="user@company.com">
           <button class="btn btn-outline-warning w-100">Send Magic Link</button>
         </div>
-        <hr class="border-secondary">
-        <p class="small text-muted">FF Tech Engine v4.2 uses 128-bit encryption for report storage and AI-driven performance heuristics.</p>
+        <hr class="border-secondary my-4">
+        <p class="small text-muted mt-auto">
+          FF Tech Engine v4.2 • 128-bit encryption for secure report storage<br>
+          AI-driven heuristics & real-time competitor benchmarking
+        </p>
       </div>
     </div>
   </div>
+
+  <footer>
+    © 2026 FF Tech International • Audit Engine v4.2 • Generated on <span id="currentDate"></span>
+  </footer>
 </div>
 
 <script>
-/* -----------------------
-   Helpers / UI utilities
-------------------------*/
+// Helpers
 function showToast(message, type = 'warning') {
   const id = 't' + Date.now();
   const bg = type === 'error' ? 'bg-danger' : (type === 'success' ? 'bg-success' : 'bg-warning text-dark');
   const el = document.createElement('div');
-  el.className = `toast align-items-center ${bg} border-0 show mb-2`;
+  el.className = `toast align-items-center ${bg} border-0 show mb-3 shadow`;
   el.id = id;
-  el.setAttribute('role','alert');
   el.innerHTML = `
     <div class="d-flex">
-      <div class="toast-body">${message}</div>
-      <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="document.getElementById('${id}').remove()"></button>
+      <div class="toast-body fw-medium">${message}</div>
+      <button type="button" class="btn-close btn-close-white me-3 m-auto" onclick="document.getElementById('${id}').remove()"></button>
     </div>`;
   document.getElementById('toastArea').appendChild(el);
-  setTimeout(() => el.remove(), 6000);
+  bootstrap.Toast.getOrCreateInstance(el).show();
+  setTimeout(() => el.remove(), 7000);
 }
 
 function formatPerf(lcpMs) {
   const n = Number(lcpMs || 0);
-  if (n >= 1000) return (n/1000).toFixed(1) + 's';
-  return Math.max(0, Math.round(n)) + 'ms';
+  if (n === 0) return '—';
+  if (n >= 1000) return (n/1000).toFixed(1) + ' s';
+  return Math.round(n) + ' ms';
 }
 
-/* -----------------------
-   Charts
-------------------------*/
+function updateDate() {
+  document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-PK', {
+    year: 'numeric', month: 'long', day: 'numeric'
+  });
+}
+
+// Charts
 let charts = {};
 function initCharts(data) {
-  const safeBar = (data?.chart_data?.bar) || { labels: ["SEO","Links","Perf","AI"], data: [0,0,0,90] };
-  const safeRadar = (data?.chart_data?.radar) || { labels: ["SEO","Links","Perf","AI"], data: [0,0,0,90] };
+  const barData = data?.chart_data?.bar || { labels: ["SEO","Links","Perf","AI"], data: [0,0,0,90] };
+  const radarData = data?.chart_data?.radar || { labels: ["SEO","Links","Perf","AI"], data: [0,0,0,90] };
 
-  if (charts.bar) { charts.bar.destroy(); }
+  if (charts.bar) charts.bar.destroy();
   charts.bar = new Chart(document.getElementById('mainChart'), {
     type: 'bar',
     data: {
-      labels: safeBar.labels,
+      labels: barData.labels,
       datasets: [{
-        label: 'Metrics',
-        data: safeBar.data,
-        backgroundColor:['#ffd700','#3b82f6','#10b981','#ef4444']
+        label: 'Score',
+        data: barData.data,
+        backgroundColor: ['#ffd700', '#3b82f6', '#10b981', '#ef4444'],
+        borderWidth: 0,
+        borderRadius: 6
       }]
     },
     options: {
-      plugins:{ legend:{ display:false } },
-      scales:{ y:{ max:100, beginAtZero:true } }
+      plugins: { legend: { display: false } },
+      scales: { y: { max: 100, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.08)' } } }
     }
   });
 
-  if (charts.radar) { charts.radar.destroy(); }
+  if (charts.radar) charts.radar.destroy();
   charts.radar = new Chart(document.getElementById('radarChart'), {
     type: 'radar',
     data: {
-      labels: safeRadar.labels,
-      datasets:[{
-        label:'Profile',
-        data: safeRadar.data,
-        borderColor:'#ffd700',
-        backgroundColor:'rgba(255,215,0,0.2)'
+      labels: radarData.labels,
+      datasets: [{
+        label: 'Profile',
+        data: radarData.data,
+        borderColor: '#ffd700',
+        backgroundColor: 'rgba(255,215,0,0.18)',
+        pointBackgroundColor: '#ffd700',
+        pointBorderColor: '#000',
+        pointRadius: 5
       }]
     },
-    options:{ scales:{ r:{ max:100, beginAtZero:true, ticks:{ display:false } } } }
+    options: {
+      scales: { r: { max: 100, beginAtZero: true, ticks: { display: false }, grid: { color: 'rgba(255,215,0,0.15)' } } },
+      plugins: { legend: { display: false } }
+    }
   });
 }
 
-/* -----------------------
-   Audit Flow
-------------------------*/
+// Audit Logic
 let ws = null;
 let isRunning = false;
 
 function startAudit() {
   const urlInput = document.getElementById('urlInput');
-  const url = (urlInput.value || '').trim();
+  let url = (urlInput.value || '').trim();
   if (!url) {
-    showToast('Please enter a URL to audit.', 'warning');
+    showToast('Please enter a valid website URL', 'warning');
     urlInput.focus();
     return;
   }
@@ -236,7 +302,7 @@ function startAudit() {
   isRunning = true;
   const btn = document.getElementById('btnRun');
   btn.disabled = true;
-  btn.innerText = 'RUNNING...';
+  btn.innerText = 'AUDITING...';
 
   const overlay = document.getElementById('loadingOverlay');
   const statusLabel = document.getElementById('statusLabel');
@@ -244,38 +310,36 @@ function startAudit() {
 
   overlay.classList.add('show');
   document.getElementById('resultsPanel').classList.add('d-none');
-  statusLabel.innerText = 'Starting...';
+  statusLabel.innerText = 'Connecting to audit engine...';
   loadingBar.style.width = '5%';
 
-  // Construct WS url (supports http/https)
-  const useSecure = window.location.protocol === 'https:';
-  const protocol = useSecure ? 'wss:' : 'ws:';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsURL = `${protocol}//${window.location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
 
   try {
     ws = new WebSocket(wsURL);
   } catch (err) {
-    showToast('Unable to open WebSocket: ' + (err?.message || err), 'error');
-    overlay.classList.remove('show');
-    btn.disabled = false; btn.innerText = 'START AUDIT';
-    isRunning = false;
+    showToast('Failed to connect: ' + err.message, 'error');
+    resetUI();
     return;
   }
 
   ws.onopen = () => {
-    statusLabel.innerText = 'Connected. Crawling...';
+    statusLabel.innerText = 'Connected → Crawling pages...';
   };
 
   ws.onmessage = (event) => {
-    let res = {};
-    try { res = JSON.parse(event.data); } catch (e) {}
+    let res;
+    try { res = JSON.parse(event.data); } catch { return; }
 
-    if (res?.error) {
+    if (res.error) {
       showToast('Audit error: ' + res.error, 'error');
     }
-    if (typeof res.status === 'string') {
+
+    if (res.status) {
       statusLabel.innerText = res.status;
     }
+
     if (typeof res.crawl_progress === 'number') {
       const pct = Math.max(0, Math.min(100, Math.round(res.crawl_progress)));
       loadingBar.style.width = pct + '%';
@@ -286,66 +350,72 @@ function startAudit() {
       document.getElementById('resultsPanel').classList.remove('d-none');
 
       const overall = Number(res.overall_score ?? 0);
-      const grade = res.grade ?? 'N/A';
+      const grade = res.grade ?? '—';
       const bd = res.breakdown || {};
-
       const seo = Number(bd.seo ?? 0);
-      const lcp = Number((bd.performance || {}).lcp_ms ?? 0);
+      const perf = bd.performance || {};
+      const lcp = Number(perf.lcp_ms ?? 0);
+      const cls = Number(perf.cls ?? 0);
       const comp = Number((bd.competitors || {}).top_competitor_score ?? 0);
-      const links = (bd.links || {});
-      const internalC = Number(links.internal_links_count ?? 0);
-      const externalC = Number(links.external_links_count ?? 0);
-      const brokenC = Number(links.broken_internal_links ?? 0);
+      const links = bd.links || {};
 
-      document.getElementById('ovScore').innerText = isFinite(overall) ? overall : 0;
+      document.getElementById('ovScore').innerText = isFinite(overall) ? overall : '—';
       document.getElementById('gradeDisplay').innerText = `GRADE: ${grade}`;
-      document.getElementById('onpageScore').innerText = isFinite(seo) ? seo : 0;
+      document.getElementById('onpageScore').innerText = isFinite(seo) ? seo : '—';
       document.getElementById('perfScore').innerText = formatPerf(lcp);
-      document.getElementById('coverageScore').innerText = isFinite(comp) ? comp : 0;
+      document.getElementById('coverageScore').innerText = isFinite(comp) ? comp : '—';
       document.getElementById('confScore').innerText = (res.chart_data?.bar?.data?.[3] ?? 90);
 
-      document.getElementById('intCount').innerText = isFinite(internalC) ? internalC : 0;
-      document.getElementById('extCount').innerText = isFinite(externalC) ? externalC : 0;
-      document.getElementById('brkCount').innerText = isFinite(brokenC) ? brokenC : 0;
+      document.getElementById('intCount').innerText = Number(links.internal_links_count ?? 0);
+      document.getElementById('extCount').innerText = Number(links.external_links_count ?? 0);
+      document.getElementById('brkCount').innerText = Number(links.broken_internal_links ?? 0);
+
+      // CLS hint
+      const clsHintEl = document.getElementById('clsHint');
+      if (cls > 0) {
+        clsHintEl.innerText = `CLS: ${cls.toFixed(2)}`;
+        clsHintEl.className = cls > 0.1 ? 'text-danger' : 'text-warning';
+      } else {
+        clsHintEl.innerText = '';
+      }
 
       initCharts(res);
 
-      // finalize
-      try { ws.close(); } catch (_) {}
-      ws = null;
-      isRunning = false;
-      btn.disabled = false; btn.innerText = 'START AUDIT';
-
-      // Informational tip when PSI is likely missing
-      if (!lcp || lcp === 0) {
-        document.getElementById('envHint').innerText = 'Perf (LCP) is 0. Set PSI_API_KEY in server env to enable PageSpeed metrics.';
+      if (lcp === 0) {
+        document.getElementById('envHint').innerHTML = 'Performance (LCP/CLS) is fallback value. Set <code>PSI_API_KEY</code> in server env for accurate Core Web Vitals.';
       } else {
-        document.getElementById('envHint').innerText = 'Perf (LCP) loaded via PSI. Great!';
+        document.getElementById('envHint').innerHTML = 'Core Web Vitals loaded via Google PageSpeed Insights ✓';
       }
+
+      resetUI();
+      showToast('Audit complete! Report ready.', 'success');
     }
   };
 
-  ws.onerror = (e) => {
-    showToast('WebSocket error occurred. Check server logs.', 'error');
-    overlay.classList.remove('show');
-    isRunning = false;
-    btn.disabled = false; btn.innerText = 'START AUDIT';
+  ws.onerror = () => {
+    showToast('Connection error. Please try again or check server status.', 'error');
+    resetUI();
   };
 
   ws.onclose = () => {
-    // If closed before finished flag, ensure UI isn’t stuck
     if (isRunning) {
-      overlay.classList.remove('show');
-      isRunning = false;
-      btn.disabled = false; btn.innerText = 'START AUDIT';
+      showToast('Audit session closed unexpectedly.', 'warning');
+      resetUI();
     }
   };
 }
 
-// Button click
-document.getElementById('btnRun').addEventListener('click', startAudit);
+function resetUI() {
+  const btn = document.getElementById('btnRun');
+  btn.disabled = false;
+  btn.innerText = 'START AUDIT';
+  isRunning = false;
+  document.getElementById('loadingOverlay').classList.remove('show');
+  try { ws?.close(); ws = null; } catch (_) {}
+}
 
-// Enter key triggers audit
+// Event listeners
+document.getElementById('btnRun').addEventListener('click', startAudit);
 document.getElementById('urlInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
@@ -357,36 +427,40 @@ document.getElementById('urlInput').addEventListener('keydown', (e) => {
 document.getElementById('btnDownload').addEventListener('click', async () => {
   const { jsPDF } = window.jspdf;
   const element = document.getElementById('printableArea');
-  const noPrint = document.querySelectorAll('.no-print');
-  noPrint.forEach(el => el.style.display = 'none');
+  const noPrintEls = document.querySelectorAll('.no-print');
+  noPrintEls.forEach(el => el.style.display = 'none');
 
-  const canvas = await html2canvas(element, { backgroundColor: '#0a0e17', scale: 2 });
-  const imgData = canvas.toDataURL('image/png');
+  try {
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      backgroundColor: '#0a0e17',
+      logging: false,
+      useCORS: true
+    });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgProps = pdf.getImageProperties(imgData);
+    const ratio = Math.min(pdfWidth / imgProps.width, pdfHeight / imgProps.height);
+    const w = imgProps.width * ratio;
+    const h = imgProps.height * ratio;
 
-  const pdf = new jsPDF('p', 'mm', 'a4');
-  const imgProps = pdf.getImageProperties(imgData);
-  const pdfWidth = pdf.internal.pageSize.getWidth();
-  const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, w, h);
+    pdf.setFontSize(8);
+    pdf.setTextColor(140);
+    pdf.text(`Generated: ${new Date().toLocaleString('en-PK')} • FF Tech Audit v4.2`, 10, pdfHeight - 8);
 
-  // Add image and auto add pages if needed
-  let y = 0;
-  if (pdfHeight <= pdf.internal.pageSize.getHeight()) {
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-  } else {
-    // If content is taller than a page, scale to fit height
-    const scaledWidth = (imgProps.width * pdf.internal.pageSize.getHeight()) / imgProps.height;
-    pdf.addImage(imgData, 'PNG', 0, 0, scaledWidth, pdf.internal.pageSize.getHeight());
+    pdf.save(`Website-Audit-Report-${new Date().toISOString().slice(0,10)}.pdf`);
+  } catch (err) {
+    showToast('Failed to generate PDF: ' + err.message, 'error');
+  } finally {
+    noPrintEls.forEach(el => el.style.display = '');
   }
-
-  const stamp = new Date().toLocaleString();
-  pdf.setTextColor(150);
-  pdf.setFontSize(8);
-  pdf.text(`Generated: ${stamp} • FF Tech Audit v4.2`, 10, pdf.internal.pageSize.getHeight() - 6);
-
-  pdf.save(`FF-Audit-Report-${new Date().toLocaleDateString().replace(/\//g,'-')}.pdf`);
-
-  noPrint.forEach(el => el.style.display = '');
 });
+
+// Init
+updateDate();
 </script>
 </body>
 </html>
