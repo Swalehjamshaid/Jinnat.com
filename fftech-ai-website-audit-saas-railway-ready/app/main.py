@@ -6,25 +6,24 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
-# This line finds the EXACT folder where main.py is located
+# This calculates the absolute path to the root folder
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 1. FIX: Automatically handle the static folder to prevent crashes
+# Fix: Ensure static directory exists to prevent Starlette RuntimeError
 static_path = os.path.join(BASE_DIR, "static")
-if not os.path.exists(static_path):
-    os.makedirs(static_path, exist_ok=True)
+os.makedirs(static_path, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
-    # 2. FIX: Look for index.html in the same folder as main.py
+    # Fix: Search for index.html in the same directory as this script
     index_path = os.path.join(BASE_DIR, "index.html")
     
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return f.read()
     
-    # This error message helps us debug if it's still missing
+    # Error reporting to help us debug Railway paths
     return f"<h1>Critical Error</h1><p>File not found at: {index_path}</p>"
 
 @app.websocket("/ws/audit-progress")
@@ -32,8 +31,13 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     url = websocket.query_params.get("url")
     
+    if not url:
+        await websocket.send_json({"error": "No URL provided", "finished": True})
+        await websocket.close()
+        return
+
     try:
-        # 3. FIX: Ensure sub-modules are imported correctly
+        # Import inside ensures the 'app' package is found by Python
         from app.audit.runner import WebsiteAuditRunner
         runner = WebsiteAuditRunner(url)
 
@@ -46,11 +50,16 @@ async def websocket_endpoint(websocket: WebSocket):
         await runner.run_audit(progress_callback)
 
     except Exception as e:
+        # Prevents the "Initializing Engine" bar from staying stuck forever
         await websocket.send_json({"error": f"Backend Error: {str(e)}", "finished": True})
     finally:
-        await websocket.close()
+        try:
+            await websocket.close()
+        except:
+            pass
 
 if __name__ == "__main__":
     import uvicorn
+    # Railway dynamic port mapping
     port = int(os.environ.get("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
