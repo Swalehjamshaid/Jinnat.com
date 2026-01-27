@@ -1,48 +1,54 @@
 import os
 import logging
-from fastapi import FastAPI, WebSocket, HTTPException
+from fastapi import FastAPI, WebSocket, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("FFTech_Main")
 
 app = FastAPI(title="FFTech AI Website Audit")
 
-# ── Adjust this path depending on your build output ─────────────────────────────
-# Most common options:
-# - If you copy build files into /static           → "static"
-# - If frontend is in repo root and builds to dist → "dist" or "frontend/dist"
-# - Recommended: point directly to build output (no copy needed)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")          # ← change to "dist" if needed
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-# Create folder only if you generate files at runtime (usually not needed)
-# os.makedirs(STATIC_DIR, exist_ok=True)
+# Create if needed (harmless)
+os.makedirs(STATIC_DIR, exist_ok=True)
 
-# Mount static files (js, css, images, etc.) + enable SPA index fallback
+# Mount everything at root (/, /static/js/..., /index.html directly works too)
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
-# Optional: Catch-all fallback for SPA client-side routing
-# (handles /dashboard, /results/abc, etc. by serving index.html)
-@app.get("/{full_path:path}", include_in_schema=False)
-async def spa_catch_all(full_path: str):
-    # Protect API & websocket paths from being caught
-    if full_path.startswith(("api/", "docs", "redoc", "ws/", "openapi.json")):
-        raise HTTPException(status_code=404, detail="Not found")
 
-    # Try to serve requested file if it exists (e.g. /assets/logo.png)
-    file_path = os.path.join(STATIC_DIR, full_path)
-    if os.path.isfile(file_path):
-        return FileResponse(file_path)
-
-    # Otherwise → serve index.html (SPA router will handle the path)
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def root():
     index_path = os.path.join(STATIC_DIR, "index.html")
-    if not os.path.isfile(index_path):
-        logger.error(f"index.html not found in {STATIC_DIR}")
-        raise HTTPException(status_code=500, detail="index.html missing - frontend build failed or wrong path")
+    if not os.path.exists(index_path):
+        logger.error("index.html missing in static/")
+        return HTMLResponse(
+            "<h1>Deployment Error</h1><p>index.html missing in static/</p>",
+            status_code=500
+        )
+    with open(index_path, "r", encoding="utf-8") as f:
+        return f.read()
 
-    return FileResponse(index_path)
+
+# Fallback for client-side paths (future-proof if you add router-based JS)
+@app.get("/{path:path}", response_class=HTMLResponse, include_in_schema=False)
+async def catch_all(request: Request, path: str):
+    # Skip websocket & api-like paths
+    if path.startswith("ws/") or path in ["openapi.json", "docs", "redoc"]:
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))  # or raise 404
+
+    full_path = os.path.join(STATIC_DIR, path)
+    if os.path.isfile(full_path):
+        return FileResponse(full_path)
+
+    # SPA fallback
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+    
+    return HTMLResponse("<h1>404 Not Found</h1>", status_code=404)
 
 
 @app.websocket("/ws/audit-progress")
