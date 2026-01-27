@@ -1,4 +1,3 @@
-# app/main.py
 import os
 import logging
 from fastapi import FastAPI, WebSocket, Request, HTTPException
@@ -10,68 +9,46 @@ logger = logging.getLogger("FFTech_Main")
 
 app = FastAPI(title="FFTech AI Website Audit")
 
-# Paths
-TEMPLATES_DIR = os.path.join("app", "templates")  # where index.html is
-STATIC_DIR = "static"  # optional repo-level folder for CSS/JS/images
+# Use relative path - this is correct for Railway
+STATIC_DIR = "static"
 
-# Serve /static/* if folder exists (safe because not mounted at root)
-if os.path.isdir(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Mount static files at root level
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
-# Serve the SPA at /
-@app.get("/")
-async def root():
-    index = os.path.join(TEMPLATES_DIR, "index.html")
-    if os.path.isfile(index):
-        return FileResponse(index)
-    raise HTTPException(status_code=404, detail="index.html not found")
-
-# Debug endpoint – verify paths after deploy
+# Optional debug endpoint - helps you see what Railway actually sees
 @app.get("/debug")
 async def debug_info():
     try:
-        cwd = os.getcwd()
-        templates_abs = os.path.abspath(TEMPLATES_DIR)
-        static_abs = os.path.abspath(STATIC_DIR)
-        index_path = os.path.join(templates_abs, "index.html")
-
         return {
-            "status": "backend running",
-            "cwd": cwd,
-            "templates_dir": TEMPLATES_DIR,
-            "templates_dir_exists": os.path.exists(TEMPLATES_DIR),
-            "templates_absolute": templates_abs,
-            "index_file_exists": os.path.exists(index_path),
-            "index_file_size": os.path.getsize(index_path) if os.path.exists(index_path) else "missing",
-            "static_dir": STATIC_DIR,
-            "static_dir_exists": os.path.exists(STATIC_DIR),
-            "static_absolute": static_abs,
-            "files_in_static": os.listdir(STATIC_DIR) if os.path.exists(STATIC_DIR) else "missing",
+            "status": "app loaded",
+            "working_directory": os.getcwd(),
+            "static_directory": STATIC_DIR,
+            "static_exists": os.path.isdir(STATIC_DIR),
+            "index_exists": os.path.isfile(os.path.join(STATIC_DIR, "index.html")),
+            "files_in_static": os.listdir(STATIC_DIR) if os.path.isdir(STATIC_DIR) else "folder missing"
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"debug_error": str(e)}
 
-# SPA fallback so client-side routes render index.html
+# Catch-all route to serve index.html for unknown paths (SPA style)
 @app.get("/{full_path:path}")
-async def spa_fallback(full_path: str, request: Request):
-    # Let API/WS/system paths 404 normally
-    if full_path.startswith(("ws/", "api/", "openapi.json", "docs", "redoc", "debug", "static/")):
+async def catch_all(full_path: str, request: Request):
+    if full_path.startswith(("ws/", "debug", "openapi.json", "docs", "redoc")):
         raise HTTPException(status_code=404, detail="Not found")
 
-    # If a real file under /static is requested, let StaticFiles serve it
-    requested_static = os.path.join(STATIC_DIR, full_path)
-    if os.path.isfile(requested_static):
-        return FileResponse(requested_static)
+    requested_file = os.path.join(STATIC_DIR, full_path)
 
-    # Otherwise return SPA index
-    index = os.path.join(TEMPLATES_DIR, "index.html")
-    if os.path.isfile(index):
-        logger.info(f"Serving SPA fallback for /{full_path}")
-        return FileResponse(index)
+    if os.path.isfile(requested_file):
+        return FileResponse(requested_file)
+
+    # fallback to index.html
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
 
     raise HTTPException(status_code=404, detail="Not found")
 
-# WebSocket for audit progress
+# Your websocket endpoint
 @app.websocket("/ws/audit-progress")
 async def audit_progress(websocket: WebSocket):
     await websocket.accept()
@@ -94,4 +71,3 @@ async def audit_progress(websocket: WebSocket):
         await websocket.send_json({"error": str(e), "finished": True})
     finally:
         await websocket.close()
-``
