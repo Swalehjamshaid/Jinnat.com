@@ -19,84 +19,48 @@
       --warning: #eab308;
       --danger: #ef4444;
     }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      font-family: system-ui, sans-serif;
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 0.75rem;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    }
-    .kpi {
-      font-weight: 800;
-      font-size: 2.8rem;
-      color: var(--primary);
-      line-height: 1;
-    }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; font-family: system-ui, sans-serif; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    .kpi { font-weight: 800; font-size: 2.8rem; color: var(--primary); line-height: 1; }
     .muted { color: var(--muted); }
-    .progress {
-      height: 12px;
-      background: #1e293b;
-      border-radius: 6px;
-      overflow: hidden;
-    }
-    .badge-grade {
-      font-size: 1.6rem;
-      padding: 0.6rem 1.4rem;
-    }
-    pre.code-block {
-      background: #0f172a;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      font-size: 0.9rem;
-      max-height: 300px;
-      overflow: auto;
-    }
-    .error-box {
-      background: rgba(239,68,68,0.15);
-      border: 1px solid var(--danger);
-      color: #fecaca;
-      padding: 1.25rem;
-      border-radius: 0.5rem;
-      margin: 1.5rem 0;
-    }
+    .progress { height: 12px; background: #1e293b; border-radius: 6px; overflow: hidden; }
+    .badge-grade { font-size: 1.1rem; padding: 0.35rem 0.9rem; }
+    pre.code-block { background: #0f172a; border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; font-size: 0.9rem; max-height: 300px; overflow: auto; }
+    .error-box { background: rgba(239,68,68,0.15); border: 1px solid var(--danger); color: #fecaca; padding: 1.25rem; border-radius: 0.5rem; margin: 1.5rem 0; }
     canvas { max-height: 280px; margin: 0 auto; display: block; }
-    .dynamic-card {
-      background: #1e293b;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      text-align: center;
-    }
-    .dynamic-card .title {
-      font-size: 0.9rem;
-      color: var(--muted);
-      margin-bottom: 0.5rem;
-    }
-    .dynamic-card .value {
-      font-size: 1.8rem;
-      font-weight: bold;
-      color: var(--primary);
-    }
-    .section-header {
-      color: var(--primary);
-      margin: 2rem 0 1rem;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 0.5rem;
-    }
+    .dynamic-card { background: #1e293b; border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; text-align: center; }
+    .dynamic-card .title { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .dynamic-card .value { font-size: 1.8rem; font-weight: bold; color: var(--primary); }
+    .section-header { color: var(--primary); margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    #debugPanel { background: #0f172a; border: 1px solid #ef4444; color: #fecaca; padding: 1rem; border-radius: 0.5rem; max-height: 300px; overflow: auto; font-family: monospace; font-size: 0.85rem; }
+    .nav-avatar { width: 28px; height: 28px; border-radius: 50%; display: inline-block; background: #334155; color: #e2e8f0; text-align: center; line-height: 28px; font-weight: 700; }
   </style>
 </head>
 <body>
+  <!-- NAVBAR with Auth -->
+  <nav class="navbar navbar-expand-lg border-bottom border-secondary">
+    <div class="container">
+      <a class="navbar-brand text-warning fw-bold" href="#">
+        <i class="bi bi-cpu"></i> FF Tech Audit Engine
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMain">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item"><a class="nav-link active" href="#">Dashboard</a></li>
+        </ul>
+        <div class="d-flex gap-2" id="authArea">
+          <!-- Filled by JS: Register / Magic Link OR user dropdown -->
+        </div>
+      </div>
+    </div>
+  </nav>
+
   <div class="container py-5">
     <header class="text-center mb-5">
-      <h1 class="display-4 fw-bold text-warning">FF Tech Audit Engine</h1>
-      <p class="lead muted">Extreme Adaptive – Shows Every Attribute & Change</p>
+      <h1 class="display-5 fw-bold text-warning">FF Tech Audit Engine</h1>
+      <p class="lead muted">Extreme Adaptive – Shows Every Attribute &amp; Change</p>
     </header>
 
     <!-- Input & Controls -->
@@ -116,18 +80,23 @@
       <div class="progress mt-2">
         <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
       </div>
+
+      <!-- Guest gate (toggle with REQUIRE_AUTH) -->
+      <div id="authGate" class="alert alert-warning mt-3 d-none">
+        <i class="bi bi-lock-fill"></i> You must <a href="#" class="alert-link" id="openMagicFromGate">sign in</a> to run audits.
+      </div>
     </section>
 
     <!-- Error Display -->
     <div id="errorBox" class="error-box d-none"></div>
 
-    <!-- Debug Panel -->
+    <!-- Debug Panel (shows live WS messages) -->
     <div id="debugPanel" class="mb-4 d-none">
-      <strong>Debug Log (F12 Console for more):</strong><br>
-      <div id="debugLog" class="code-block"></div>
+      <strong>Debug Log (open browser console F12 for more):</strong><br>
+      <div id="debugLog"></div>
     </div>
 
-    <!-- Results Area -->
+    <!-- Main Results Area -->
     <div id="resultsArea" class="d-none">
       <!-- KPIs -->
       <section class="row g-4 mb-5" id="kpiSection"></section>
@@ -135,19 +104,95 @@
       <!-- Charts -->
       <section class="row g-4 mb-5" id="chartsSection"></section>
 
-      <!-- Breakdown & Dynamic -->
+      <!-- Breakdown & Dynamic Content -->
       <section id="breakdownSection"></section>
     </div>
 
     <footer class="text-center small muted mt-5">
-      © FF Tech Audit Engine – Extreme Adaptive Mode – Shows All Attributes & Future Changes
+      © FF Tech Audit Engine – Extreme Adaptive Mode – Shows All Attributes &amp; Future Changes
     </footer>
   </div>
 
+  <!-- Registration Modal -->
+  <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form class="modal-content" id="registerForm">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-person-plus"></i> Create your account</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Full Name</label>
+            <input type="text" class="form-control bg-dark text-white border-secondary" id="regName" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control bg-dark text-white border-secondary" id="regEmail" required />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control bg-dark text-white border-secondary" id="regPassword" minlength="6" required />
+          </div>
+          <div class="form-text">By registering, you agree to our Terms & Privacy.</div>
+          <div id="registerAlert" class="alert alert-danger mt-3 d-none"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" id="registerBtn" class="btn btn-warning w-100">
+            <span class="spinner-border spinner-border-sm d-none" id="registerSpinner"></span>
+            <span>Register</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Magic Link Modal -->
+  <div class="modal fade" id="magicModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form class="modal-content" id="magicForm">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-magic"></i> Sign in with Magic Link</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control bg-dark text-white border-secondary" id="magicEmail" required />
+          </div>
+          <div class="small muted">
+            We’ll email you a one‑time sign‑in link. No password required.
+          </div>
+          <div id="magicAlert" class="alert alert-danger mt-3 d-none"></div>
+          <div id="magicSuccess" class="alert alert-success mt-3 d-none">
+            Link sent! Please check your inbox.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" id="magicBtn" class="btn btn-warning w-100">
+            <span class="spinner-border spinner-border-sm d-none" id="magicSpinner"></span>
+            <span>Send Magic Link</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080">
+    <div id="toast" class="toast text-bg-dark border-0" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-body" id="toastBody">Ready</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     // ──────────────────────────────────────────────
-    // Utilities
+    // Polyfills / helpers
     // ──────────────────────────────────────────────
+    if (!Element.prototype.empty) {
+      Element.prototype.empty = function() { this.innerHTML = ''; };
+    }
     const $ = id => document.getElementById(id);
     const create = (tag, className = '', html = '') => {
       const el = document.createElement(tag);
@@ -158,17 +203,187 @@
     const setText = (id, val) => { if ($(id)) $(id).textContent = val ?? "—"; };
     const pretty = obj => JSON.stringify(obj, null, 2);
     const deepGet = (obj, path, fallback = "—") => {
-      try {
-        return path.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), obj) ?? fallback;
-      } catch { return fallback; }
+      try { return path.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), obj) ?? fallback; }
+      catch { return fallback; }
     };
-
+    function toast(msg) {
+      $("toastBody").textContent = msg;
+      const t = bootstrap.Toast.getOrCreateInstance($("toast"));
+      t.show();
+    }
     function logDebug(msg) {
       console.log(msg);
       const log = $("#debugLog");
-      if (log) {
-        log.innerHTML += msg + '<br>';
-        log.scrollTop = log.scrollHeight;
+      if (log) { log.textContent += msg + "\n"; log.scrollTop = log.scrollHeight; }
+    }
+
+    // ──────────────────────────────────────────────
+    // Config: API endpoints (Python backend)
+    // Adjust paths if your server is mounted under a prefix.
+    // ──────────────────────────────────────────────
+    const API = {
+      register: "/api/auth/register",              // POST {name,email,password} -> {token, user}
+      magicRequest: "/api/auth/magic/request",     // POST {email, redirect_url} -> {ok: true}
+      magicVerify: "/api/auth/magic/verify",       // POST {token} -> {token, user}
+      me: "/api/auth/me"                           // GET -> {user}
+    };
+
+    // Toggle whether running an audit requires authentication
+    const REQUIRE_AUTH = true;
+
+    // ──────────────────────────────────────────────
+    // Auth state
+    // ──────────────────────────────────────────────
+    const auth = {
+      tokenKey: "fftech_token",
+      userKey: "fftech_user",
+      get token() { return localStorage.getItem(this.tokenKey); },
+      set token(v) { v ? localStorage.setItem(this.tokenKey, v) : localStorage.removeItem(this.tokenKey); },
+      get user() { const j = localStorage.getItem(this.userKey); try { return j ? JSON.parse(j) : null; } catch { return null; } },
+      set user(u) { u ? localStorage.setItem(this.userKey, JSON.stringify(u)) : localStorage.removeItem(this.userKey); },
+      headers() {
+        return this.token ? { "Content-Type": "application/json", "Authorization": `Bearer ${this.token}` } :
+                            { "Content-Type": "application/json" };
+      },
+      logout() {
+        this.token = null; this.user = null;
+        updateAuthUI();
+        toast("Signed out");
+      }
+    };
+
+    async function apiGet(url) {
+      const res = await fetch(url, { headers: auth.headers() });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+    async function apiPost(url, body) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: auth.headers(),
+        body: JSON.stringify(body || {})
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    // ──────────────────────────────────────────────
+    // Auth UI
+    // ──────────────────────────────────────────────
+    function initialsFrom(nameOrEmail) {
+      if (!nameOrEmail) return "U";
+      const s = nameOrEmail.toString();
+      if (s.includes("@")) return s[0].toUpperCase();
+      return s.split(" ").map(p => p[0]).join("").slice(0,2).toUpperCase();
+    }
+
+    function updateAuthUI() {
+      const area = $("authArea");
+      area.empty();
+
+      if (auth.token && auth.user) {
+        const dd = document.createElement("div");
+        dd.className = "dropdown";
+        dd.innerHTML = `
+          <button class="btn btn-outline-light dropdown-toggle d-flex align-items-center" data-bs-toggle="dropdown">
+            <span class="nav-avatar me-2">${initialsFrom(auth.user.name || auth.user.email)}</span>
+            <span class="me-1">${auth.user.name || auth.user.email}</span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><h6 class="dropdown-header">${auth.user.email || ""}</h6></li>
+            <li><a class="dropdown-item" href="#" id="btnProfile"><i class="bi bi-person"></i> Profile</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item text-danger" href="#" id="btnLogout"><i class="bi bi-box-arrow-right"></i> Sign out</a></li>
+          </ul>
+        `;
+        area.appendChild(dd);
+        dd.querySelector("#btnLogout").addEventListener("click", (e) => {
+          e.preventDefault(); auth.logout();
+        });
+        $("authGate").classList.add("d-none");
+      } else {
+        const btnReg = create("button", "btn btn-outline-light", `<i class="bi bi-person-plus"></i> Register`);
+        const btnMagic = create("button", "btn btn-warning", `<i class="bi bi-magic"></i> Magic Link`);
+        btnReg.addEventListener("click", () => bootstrap.Modal.getOrCreateInstance($("registerModal")).show());
+        btnMagic.addEventListener("click", () => bootstrap.Modal.getOrCreateInstance($("magicModal")).show());
+        area.append(btnReg, btnMagic);
+        if (REQUIRE_AUTH) $("authGate").classList.remove("d-none");
+      }
+    }
+
+    // ──────────────────────────────────────────────
+    // Registration
+    // ──────────────────────────────────────────────
+    $("registerForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = $("regName").value.trim();
+      const email = $("regEmail").value.trim();
+      const password = $("regPassword").value; // keep as-is
+
+      const spinner = $("registerSpinner"); spinner.classList.remove("d-none");
+      $("registerBtn").disabled = true;
+      $("registerAlert").classList.add("d-none");
+
+      try {
+        const data = await apiPost(API.register, { name, email, password });
+        if (data.token) auth.token = data.token;
+        if (data.user) auth.user = data.user;
+        bootstrap.Modal.getOrCreateInstance($("registerModal")).hide();
+        updateAuthUI();
+        toast("Registration successful");
+      } catch (err) {
+        $("registerAlert").textContent = (err?.message || "Registration failed");
+        $("registerAlert").classList.remove("d-none");
+      } finally {
+        spinner.classList.add("d-none");
+        $("registerBtn").disabled = false;
+      }
+    });
+
+    // ──────────────────────────────────────────────
+    // Magic Link request
+    // ──────────────────────────────────────────────
+    $("magicForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = $("magicEmail").value.trim();
+      const spinner = $("magicSpinner"); spinner.classList.remove("d-none");
+      $("magicBtn").disabled = true;
+      $("magicAlert").classList.add("d-none");
+      $("magicSuccess").classList.add("d-none");
+
+      try {
+        const redirect_url = `${location.origin}${location.pathname}`;
+        await apiPost(API.magicRequest, { email, redirect_url });
+        $("magicSuccess").classList.remove("d-none");
+        toast("Magic link sent. Check your email.");
+      } catch (err) {
+        $("magicAlert").textContent = (err?.message || "Failed to send link");
+        $("magicAlert").classList.remove("d-none");
+      } finally {
+        spinner.classList.add("d-none");
+        $("magicBtn").disabled = false;
+      }
+    });
+
+    // Auto open sign-in when gated message is clicked
+    $("openMagicFromGate")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      bootstrap.Modal.getOrCreateInstance($("magicModal")).show();
+    });
+
+    // ──────────────────────────────────────────────
+    // Magic Link verify (token in URL)
+    // Supports ?tokenken });
+        if (res.token) auth.token = res.token;
+        if (res.user) auth.user = res.user;
+        updateAuthUI();
+        toast("You’re signed in!");
+        // Clean the URL
+        params.delete("token"); params.delete("magic_token");
+        const newUrl = location.pathname + (params.toString() ? `?${params}` : "");
+        window.history.replaceState({}, "", newUrl);
+      } catch (e) {
+        toast("Magic link is invalid or expired");
       }
     }
 
@@ -203,14 +418,14 @@
     function resetUI() {
       setText("statusLine", "Status: Idle");
       $("progressBar").style.width = "0%";
-      $("#kpiSection").innerHTML = "";
-      $("#chartsSection").innerHTML = "";
-      $("#breakdownSection").innerHTML = "";
+      $("#kpiSection").empty();
+      $("#chartsSection").empty();
+      $("#breakdownSection").empty();
       $("resultsArea").classList.add("d-none");
       $("errorBox").textContent = "";
       $("errorBox").classList.add("d-none");
       $("#debugPanel").classList.add("d-none");
-      $("#debugLog").innerHTML = "";
+      $("#debugLog").textContent = "";
     }
 
     // ──────────────────────────────────────────────
@@ -221,7 +436,7 @@
 
       // 1. KPIs – auto-detect
       const kpiSection = $("#kpiSection");
-      kpiSection.innerHTML = "";
+      kpiSection.empty();
       const possibleKpis = [
         { label: "Overall Score", path: "overall_score" },
         { label: "Grade", path: "grade", badge: true },
@@ -237,33 +452,33 @@
           const card = create("div", "card p-4 text-center");
           card.innerHTML = `
             <div class="muted small fw-semibold mb-1">${k.label}</div>
-            ${k.badge ? 
+            ${k.badge ?
               `<div class="badge badge-grade bg-success">${val}</div>` :
               `<div class="kpi">${val}</div>`
             }
           `;
           col.appendChild(card);
-          kpiSection.appendChild(col);
+          kpiSection.append(col);
         }
       });
 
-      // 2. Charts – any chart_data entry
+      // 2. Charts
       const chartsSection = $("#chartsSection");
-      chartsSection.innerHTML = "";
+      chartsSection.empty();
       if (msg.chart_data) {
         Object.entries(msg.chart_data).forEach(([key, data]) => {
           renderChart(chartsSection, key.charAt(0).toUpperCase() + key.slice(1), data);
         });
       }
 
-      // 3. Breakdown – recursive
+      // 3. Breakdown
       const breakdownSection = $("#breakdownSection");
-      breakdownSection.innerHTML = "";
+      breakdownSection.empty();
 
       if (msg.breakdown) {
         const h2 = create("h4", "section-header");
         h2.textContent = "Detailed Breakdown";
-        breakdownSection.appendChild(h2);
+        breakdownSection.append(h2);
 
         Object.entries(msg.breakdown).forEach(([sectionName, data]) => {
           const section = create("div", "card p-4 mb-4");
@@ -271,15 +486,15 @@
           const pre = create("pre", "code-block");
           pre.textContent = pretty(data);
           section.appendChild(pre);
-          breakdownSection.appendChild(section);
+          breakdownSection.append(section);
         });
       }
 
-      // 4. Dynamic – cards + kv + plugins
+      // 4. Dynamic
       if (msg.dynamic) {
         const h2 = create("h4", "section-header");
         h2.textContent = "Dynamic & Plugin Insights";
-        breakdownSection.appendChild(h2);
+        breakdownSection.append(h2);
 
         if (msg.dynamic.cards && Array.isArray(msg.dynamic.cards)) {
           const row = create("div", "row g-4 mb-4");
@@ -294,17 +509,17 @@
             `;
             row.appendChild(col);
           });
-          breakdownSection.appendChild(row);
+          breakdownSection.append(row);
         }
 
         if (msg.dynamic.kv && typeof msg.dynamic.kv === "object") {
           Object.entries(msg.dynamic.kv).forEach(([key, pairs]) => {
             const h6 = create("h6", "text-info mt-4 mb-2");
             h6.textContent = key.charAt(0).toUpperCase() + key.slice(1);
-            breakdownSection.appendChild(h6);
+            breakdownSection.append(h6);
             const pre = create("pre", "code-block");
             pre.textContent = pretty(pairs);
-            breakdownSection.appendChild(pre);
+            breakdownSection.append(pre);
           });
         }
 
@@ -312,7 +527,7 @@
           Object.entries(msg.dynamic.plugins).forEach(([name, pluginData]) => {
             const h6 = create("h6", "text-success mt-4 mb-2");
             h6.textContent = `Plugin: ${name}`;
-            breakdownSection.appendChild(h6);
+            breakdownSection.append(h6);
 
             if (pluginData.cards) {
               const row = create("div", "row g-3");
@@ -327,13 +542,13 @@
                 `;
                 row.appendChild(col);
               });
-              breakdownSection.appendChild(row);
+              breakdownSection.append(row);
             }
 
             if (pluginData.kv) {
               const pre = create("pre", "code-block mt-2");
               pre.textContent = pretty(pluginData.kv);
-              breakdownSection.appendChild(pre);
+              breakdownSection.append(pre);
             }
           });
         }
@@ -345,15 +560,16 @@
       const pre = create("pre", "code-block");
       pre.textContent = pretty(msg);
       rawSection.appendChild(pre);
-      breakdownSection.appendChild(rawSection);
+      breakdownSection.append(rawSection);
     }
 
     // ──────────────────────────────────────────────
-    // WebSocket – matches main.py /ws
+    // WebSocket – includes token for Python backend
     // ──────────────────────────────────────────────
     function makeWsUrl(path) {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      return `${proto}//${location.host}${path}`;
+      const tokenQs = auth.token ? `?token=${encodeURIComponent(auth.token)}` : "";
+      return `${proto}//${location.host}${path}${tokenQs}`;
     }
 
     let socket = null;
@@ -370,6 +586,12 @@
         $("errorBox").classList.remove("d-none");
         return;
       }
+      if (REQUIRE_AUTH && !auth.token) {
+        $("errorBox").textContent = "Please sign in to run an audit.";
+        $("errorBox").classList.remove("d-none");
+        bootstrap.Modal.getOrCreateInstance($("magicModal")).show();
+        return;
+      }
       runAudit(url);
     });
 
@@ -382,7 +604,7 @@
 
     function runAudit(url) {
       resetUI();
-      $("statusLine").textContent = "Status: Connecting…";
+      $("statusLine").textContent = "Status: Connecting to WebSocket…";
       $("progressBar").style.width = "5%";
       $("errorBox").classList.add("d-none");
       $("#debugPanel").classList.remove("d-none");
@@ -394,15 +616,17 @@
       }
 
       const wsUrl = makeWsUrl("/ws");
-      logDebug(`Connecting to: ${wsUrl}`);
+      logDebug(`Connecting to WebSocket: ${wsUrl}`);
 
       socket = new WebSocket(wsUrl);
 
       socket.addEventListener("open", () => {
-        logDebug("Connected successfully!");
+        logDebug("WebSocket connected!");
         $("statusLine").textContent = "Status: Connected. Sending URL…";
-        socket.send(JSON.stringify({ url }));
-        logDebug("Sent: " + JSON.stringify({ url }));
+        // Send token again in payload for backends that prefer it inside the message
+        const payload = auth.token ? { url, token: auth.token } : { url };
+        socket.send(JSON.stringify(payload));
+        logDebug("Sent: " + JSON.stringify(payload));
       });
 
       socket.addEventListener("message", ev => {
@@ -410,7 +634,7 @@
         let msg;
         try {
           msg = JSON.parse(ev.data);
-          logDebug("Parsed: " + JSON.stringify(msg));
+          logDebug("Parsed message: " + JSON.stringify(msg));
         } catch (e) {
           logDebug("Parse error: " + e);
           return;
@@ -423,28 +647,45 @@
         if (msg.error) {
           $("errorBox").textContent = msg.error;
           $("errorBox").classList.remove("d-none");
-          logDebug("Server error: " + msg.error);
+          logDebug("Error from server: " + msg.error);
         }
 
         if (msg.finished && !msg.error) {
           updateStatus({ status: "✅ Completed", crawl_progress: 100 });
-          logDebug("Audit finished – rendering...");
+          logDebug("Audit finished – rendering results");
           renderAll(msg);
         }
       });
 
       socket.addEventListener("close", ev => {
-        logDebug(`Closed. Code: ${ev.code}, Reason: ${ev.reason || "none"}`);
-        $("statusLine").textContent += " (closed)";
+        logDebug(`WebSocket closed. Code: ${ev.code}, Reason: ${ev.reason || "none"}`);
+        $("statusLine").textContent += " (connection closed)";
       });
 
       socket.addEventListener("error", ev => {
-        logDebug("Error event fired");
-        console.error("WS error:", ev);
-        $("errorBox").textContent = "Connection failed. Check console for details.";
+        logDebug("WebSocket error event fired");
+        console.error("WebSocket error:", ev);
+        $("errorBox").textContent = "Connection failed. Check console (F12) for details.";
         $("errorBox").classList.remove("d-none");
       });
     }
+
+    // ──────────────────────────────────────────────
+    // Boot
+    // ──────────────────────────────────────────────
+    (async function boot() {
+      updateAuthUI();
+      await tryVerifyMagicFromURL();
+
+      // Optionally refresh current user
+      if (auth.token && !auth.user) {
+        try {
+          const me = await apiGet(API.me);
+          if (me?.user) auth.user = me.user;
+        } catch { /* ignore */ }
+        updateAuthUI();
+      }
+    })();
   </script>
 </body>
 </html>
