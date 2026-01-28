@@ -4,16 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FF Tech Audit – Beautiful Dashboard</title>
+
   <!-- Bootstrap 5 & Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
   <style>
     /* ==== THEME TOKENS ===================================================== */
     :root {
       --primary: #fbbf24;
-      --bg: #0b1224; /* deeper slate/indigo mix */
+      --bg: #0b1224;
       --bg-accent: radial-gradient(1200px 600px at 20% -10%, rgba(251,191,36,0.07), transparent 60%),
                    radial-gradient(1000px 500px at 120% 10%, rgba(56,189,248,0.06), transparent 60%);
       --card: #0f172a;
@@ -30,19 +33,15 @@
       --gradient-success: linear-gradient(135deg, #22c55e, #16a34a);
       --gradient-warning: linear-gradient(135deg, #eab308, #ca8a04);
       --gradient-danger: linear-gradient(135deg, #ef4444, #dc2626);
-      --gradient-hero: radial-gradient(1200px 600px at 20% -10%, rgba(251,191,36,0.07), transparent 60%),
-                       radial-gradient(1000px 500px at 120% 10%, rgba(56,189,248,0.06), transparent 60%);
 
       --ring-bg: rgba(255,255,255,0.08);
       --ring-track: #1e293b;
 
       --shadow-card: 0 8px 30px rgba(0,0,0,0.6);
       --shadow-card-hover: 0 12px 40px rgba(251,191,36,0.15);
-
-      --focus: 0 0 0 0.2rem rgba(251,191,36,0.35);
+      --focus: 0 0 0 0.25rem rgba(251,191,36,0.35);
     }
 
-    /* Light theme adjustments */
     [data-bs-theme="light"] {
       --bg: #f8fafc;
       --bg-accent: radial-gradient(1200px 600px at 20% -10%, rgba(251,191,36,0.18), transparent 60%),
@@ -60,39 +59,27 @@
     }
 
     /* ==== BASE LAYOUT ====================================================== */
-    html, body {
-      height: 100%;
-    }
+    html, body { height: 100%; }
     body {
       background: var(--bg);
       background-image: var(--bg-accent);
       background-attachment: fixed;
       color: var(--text);
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial;
       min-height: 100vh;
       letter-spacing: 0.2px;
     }
-
-    .container-narrow {
-      max-width: 1120px;
-    }
+    .container-narrow { max-width: 1120px; }
 
     /* ==== NAVBAR =========================================================== */
-    .navbar {
-      background: transparent;
-      backdrop-filter: blur(6px);
-    }
+    .navbar { background: transparent; backdrop-filter: blur(6px); }
     .brand-badge {
-      padding: .35rem .8rem;
-      border-radius: .75rem;
-      border: 1px solid var(--border);
-      background: var(--card-glass);
-      color: var(--text);
+      padding: .35rem .8rem; border-radius: .75rem; border: 1px solid var(--border);
+      background: var(--card-glass); color: var(--text);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
       transition: transform .2s ease, box-shadow .3s ease;
     }
     .brand-badge:hover { transform: translateY(-1px); }
-
     .theme-toggle {
       border: 1px solid var(--border);
       background: var(--card-glass);
@@ -110,20 +97,13 @@
       overflow: hidden;
       transition: transform 0.3s ease, box-shadow 0.3s ease, border-color .3s ease;
     }
-    .card:hover {
-      transform: translateY(-6px);
-      box-shadow: var(--shadow-card-hover);
-      border-color: rgba(251,191,36,0.35);
-    }
+    .card:hover { transform: translateY(-6px); box-shadow: var(--shadow-card-hover); border-color: rgba(251,191,36,0.35); }
 
-    /* ==== HEADERS & TITLES ================================================= */
+    /* ==== HEADERS ========================================================== */
     .title-display {
       background: var(--gradient-gold);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      text-shadow: none;
-      letter-spacing: .6px;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; letter-spacing: .6px;
     }
     .lead-muted { color: var(--muted); }
 
@@ -139,91 +119,43 @@
     /* ==== FORM & CONTROLS ================================================== */
     .form-control.bg-dark {
       background: linear-gradient(180deg, rgba(2,6,23,0.6), rgba(2,6,23,0.8));
-      border: 1px solid var(--border);
-      color: var(--text);
-      height: 48px;
+      border: 1px solid var(--border); color: var(--text); height: 48px;
     }
-    .form-control:focus {
-      border-color: rgba(251,191,36,0.55);
-      box-shadow: var(--focus);
-      color: var(--text);
-    }
+    .form-control:focus { border-color: rgba(251,191,36,0.55); box-shadow: var(--focus); color: var(--text); }
     .btn-warning.fw-bold {
-      background: var(--gradient-gold);
-      border: none;
-      color: #111827;
-      font-weight: 800 !important;
-      letter-spacing: .4px;
+      background: var(--gradient-gold); border: none; color: #111827;
+      font-weight: 800 !important; letter-spacing: .4px;
       box-shadow: 0 6px 20px rgba(251,191,36,0.18);
     }
     .btn-warning.fw-bold:hover { opacity: .95; }
-    .btn-outline-danger {
-      border-color: rgba(239,68,68,0.6);
-      color: #fecaca;
+    .btn-outline-danger { border-color: rgba(239,68,68,0.6); color: #fecaca;
       background: linear-gradient(180deg, rgba(239,68,68,0.06), rgba(239,68,68,0.12));
     }
-    .btn-outline-danger:hover {
-      background: rgba(239,68,68,0.18);
-      color: #fff;
-    }
+    .btn-outline-danger:hover { background: rgba(239,68,68,0.18); color: #fff; }
 
-    /* ==== PROGRESS BAR ===================================================== */
-    .progress {
-      height: 14px;
-      background: var(--ring-track);
-      border-radius: 9px;
-      overflow: hidden;
-      position: relative;
-    }
+    /* ==== PROGRESS ========================================================= */
+    .progress { height: 14px; background: var(--ring-track); border-radius: 9px; overflow: hidden; position: relative; }
     .progress-bar {
-      background: var(--gradient-gold);
-      transition: width 0.8s ease;
-      position: relative;
+      background: var(--gradient-gold); transition: width 0.8s ease; position: relative;
     }
     .progress-bar::after {
-      content: "";
-      position: absolute;
-      inset: 0;
+      content: ""; position: absolute; inset: 0;
       background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.28) 50%, rgba(255,255,255,0) 100%);
-      mix-blend-mode: overlay;
-      animation: shimmer 2s linear infinite;
+      mix-blend-mode: overlay; animation: shimmer 2s linear infinite;
     }
     @keyframes shimmer { 0% { transform: translateX(-100%);} 100% { transform: translateX(100%);} }
 
     /* ==== SCORE RING ======================================================= */
-    .score-ring {
-      width: clamp(220px, 24vw, 280px);
-      height: clamp(220px, 24vw, 280px);
-      margin: 0 auto;
-      position: relative;
-      filter: drop-shadow(0 10px 30px rgba(251,191,36,0.15));
-    }
+    .score-ring { width: clamp(220px, 24vw, 280px); height: clamp(220px, 24vw, 280px); margin: 0 auto; position: relative; filter: drop-shadow(0 10px 30px rgba(251,191,36,0.15)); }
     .score-ring svg { transform: rotate(-90deg); }
-    .circle-bg {
-      fill: none;
-      stroke: var(--ring-bg);
-      stroke-width: 20;
-    }
-    .circle {
-      fill: none;
-      stroke-linecap: round;
-      stroke-width: 20;
-      transition: stroke-dashoffset 1.2s ease, stroke 1.2s ease;
-      filter: drop-shadow(0 6px 16px rgba(0,0,0,0.25));
-    }
+    .circle-bg { fill: none; stroke: var(--ring-bg); stroke-width: 20; }
+    .circle { fill: none; stroke-linecap: round; stroke-width: 20; transition: stroke-dashoffset 1.2s ease, stroke 1.2s ease; filter: drop-shadow(0 6px 16px rgba(0,0,0,0.25)); }
     #ovScore {
-      font-weight: 900;
-      line-height: 1;
-      letter-spacing: .6px;
-      background: var(--gradient-gold);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-weight: 900; line-height: 1; letter-spacing: .6px;
+      background: var(--gradient-gold); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     }
     .badge-grade {
-      font-size: 1.1rem;
-      padding: 0.6rem 1rem;
-      border-radius: 2rem;
+      font-size: 1.1rem; padding: 0.6rem 1rem; border-radius: 2rem;
       box-shadow: 0 8px 22px rgba(34,197,94,0.22);
       border: 1px solid rgba(255,255,255,0.08);
       display: inline-flex; align-items:center; gap:.5rem;
@@ -232,69 +164,35 @@
     /* ==== KPI CARDS ======================================================== */
     .metric-card {
       background: linear-gradient(135deg, rgba(30,41,59,.9), rgba(17,24,39,.9));
-      border: 1px solid var(--border);
-      border-radius: 1rem;
-      padding: 1.25rem 1.25rem 1rem;
-      text-align: center;
-      transition: transform .3s ease, box-shadow .3s ease, border-color .3s ease;
-      position: relative;
-      overflow: hidden;
-      isolation: isolate;
+      border: 1px solid var(--border); border-radius: 1rem; padding: 1.25rem 1.25rem 1rem;
+      text-align: center; transition: transform .3s ease, box-shadow .3s ease, border-color .3s ease;
+      position: relative; overflow: hidden; isolation: isolate;
     }
     .metric-card::before {
-      content: "";
-      position: absolute;
-      inset: -2px;
+      content: ""; position: absolute; inset: -2px;
       background: conic-gradient(from 180deg, rgba(251,191,36,0.08), transparent 40%, rgba(56,189,248,0.06), transparent 80%);
-      filter: blur(12px);
-      z-index: -1;
-      opacity: .75;
+      filter: blur(12px); z-index: -1; opacity: .75;
     }
-    .metric-card:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 16px 46px rgba(251,191,36,0.22);
-      border-color: rgba(251,191,36,0.35);
-    }
-    .metric-icon {
-      width: 44px; height: 44px;
-      display: grid; place-items: center;
-      border-radius: 12px;
+    .metric-card:hover { transform: translateY(-8px); box-shadow: 0 16px 46px rgba(251,191,36,0.22); border-color: rgba(251,191,36,0.35); }
+    .metric-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px;
       background: radial-gradient(circle at 30% 30%, rgba(251,191,36,0.18), rgba(251,191,36,0.06));
-      border: 1px solid rgba(251,191,36,0.35);
-      margin: 0 auto .6rem;
-      color: var(--primary);
+      border: 1px solid rgba(251,191,36,0.35); margin: 0 auto .6rem; color: var(--primary);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
     }
     .metric-label { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: uppercase; letter-spacing: .8px; }
     .metric-value {
-      font-size: 2.25rem;
-      font-weight: 900;
-      background: var(--gradient-gold);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      line-height: 1.1;
+      font-size: 2.25rem; font-weight: 900; background: var(--gradient-gold);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; line-height: 1.1;
     }
 
     /* ==== ERROR / CODE ===================================================== */
     .error-box {
-      background: rgba(239,68,68,0.15);
-      border: 1px solid var(--danger);
-      color: #fecaca;
-      padding: 1rem 1.25rem;
-      border-radius: 0.75rem;
-      margin: 1.5rem 0;
+      background: rgba(239,68,68,0.15); border: 1px solid var(--danger); color: #fecaca;
+      padding: 1rem 1.25rem; border-radius: 0.75rem; margin: 1.5rem 0;
     }
     .code-block {
-      background: #0a0f1d;
-      color: #93c5fd;
-      border: 1px solid var(--border);
-      border-radius: .75rem;
-      padding: 1rem 1.25rem;
-      max-height: 420px;
-      overflow: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
+      background: #0a0f1d; color: #93c5fd; border: 1px solid var(--border); border-radius: .75rem;
+      padding: 1rem 1.25rem; max-height: 500px; overflow: auto; white-space: pre-wrap; word-break: break-word;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
     }
 
@@ -302,32 +200,15 @@
     canvas { max-height: 340px; margin: 0 auto; display: block; }
 
     /* ==== SKELETONS ======================================================== */
-    .skeleton {
-      position: relative;
-      overflow: hidden;
-      background: linear-gradient(90deg, rgba(148,163,184,0.12), rgba(148,163,184,0.2), rgba(148,163,184,0.12));
-      background-size: 200% 100%;
-      animation: shimmer 1.6s linear infinite;
-      border-radius: .5rem;
-      min-height: 18px;
-    }
+    .skeleton { position: relative; overflow: hidden; background: linear-gradient(90deg, rgba(148,163,184,0.12), rgba(148,163,184,0.2), rgba(148,163,184,0.12)); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; border-radius: .5rem; min-height: 18px; }
 
     /* ==== FOOTER =========================================================== */
-    footer {
-      border-top: 1px solid var(--border);
-      padding-top: 2rem;
-      margin-top: 4rem;
-      color: var(--muted);
-    }
+    footer { border-top: 1px solid var(--border); padding-top: 2rem; margin-top: 4rem; color: var(--muted); }
 
-    /* ==== ACCESSIBILITY & MOTION ========================================== */
-    @media (prefers-reduced-motion: reduce) {
-      * { transition: none !important; animation: none !important; }
-    }
-
-    /* ==== PRINT ============================================================ */
+    /* ==== A11Y / PRINT ===================================================== */
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
     @media print {
-      .navbar, .theme-toggle, #urlInput, #runBtn, #resetBtn, .progress, .error-box { display: none !important; }
+      .navbar, #themeToggle, #urlInput, #runBtn, #resetBtn, .progress, .error-box, .nav-tabs { display: none !important; }
       body { background: #fff; color: #000; }
       .card { box-shadow: none; border-color: #000; }
       .badge-grade { color: #000 !important; border-color: #000 !important; background: transparent !important; }
@@ -338,16 +219,14 @@
   <!-- Navbar -->
   <nav class="navbar navbar-expand-lg border-bottom border-secondary">
     <div class="container container-narrow d-flex align-items-center justify-content-between py-2">
-      <a class="navbar-brand brand-badge d-inline-flex align-items-center gap-2" href="/" aria-label="FF Tech Audit Engine Home">
+      <a class="brand-badge text-decoration-none d-inline-flex align-items-center gap-2" href="/">
         <i class="bi bi-cpu-fill"></i>
         <span class="fw-bold">FF Tech Audit Engine</span>
       </a>
-      <div class="d-flex align-items-center gap-2">
-        <button id="themeToggle" class="btn btn-sm theme-toggle" type="button" aria-label="Toggle theme" title="Toggle light/dark">
-          <i class="bi bi-sun-fill d-none" id="sunIcon"></i>
-          <i class="bi bi-moon-stars-fill" id="moonIcon"></i>
-        </button>
-      </div>
+      <button id="themeToggle" class="btn btn-sm theme-toggle" type="button" aria-label="Toggle theme" title="Toggle light/dark">
+        <i class="bi bi-sun-fill d-none" id="sunIcon"></i>
+        <i class="bi bi-moon-stars-fill" id="moonIcon"></i>
+      </button>
     </div>
   </nav>
 
@@ -404,34 +283,58 @@
         <div id="grade" class="badge-grade bg-success" aria-label="Overall grade">—</div>
       </section>
 
-      <!-- KPIs -->
+      <!-- KPI GRID -->
       <h5 class="section-header"><i class="bi bi-grid-1x2"></i> Key Metrics</h5>
-      <section class="row g-4 mb-5" id="kpiSection">
-        <!-- skeletons shown until renderAll -->
+      <section class="row g-4 mb-4" id="kpiSection">
+        <!-- skeletons before data -->
         <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:44px;border-radius:12px"></div><div class="skeleton mb-2" style="height:18px;"></div><div class="skeleton" style="height:38px;"></div></div></div>
         <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:44px;border-radius:12px"></div><div class="skeleton mb-2" style="height:18px;"></div><div class="skeleton" style="height:38px;"></div></div></div>
         <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:44px;border-radius:12px"></div><div class="skeleton mb-2" style="height:18px;"></div><div class="skeleton" style="height:38px;"></div></div></div>
         <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:44px;border-radius:12px"></div><div class="skeleton mb-2" style="height:18px;"></div><div class="skeleton" style="height:38px;"></div></div></div>
       </section>
 
-      <!-- Charts -->
+      <!-- CHARTS -->
       <h5 class="section-header"><i class="bi bi-bar-chart-steps"></i> Visual Insights</h5>
       <section class="row g-4 mb-5" id="chartsSection">
-        <!-- chart skeletons -->
-        <div class="col-12">
-          <div class="card p-4">
-            <div class="skeleton" style="height:260px;border-radius:12px"></div>
-          </div>
-        </div>
+        <div class="col-12"><div class="card p-4"><div class="skeleton" style="height:260px;border-radius:12px"></div></div></div>
       </section>
 
-      <!-- Raw JSON (Debug) -->
+      <!-- ====== STRUCTURED INSIGHTS + RAW JSON TABS ====== -->
       <section class="mt-5">
-        <div class="d-flex align-items-center justify-content-between">
-          <h5 class="text-warning mb-3">Raw Response (Debug)</h5>
-          <button id="copyJsonBtn" class="btn btn-sm btn-outline-light" type="button"><i class="bi bi-clipboard"></i> Copy</button>
+        <h4 class="section-header">
+          <i class="bi bi-database-gear"></i> Detailed Audit Insights
+        </h4>
+
+        <ul class="nav nav-tabs mb-3" id="insightTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="structured-tab" data-bs-toggle="tab" data-bs-target="#structuredView" type="button" role="tab">
+              Structured Insights
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="raw-tab" data-bs-toggle="tab" data-bs-target="#rawView" type="button" role="tab">
+              Raw JSON (Advanced)
+            </button>
+          </li>
+        </ul>
+
+        <div class="tab-content">
+          <!-- STRUCTURED -->
+          <div class="tab-pane fade show active" id="structuredView" role="tabpanel">
+            <div class="d-flex gap-2 mb-3">
+              <button id="expandAllBtn" class="btn btn-sm btn-outline-light"><i class="bi bi-arrows-expand"></i> Expand All</button>
+              <button id="collapseAllBtn" class="btn btn-sm btn-outline-light"><i class="bi bi-arrows-collapse"></i> Collapse All</button>
+              <button id="copyJsonBtn" class="btn btn-sm btn-outline-light ms-auto" type="button"><i class="bi bi-clipboard"></i> Copy JSON</button>
+              <button id="downloadJsonBtn" class="btn btn-sm btn-outline-light" type="button"><i class="bi bi-download"></i> Download JSON</button>
+            </div>
+            <div id="structuredInsights"></div>
+          </div>
+
+          <!-- RAW -->
+          <div class="tab-pane fade" id="rawView" role="tabpanel">
+            <pre id="auditJson" class="code-block" aria-label="Raw response JSON"></pre>
+          </div>
         </div>
-        <pre id="auditJson" class="code-block" aria-label="Raw response JSON"></pre>
       </section>
     </div>
 
@@ -444,18 +347,39 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    /* ===================== UTILITIES & HELPERS (unchanged IDs) ===================== */
+    /* ===================== UTILITIES & HELPERS (IDs preserved) ===================== */
     const $ = id => document.getElementById(id);
     if(!Element.prototype.empty) Element.prototype.empty = function(){this.innerHTML="";return this;};
-    const create = (tag, className='', html='') => {
-      const el = document.createElement(tag);
-      if (className) el.className = className;
-      if (html) el.innerHTML = html;
-      return el;
-    };
+    const create = (tag, className='', html='') => { const el = document.createElement(tag); if (className) el.className = className; if (html) el.innerHTML = html; return el; };
     const setText = (id, val) => { $(id) && ($(id).textContent = (val ?? "—")); };
     const pretty = obj => JSON.stringify(obj, null, 2);
     const logDebug = (...args) => console.log(...args);
+    const isObject = v => v && typeof v === 'object' && !Array.isArray(v);
+
+    // safe getter for nested keys: get(msg, 'a.b.c', defaultVal)
+    function get(obj, path, fallback=undefined) {
+      if (!obj) return fallback;
+      const parts = Array.isArray(path) ? path : String(path).split('.');
+      let cur = obj;
+      for (const p of parts) {
+        if (cur && Object.prototype.hasOwnProperty.call(cur, p)) cur = cur[p];
+        else return fallback;
+      }
+      return cur;
+    }
+    const toTitle = s => (s||'').replace(/[_-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
+
+    // value formatters
+    function formatValue(key, value) {
+      if (typeof value === 'boolean') {
+        return `<span class="badge ${value ? 'bg-success' : 'bg-danger'}">${value}</span>`;
+      }
+      if (key.toLowerCase().includes('bytes') && Number.isFinite(+value)) {
+        const n = +value; const units=['B','KB','MB','GB']; let i=0, v=n; while (v>=1024 && i<units.length-1){v/=1024;i++;} 
+        return `${v.toFixed( (i===0)?0 : 2)} ${units[i]}`;
+      }
+      return (value ?? '—');
+    }
 
     /* ===================== THEME TOGGLE ========================================== */
     (function initTheme(){
@@ -497,19 +421,12 @@
         <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:44px;border-radius:12px"></div><div class="skeleton mb-2" style="height:18px;"></div><div class="skeleton" style="height:38px;"></div></div></div>
       `;
       $("chartsSection").innerHTML = `
-        <div class="col-12">
-          <div class="card p-4">
-            <div class="skeleton" style="height:260px;border-radius:12px"></div>
-          </div>
-        </div>
+        <div class="col-12"><div class="card p-4"><div class="skeleton" style="height:260px;border-radius:12px"></div></div></div>
       `;
 
       // Reset gauge
       const circle = $("scoreCircle");
-      if (circle) {
-        circle.style.strokeDashoffset = "753";
-        circle.style.stroke = "#3b82f6";
-      }
+      if (circle) { circle.style.strokeDashoffset = "753"; circle.style.stroke = "#3b82f6"; }
     }
 
     /* ===================== CHART RENDERING ======================================= */
@@ -536,8 +453,8 @@
         data.datasets = data.datasets.map(ds => ({
           ...ds,
           backgroundColor: ds.backgroundColor ?? gradientForChart(ctx),
-          borderRadius: 8,
-          borderSkipped: false,
+          borderRadius: ds.borderRadius ?? 8,
+          borderSkipped: (typeof ds.borderSkipped !== 'undefined') ? ds.borderSkipped : false,
         }));
       }
       new Chart(ctx,{
@@ -558,7 +475,246 @@
       });
     }
 
-    /* ===================== RENDER ALL =========================================== */
+    /* ===================== STRUCTURED INSIGHTS BUILDER ============================ */
+    // Highly flexible, schema-agnostic renderers
+
+    function panelEl(title){
+      const card = create('div','card mb-3');
+      const header = create('div','card-header fw-bold d-flex align-items-center gap-2');
+      header.innerHTML = `<i class="bi bi-chevron-double-right text-warning"></i> <span>${title}</span>`;
+      const body = create('div','card-body');
+      card.append(header, body);
+      return {card, body};
+    }
+
+    function tableFromObject(obj, keyLabel='Metric', valLabel='Value') {
+      const table = create('table','table table-dark table-bordered table-sm');
+      const thead = create('thead','',`<tr><th>${keyLabel}</th><th>${valLabel}</th></tr>`);
+      const tbody = create('tbody');
+      Object.entries(obj).forEach(([k,v])=>{
+        const tr = create('tr');
+        tr.innerHTML = `<th class="text-break">${toTitle(k)}</th><td class="text-break">${formatValue(k, v)}</td>`;
+        tbody.appendChild(tr);
+      });
+      table.append(thead, tbody);
+      return table;
+    }
+
+    function tableFromKVArray(items, keyLabel='Key', valLabel='Value') {
+      const table = create('table','table table-dark table-bordered table-sm');
+      const thead = create('thead','',`<tr><th>${keyLabel}</th><th>${valLabel}</th></tr>`);
+      const tbody = create('tbody');
+      items.forEach(row=>{
+        const tr = create('tr');
+        tr.innerHTML = `<th class="text-break">${row.key}</th><td class="text-break">${formatValue(row.key, row.value)}</td>`;
+        tbody.appendChild(tr);
+      });
+      table.append(thead, tbody);
+      return table;
+    }
+
+    function detailsTree(key, value, level=0) {
+      const wrap = create('div','mb-2');
+      const name = toTitle(key);
+      if (!isObject(value) && !Array.isArray(value)) {
+        wrap.innerHTML = `<div class="d-flex justify-content-between border-bottom border-secondary-subtle py-1">
+          <span class="text-muted">${name}</span><span>${formatValue(key, value)}</span>
+        </div>`;
+        return wrap;
+      }
+      const det = document.createElement('details');
+      if (level<1) det.setAttribute('open','open');
+      const sum = document.createElement('summary');
+      sum.className = 'fw-semibold cursor-pointer';
+      sum.textContent = name;
+      det.appendChild(sum);
+
+      const inner = create('div','ps-3 mt-2');
+      if (Array.isArray(value)) {
+        value.forEach((item, idx)=>{
+          inner.appendChild(detailsTree(`${key}[${idx}]`, item, level+1));
+        });
+      } else {
+        Object.entries(value).forEach(([k,v])=>{
+          inner.appendChild(detailsTree(k, v, level+1));
+        });
+      }
+      det.appendChild(inner);
+      wrap.appendChild(det);
+      return wrap;
+    }
+
+    function renderSummaryAtGlance(root, msg) {
+      const row = create('div','row g-3 mb-3');
+
+      const pieces = [
+        {label:'Overall Score', value: get(msg,'overall_score', '—'), icon:'bi-emoji-smile', badge:'bg-primary'},
+        {label:'Grade', value: get(msg,'grade','—'), icon:'bi-award', badge:'bg-success'},
+        {label:'SEO', value: (get(msg,'breakdown.seo')?.score ?? get(msg,'breakdown.seo') ?? '—'), icon:'bi-search', badge:'bg-warning'},
+        {label:'Speed', value: (get(msg,'breakdown.performance.score','—')), icon:'bi-speedometer2', badge:'bg-info'},
+        {label:'Top Competitor', value: get(msg,'breakdown.competitors.top_competitor_score','—'), icon:'bi-trophy', badge:'bg-purple'},
+        {label:'Internal Links', value: get(msg,'breakdown.links.internal_links_count','—'), icon:'bi-link-45deg', badge:'bg-secondary'}
+      ];
+
+      pieces.forEach(p=>{
+        const col = create('div','col-sm-6 col-md-4 col-lg-3');
+        const card = create('div','metric-card h-100');
+        card.innerHTML = `
+          <div class="metric-icon"><i class="bi ${p.icon}"></i></div>
+          <div class="metric-label mb-1">${p.label}</div>
+          <div class="metric-value">${p.value}</div>
+        `;
+        col.appendChild(card);
+        row.appendChild(col);
+      });
+
+      const {card, body} = panelEl('At A Glance');
+      body.appendChild(row);
+      root.appendChild(card);
+    }
+
+    function renderBreakdown(root, breakdown) {
+      const {card, body} = panelEl('Scoring Breakdown');
+      const row = create('div','row g-3');
+      Object.entries(breakdown).forEach(([k, v])=>{
+        let score = (isObject(v) && v.score !== undefined) ? v.score : v;
+        const col = create('div','col-sm-6 col-md-3');
+        const tile = create('div','p-3 rounded bg-dark border');
+        tile.innerHTML = `<div class="text-muted small">${toTitle(k)}</div><div class="fw-bold fs-3">${score ?? '—'}</div>`;
+        col.appendChild(tile);
+        row.appendChild(col);
+      });
+      body.appendChild(row);
+      root.appendChild(card);
+    }
+
+    function renderHtmlInsights(root, htmlInsights) {
+      const {card, body} = panelEl('Performance → HTML Insights');
+      const left = {
+        'html_bytes': htmlInsights.html_bytes,
+        'dom_nodes': htmlInsights.dom_nodes,
+        'title': htmlInsights.title,
+        'title_length': htmlInsights.title_length,
+        'meta_description_present': htmlInsights.meta_description_present,
+        'meta_description_length': htmlInsights.meta_description_length,
+        'canonical_present': htmlInsights.canonical_present,
+        'robots_meta': htmlInsights.robots_meta || '—',
+        'lang': htmlInsights.lang,
+        'hreflang_count': htmlInsights.hreflang_count,
+        'og_tag_count': htmlInsights.og_tag_count,
+        'twitter_tag_count': htmlInsights.twitter_tag_count,
+        'h1_count': htmlInsights.h1_count,
+        'h2_count': htmlInsights.h2_count,
+        'image_count': htmlInsights.image_count,
+        'image_alt_missing': htmlInsights.image_alt_missing,
+        'script_count': htmlInsights.script_count,
+        'style_tag_count': htmlInsights.style_tag_count,
+        'external_js_count': htmlInsights.external_js_count,
+        'external_css_count': htmlInsights.external_css_count,
+        'inline_js_bytes': htmlInsights.inline_js_bytes,
+        'inline_css_bytes': htmlInsights.inline_css_bytes,
+        'estimated_internal_links': htmlInsights.estimated_internal_links,
+        'estimated_external_links': htmlInsights.estimated_external_links,
+        'uses_https': htmlInsights.uses_https
+      };
+
+      const grid = create('div','row g-3');
+      const col1 = create('div','col-md-7'); col1.appendChild(tableFromObject(left));
+      const col2 = create('div','col-md-5');
+      const dl = htmlInsights.download_size_breakdown || {};
+      col2.appendChild(tableFromObject(dl, 'Download Metric', 'Bytes'));
+      grid.append(col1,col2);
+      body.appendChild(grid);
+      root.appendChild(card);
+    }
+
+    function renderLinksPanel(root, links) {
+      const {card, body} = panelEl('Link Analysis');
+      body.appendChild(tableFromObject({
+        internal_links_count: links.internal_links_count,
+        external_links_count: links.external_links_count,
+        warning_links_count: links.warning_links_count,
+        broken_internal_links: links.broken_internal_links
+      }));
+      root.appendChild(card);
+    }
+
+    function renderCompetitorsPanel(root, comp) {
+      const {card, body} = panelEl('Competitor Summary');
+      const top = get(comp,'top_competitor_score','—');
+      body.innerHTML = `
+        <div class="fs-5 fw-bold mb-2">Top Competitor Score: ${top}</div>
+        <div class="text-muted small">Competitor List: ${(comp.names?.length || 0)} items</div>
+      `;
+      root.appendChild(card);
+    }
+
+    function renderDynamicCards(root, cards) {
+      if (!Array.isArray(cards) || !cards.length) return;
+      const {card, body} = panelEl('Dynamic Metrics');
+      const row = create('div','row g-3');
+      cards.forEach(x=>{
+        const col = create('div','col-sm-6 col-md-3');
+        const tile = create('div','p-3 bg-secondary-subtle rounded border h-100');
+        tile.innerHTML = `
+          <div class="text-muted small text-break">${x.title}</div>
+          <div class="fw-bold fs-5">${x.value} ${x.unit || ""}</div>
+        `;
+        col.appendChild(tile);
+        row.appendChild(col);
+      });
+      body.appendChild(row);
+      root.appendChild(card);
+    }
+
+    function renderKVInspector(root, kv) {
+      if (!isObject(kv)) return;
+      Object.entries(kv).forEach(([section, items])=>{
+        const {card, body} = panelEl(`Key–Value: ${toTitle(section)}`);
+        body.appendChild(tableFromKVArray(items || []));
+        root.appendChild(card);
+      });
+    }
+
+    function renderUnknownPanels(root, msg) {
+      // Render any top-level keys not already shown
+      const shown = new Set(['url','overall_score','grade','breakdown','chart_data','dynamic','status','crawl_progress','finished','error']);
+      Object.entries(msg).forEach(([k,v])=>{
+        if (shown.has(k)) return;
+        const {card, body} = panelEl(`Other → ${toTitle(k)}`);
+        body.appendChild(detailsTree(k, v));
+        root.appendChild(card);
+      });
+    }
+
+    function renderStructuredInsights(msg) {
+      const root = $("structuredInsights");
+      root.empty();
+
+      renderSummaryAtGlance(root, msg);
+
+      const breakdown = get(msg,'breakdown');
+      if (breakdown) renderBreakdown(root, breakdown);
+
+      const htmlInsights = get(msg,'breakdown.performance.extras.html_insights');
+      if (htmlInsights) renderHtmlInsights(root, htmlInsights);
+
+      const links = get(msg,'breakdown.links');
+      if (links) renderLinksPanel(root, links);
+
+      const comp = get(msg,'breakdown.competitors');
+      if (comp) renderCompetitorsPanel(root, comp);
+
+      const cards = get(msg,'dynamic.cards', []);
+      renderDynamicCards(root, cards);
+
+      const kv = get(msg,'dynamic.kv');
+      if (kv) renderKVInspector(root, kv);
+
+      renderUnknownPanels(root, msg);
+    }
+
+    /* ===================== MAIN RENDER =========================================== */
     function renderAll(msg){
       $("resultsArea").classList.remove("d-none");
 
@@ -608,7 +764,7 @@
         kpiSection.append(col);
       }
 
-      // Charts – beautiful with gradients
+      // Charts – render any type provided
       const chartsSection = $("chartsSection"); chartsSection.empty();
       if (msg.chart_data) {
         Object.entries(msg.chart_data).forEach(([key, data]) => {
@@ -619,7 +775,8 @@
         });
       }
 
-      // Raw JSON (collapsed by default)
+      // Structured Panels + Raw JSON
+      renderStructuredInsights(msg);
       $("auditJson").textContent = pretty(msg);
     }
 
@@ -628,58 +785,3 @@
     function makeWsUrl(path){ return `${location.protocol==="https:"?"wss:":"ws:"}//${location.host}${path}`; }
     function updateStatus(msg){
       if(msg.status) setText("statusLine",`Status: ${msg.status}`);
-      if(typeof msg.crawl_progress==="number") $("progressBar").style.width = `${Math.min(100,Math.max(0,msg.crawl_progress))}%`;
-    }
-    function runAudit(url){
-      resetUI();
-      setText("statusLine","Status: Connecting...");
-      $("progressBar").style.width="5%";
-      if(socket?.readyState===WebSocket.OPEN) socket.close();
-      socket=new WebSocket(makeWsUrl("/ws"));
-      socket.addEventListener("open",()=>{
-        setText("statusLine","Status: Connected. Sending URL…");
-        socket.send(JSON.stringify({url}));
-      });
-      socket.addEventListener("message",ev=>{
-        let msg;
-        try{ msg=JSON.parse(ev.data); }catch(e){logDebug("Parse error",e); return;}
-        updateStatus(msg);
-        if(msg.error){ $("errorBox").textContent=msg.error; $("errorBox").classList.remove("d-none"); }
-        if(msg.finished && !msg.error){ updateStatus({status:"✅ Completed",crawl_progress:100}); renderAll(msg); }
-      });
-      socket.addEventListener("close",()=>{ logDebug("WebSocket closed"); });
-      socket.addEventListener("error",()=>{$("errorBox").textContent="Connection failed"; $("errorBox").classList.remove("d-none");});
-    }
-
-    // Event listeners (unchanged IDs)
-    $("runBtn").addEventListener("click",()=>{
-      const url=$("urlInput").value.trim();
-      if(!url){ $("errorBox").textContent="Please enter a valid URL"; $("errorBox").classList.remove("d-none"); return; }
-      runAudit(url);
-    });
-    $("resetBtn").addEventListener("click",()=>{ if(socket?.readyState===WebSocket.OPEN) socket.close(); resetUI(); });
-
-    // Press Enter to run
-    $("urlInput").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); $("runBtn").click(); }
-    });
-
-    // Copy JSON
-    $("copyJsonBtn").addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText($("auditJson").textContent || "");
-        $("copyJsonBtn").innerHTML = '<i class="bi bi-check2"></i> Copied';
-        setTimeout(()=>{$("copyJsonBtn").innerHTML='<i class="bi bi-clipboard"></i> Copy';},1200);
-      } catch {
-        $("copyJsonBtn").innerHTML = '<i class="bi bi-x-lg"></i> Failed';
-        setTimeout(()=>{$("copyJsonBtn").innerHTML='<i class="bi bi-clipboard"></i> Copy';},1200);
-      }
-    });
-
-    // Auto-load from URL param (unchanged)
-    const params = new URLSearchParams(window.location.search);
-    const auditUrl = params.get('url');
-    if(auditUrl){ $("urlInput").value = decodeURIComponent(auditUrl); runAudit(auditUrl); }
-  </script>
-</body>
-</html>
