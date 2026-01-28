@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FF Tech Audit – Graphical Dashboard</title>
+<title>FF Tech Audit – World-Class Dashboard</title>
 
 <!-- Bootstrap 5 & Icons -->
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -14,20 +14,24 @@
 
 <style>
 :root {
-  --primary:#fbbf24; --bg:#0f172a; --card:#111827; --border:#1f2937;
-  --muted:#94a3b8; --text:#e2e8f0; --success:#22c55e; --warning:#eab308; --danger:#ef4444;
+  --bg: #0f172a; --text: #e2e8f0; --card: rgba(15,23,42,0.8); --border:#1f2937;
+  --primary: #fbbf24; --success: #22c55e; --warning: #eab308; --danger: #ef4444; --info: #3b82f6;
 }
-body { background: var(--bg); color: var(--text); font-family: system-ui,sans-serif; }
-.card { background: var(--card); border:1px solid var(--border); border-radius:1rem; box-shadow:0 4px 20px rgba(0,0,0,0.5);}
-.kpi { font-weight:800; font-size:2rem; color:var(--primary);}
-.badge-grade { font-size:1.5rem; padding:0.5rem 1rem; border-radius:0.75rem;}
-.progress { height:12px; background:#1e293b; border-radius:6px; overflow:hidden;}
-pre.code-block { background:#0f172a; border:1px solid var(--border); border-radius:0.5rem; padding:1rem; font-size:0.9rem; max-height:300px; overflow:auto;}
-.score-ring { width:200px; height:200px; margin:0 auto; position:relative;}
-.score-ring svg { transform: rotate(-90deg);}
-.circle-bg { stroke: rgba(255,255,255,0.1); fill:none; stroke-width:16; }
-.circle { stroke-width:16; stroke-linecap:round; fill:none; transition:0.5s;}
-.section-header { color: var(--primary); margin:2rem 0 1rem; border-bottom:1px solid var(--border); padding-bottom:0.5rem;}
+body { background: var(--bg); color: var(--text); font-family: "Inter", sans-serif; margin:0; }
+h1,h4,h5,h6 { color: var(--primary); }
+.card { background: var(--card); border-radius: 1rem; border:1px solid var(--border); box-shadow:0 8px 25px rgba(0,0,0,0.5);}
+.kpi { font-weight: 700; font-size: 1.5rem; margin-top: 0.25rem; }
+.kpi-label { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.03em; }
+.badge-grade { font-size:1.2rem; padding:0.45rem 1rem; border-radius:0.75rem;}
+.progress { height:12px; background:#1e293b; border-radius:6px; overflow:hidden; transition: width 1s ease-in-out; }
+.score-ring { width:220px; height:220px; margin:0 auto; position:relative;}
+.score-ring svg { transform: rotate(-90deg); }
+.circle-bg { stroke: rgba(255,255,255,0.15); fill:none; stroke-width:18; }
+.circle { stroke-width:18; stroke-linecap:round; fill:none; transition:0.8s; }
+.section-header { color: var(--primary); margin:2rem 0 1rem; font-weight:600; border-bottom:1px solid var(--border); padding-bottom:0.5rem;}
+.card-glass { backdrop-filter: blur(12px); background: rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.1);}
+.toggle-btn { cursor:pointer; color: var(--primary); font-weight:600; }
+pre.code-block { background: rgba(15,23,42,0.7); border:1px solid var(--border); border-radius:0.75rem; padding:1rem; font-size:0.85rem; max-height:350px; overflow:auto;}
 </style>
 </head>
 <body>
@@ -36,19 +40,19 @@ pre.code-block { background:#0f172a; border:1px solid var(--border); border-radi
 
   <header class="text-center mb-5">
     <h1 class="display-5 fw-bold text-warning">FF Tech Audit Dashboard</h1>
-    <p class="lead muted">Graphical & fully flexible visualization of website audit</p>
+    <p class="lead text-muted">World-class interactive website audit visualizer</p>
   </header>
 
-  <!-- Input -->
-  <section class="card p-4 mb-5">
+  <!-- URL Input -->
+  <section class="card p-4 mb-5 card-glass">
     <div class="row g-3 align-items-end">
       <div class="col-md-8">
         <label class="form-label fw-semibold">Website URL</label>
         <input id="urlInput" type="text" class="form-control bg-dark text-white border-secondary" placeholder="e.g., www.example.com">
       </div>
       <div class="col-md-4 d-flex gap-2">
-        <button id="runBtn" class="btn btn-warning w-100">RUN AUDIT</button>
-        <button id="resetBtn" class="btn btn-outline-danger w-100">RESET</button>
+        <button id="runBtn" class="btn btn-primary w-100"><i class="bi bi-play-circle-fill"></i> RUN AUDIT</button>
+        <button id="resetBtn" class="btn btn-outline-danger w-100"><i class="bi bi-arrow-counterclockwise"></i> RESET</button>
       </div>
     </div>
     <div id="statusLine" class="mt-3 small fw-semibold text-info">Status: Idle</div>
@@ -64,7 +68,7 @@ pre.code-block { background:#0f172a; border:1px solid var(--border); border-radi
 
     <!-- Overall Score -->
     <section class="text-center mb-5">
-      <h5 class="muted mb-2">Audited URL</h5>
+      <h5 class="text-muted mb-2">Audited URL</h5>
       <h4 id="auditUrl" class="text-info fw-medium">—</h4>
       <div class="score-ring my-4">
         <svg viewBox="0 0 240 240">
@@ -79,14 +83,8 @@ pre.code-block { background:#0f172a; border:1px solid var(--border); border-radi
       <div id="grade" class="badge-grade bg-primary text-white">—</div>
     </section>
 
-    <!-- KPI Cards -->
-    <section class="row g-4" id="kpiSection"></section>
-
-    <!-- Dynamic Cards -->
-    <section>
-      <h5 class="section-header">Detailed Metrics</h5>
-      <div class="row g-4" id="dynamicCards"></div>
-    </section>
+    <!-- Collapsible Sections -->
+    <section id="categoriesSection"></section>
 
     <!-- Charts -->
     <section>
@@ -94,36 +92,69 @@ pre.code-block { background:#0f172a; border:1px solid var(--border); border-radi
       <div class="row g-4" id="chartsSection"></div>
     </section>
 
-    <!-- Raw JSON -->
+    <!-- Collapsible Detailed JSON -->
     <section>
-      <h5 class="section-header">Raw JSON</h5>
-      <pre id="auditJson" class="code-block"></pre>
+      <h5 class="section-header toggle-btn" onclick="toggleJSON()">Toggle Raw JSON View</h5>
+      <pre id="auditJson" class="code-block d-none"></pre>
     </section>
-  </div>
 
+  </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-if(!Element.prototype.empty) Element.prototype.empty=function(){this.innerHTML="";return this;};
 const create=(tag,className='',html='')=>{const el=document.createElement(tag);if(className)el.className=className;if(html)el.innerHTML=html;return el;};
 const setText=(id,val)=>{$(id)&&( $(id).textContent = val ?? "—");};
 const pretty=obj=>JSON.stringify(obj,null,2);
-
+function toggleJSON(){ $("auditJson").classList.toggle("d-none"); }
 function resetUI(){
   setText("statusLine","Status: Idle");
   $("progressBar").style.width="0%";
-  $("kpiSection")?.empty();
-  $("dynamicCards")?.empty();
-  $("chartsSection")?.empty();
+  $("categoriesSection")?.replaceChildren();
+  $("chartsSection")?.replaceChildren();
   $("auditJson").textContent="";
   $("resultsArea").classList.add("d-none");
   $("errorBox").classList.add("d-none");
 }
 
+// Render Category Section
+function renderCategory(title,obj){
+  const section=create("div","mb-4");
+  const collapseId=`collapse-${title.replace(/\s+/g,'')}`;
+  section.innerHTML=`
+    <div class="d-flex justify-content-between align-items-center">
+      <h5 class="section-header toggle-btn mb-2" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">${title}</h5>
+    </div>
+    <div class="collapse show" id="${collapseId}">
+      <div class="row g-3"></div>
+    </div>`;
+  const row=section.querySelector("div.row");
+  Object.entries(obj).forEach(([key,val])=>{
+    const col=create("div","col-md-3");
+    const card=create("div","card p-3 card-glass text-center");
+    const displayVal = (typeof val==='object' && val.score!==undefined)?val.score:val;
+    const tooltip=`<span class="text-muted" data-bs-toggle="tooltip" title='${JSON.stringify(val)}'>ℹ️</span>`;
+    card.innerHTML=`
+      <div class="kpi-label">${key.toUpperCase()} ${tooltip}</div>
+      <div class="kpi">${displayVal ?? '—'}</div>
+      <div class="progress mt-2"><div class="progress-bar" role="progressbar" style="width:0%"></div></div>`;
+    col.appendChild(card);
+    row.append(col);
+  });
+  $("categoriesSection").append(section);
+  // Animate progress bars
+  row.querySelectorAll(".progress-bar").forEach((bar,i)=>{
+    setTimeout(()=>{ bar.style.width = Object.values(obj)[i]; bar.style.transition='width 1.2s ease-in-out'; },100);
+  });
+  // Enable tooltips
+  bootstrap.Tooltip.getOrCreateInstance(section.querySelectorAll('[data-bs-toggle="tooltip"]'));
+}
+
+// Render Chart
 function renderChart(container,title,data,type="bar"){
-  const card=create("div","card p-4 mb-4");
-  card.innerHTML=`<h6 class="muted fw-semibold mb-3">${title}</h6>`;
+  const card=create("div","card p-4 mb-4 card-glass");
+  card.innerHTML=`<h6 class="text-muted fw-semibold mb-3">${title}</h6>`;
   const canvas=create("canvas");
   card.appendChild(canvas);
   container.appendChild(card);
@@ -138,47 +169,29 @@ function renderChart(container,title,data,type="bar"){
   });
 }
 
+// Render All
 function renderAll(msg){
   $("resultsArea").classList.remove("d-none");
-
-  // KPIs
-  const kpiSection=$("kpiSection"); kpiSection.empty();
-  const kpis = msg.breakdown || {};
-  for(const [key,val] of Object.entries(kpis)){
-    const col=create("div","col-md-3");
-    const card=create("div","card p-4 text-center");
-    const displayVal = (typeof val==='object' && val.score!==undefined)?val.score:val;
-    card.innerHTML=`<div class="muted small fw-semibold mb-1">${key.charAt(0).toUpperCase()+key.slice(1)}</div><div class="kpi">${displayVal ?? '—'}</div>`;
-    col.appendChild(card);
-    kpiSection.append(col);
-  }
 
   // Overall Score
   setText("ovScore", msg.overall_score ?? '—');
   setText("grade", msg.grade ?? '—');
   setText("auditUrl", msg.url ?? '—');
-
-  // Score ring
   const score = Number(msg.overall_score) || 0;
   const circle=$("scoreCircle");
   const circumference = 691;
   circle.style.strokeDashoffset = circumference * (1 - score/100);
   circle.style.stroke = score>=85 ? 'var(--success)':score>=70?'var(--warning)':score>=55?'orange':'var(--danger)';
 
-  // Dynamic Cards
-  const dyn=$("dynamicCards"); dyn.empty();
-  if(msg.dynamic?.cards){
-    msg.dynamic.cards.forEach(c=>{
-      const col=create("div","col-md-3");
-      const card=create("div","card p-3 text-center");
-      card.innerHTML=`<div class="muted small mb-1">${c.title}</div><div class="kpi">${c.value}${c.unit??''}</div>`;
-      col.appendChild(card);
-      dyn.append(col);
-    });
-  }
+  // Collapsible categories
+  $("categoriesSection").replaceChildren();
+  const breakdown=msg.breakdown||{};
+  ["seo","performance","links","competitors"].forEach(cat=>{
+    if(breakdown[cat]) renderCategory(cat.charAt(0).toUpperCase()+cat.slice(1),breakdown[cat]);
+  });
 
   // Charts
-  const chartsSection=$("chartsSection"); chartsSection.empty();
+  const chartsSection=$("chartsSection"); chartsSection.replaceChildren();
   if(msg.chart_data) Object.entries(msg.chart_data).forEach(([key,data])=>{
     renderChart(chartsSection,key.charAt(0).toUpperCase()+key.slice(1),data,key==="doughnut"?"doughnut":"bar");
   });
@@ -198,7 +211,6 @@ function runAudit(url){
   resetUI();
   setText("statusLine","Status: Connecting...");
   $("progressBar").style.width="5%";
-
   if(socket?.readyState===WebSocket.OPEN) socket.close();
   socket=new WebSocket(makeWsUrl("/ws"));
   socket.addEventListener("open",()=>{ 
@@ -230,5 +242,6 @@ const auditUrl = params.get('url');
 if(auditUrl){ $("urlInput").value = decodeURIComponent(auditUrl); runAudit(auditUrl); }
 
 </script>
+
 </body>
 </html>
