@@ -1,669 +1,648 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-theme="light">
 <head>
-  <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, maximum-scale=1"
-  />
-  <title>Flexible Audit Runner</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flexible SEO Audit Dashboard</title>
 
-  <!-- TailwindCSS (for fast layout). If you prefer plain CSS, you can replace this. -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Chart.js v4 -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Optional: Chart.js (graceful fallback if CDN blocked) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+          integrity="sha384-8mJ3QkU6Ydfn1rL893w1L1C5O2m2nQx6z1V2OeS8nwh7B8o7wT8nWQ3nme3p0W4H"
+          crossorigin="anonymous"></script>
 
   <style>
-    /* Simple pulse for status dot */
-    .pulse {
-      display: inline-block;
-      width: 10px;
-      height: 10px;
-      border-radius: 9999px;
-      background: #22c55e;
-      box-shadow: 0 0 0 rgba(34,197,94, 0.7);
-      animation: pulse 2s infinite;
+    :root{
+      --bg:#0b1220;
+      --panel:#121a2b;
+      --muted:#94a3b8;
+      --text:#e5e7eb;
+      --brand:#60a5fa;
+      --accent:#f59e0b;
+      --ok:#22c55e;
+      --warn:#eab308;
+      --bad:#ef4444;
+      --chip:#1f2a44;
+      --border:#1f2a44;
     }
-    @keyframes pulse {
-      0% { box-shadow: 0 0 0 0 rgba(34,197,94, 0.7); }
-      70% { box-shadow: 0 0 0 12px rgba(34,197,94, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(34,197,94, 0); }
+    [data-theme="light"]{
+      --bg:#f6f7fb;
+      --panel:#ffffff;
+      --muted:#475569;
+      --text:#0f172a;
+      --brand:#2563eb;
+      --accent:#d97706;
+      --ok:#16a34a;
+      --warn:#ca8a04;
+      --bad:#dc2626;
+      --chip:#eef2ff;
+      --border:#e5e7eb;
     }
-
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    .card {
-      @apply bg-white rounded-lg shadow-sm border border-slate-200 p-4;
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif;
+      background:var(--bg); color:var(--text);
     }
-    .badge {
-      @apply rounded-md px-2 py-1 text-xs font-semibold bg-slate-100 text-slate-700;
+    header{
+      position:sticky; top:0; z-index:50; backdrop-filter:saturate(1.2) blur(6px);
+      background:linear-gradient(180deg, rgba(0,0,0,.35), transparent);
+      border-bottom:1px solid var(--border);
     }
-    .badge-green { @apply bg-emerald-100 text-emerald-700; }
-    .badge-amber { @apply bg-amber-100 text-amber-700; }
-    .badge-red { @apply bg-rose-100 text-rose-700; }
-    .badge-indigo { @apply bg-indigo-100 text-indigo-700; }
-    .hidden { display: none; }
+    .container{max-width:1200px; margin:0 auto; padding:16px;}
+    .row{display:grid; grid-template-columns:repeat(12, 1fr); gap:16px;}
+    .card{
+      background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.12);
+    }
+    .muted{color:var(--muted)}
+    .chip{display:inline-flex; align-items:center; gap:8px; background:var(--chip); border-radius:999px; padding:6px 10px; font-size:.85rem}
+    .btn{
+      appearance:none; border:none; border-radius:10px; padding:10px 14px; cursor:pointer; font-weight:600;
+      color:#fff; background:var(--brand); box-shadow: 0 6px 14px rgba(37,99,235,.25);
+    }
+    .btn.secondary{background:transparent; color:var(--text); border:1px solid var(--border)}
+    .btn.warn{background:var(--accent)}
+    .btn.ghost{background:transparent; color:var(--text)}
+    .btn:disabled{opacity:.6; cursor:not-allowed}
+    input[type="text"]{
+      width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--border); background:var(--panel); color:var(--text)
+    }
+    .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:16px}
+    @media (max-width:960px){ .kpis{grid-template-columns:repeat(2,1fr)} .row{grid-template-columns:repeat(6,1fr)} }
+    @media (max-width:640px){ .kpis{grid-template-columns:1fr} .row{grid-template-columns:1fr} }
+    .kpi{display:flex; flex-direction:column; gap:6px}
+    .kpi .label{font-size:.9rem; color:var(--muted)}
+    .kpi .value{font-size:1.8rem; font-weight:800}
+    .tags{display:flex; flex-wrap:wrap; gap:8px}
+    .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+    @media (max-width:900px){.grid-2{grid-template-columns:1fr}}
+    details{border:1px dashed var(--border); border-radius:10px; padding:10px 12px; background: color-mix(in hsl, var(--panel) 96%, transparent)}
+    details > summary{cursor:pointer; font-weight:600}
+    .progress{
+      height:10px; background:rgba(148,163,184,.25); border-radius:999px; overflow:hidden; border:1px solid var(--border)
+    }
+    .progress > div{height:100%; background:linear-gradient(90deg, var(--brand), #7c3aed); width:0%}
+    .status{display:flex; gap:8px; align-items:center}
+    canvas{max-width:100%; height:280px}
+    .json{white-space:pre-wrap; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:.85rem}
+    .footer{color:var(--muted); text-align:center; font-size:.85rem; padding:24px 0}
+    .score-badge{
+      display:inline-flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:12px;
+      font-weight:800; font-size:1.2rem; background:color-mix(in hsl, var(--ok) 30%, transparent); border:1px solid var(--border)
+    }
+    .grade-badge{
+      display:inline-flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:50%;
+      font-weight:900; font-size:1.2rem; background:color-mix(in hsl, var(--brand) 25%, transparent); border:2px solid var(--brand)
+    }
+    .mini{font-size:.85rem}
+    .flex{display:flex; gap:12px; align-items:center}
+    .space{height:8px}
+    .gap-8{gap:8px}
+    .mt-8{margin-top:8px}
+    .mt-12{margin-top:12px}
+    .mt-16{margin-top:16px}
+    .mt-24{margin-top:24px}
+    .mb-0{margin-bottom:0}
+    .right{margin-left:auto}
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
-  <header class="bg-white border-b border-slate-200">
-    <div class="max-w-7xl mx-auto px-4 py-5 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <span class="text-xl font-bold">Flexible Audit Runner</span>
-        <span class="badge">v1.0</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="pulse" id="liveDot" title="Live"></span>
-        <span class="text-sm text-slate-500" id="liveText">Idle</span>
+<body>
+  <header>
+    <div class="container">
+      <div class="row" style="align-items:center">
+        <div style="grid-column: span 12">
+          <div class="flex">
+            <div class="chip"><strong>SEO Audit</strong> <span class="muted mini">Ultra‑Flexible UI</span></div>
+            <div class="right flex gap-8">
+              <button class="btn secondary" id="toggle-theme">Toggle Theme</button>
+              <button class="btn ghost" id="btn-export-json">Export JSON</button>
+              <button class="btn ghost" id="btn-print">Print / PDF</button>
+            </div>
+          </div>
+          <div class="mt-12 grid-2">
+            <div class="card">
+              <label for="input-url" class="muted mini">Website URL</label>
+              <input id="input-url" type="text" placeholder="e.g. www.haier.com.pk" value="www.haier.com.pk" />
+              <div class="mt-12 flex gap-8">
+                <button class="btn" id="btn-start">Start Audit</button>
+                <button class="btn secondary" id="btn-paste-json">Paste JSON</button>
+                <button class="btn warn" id="btn-stop" disabled>Stop</button>
+                <div class="right chip">
+                  <span id="status-text">Idle</span>
+                </div>
+              </div>
+              <div class="mt-12 progress"><div id="progress-bar"></div></div>
+            </div>
+            <div class="card">
+              <div class="flex">
+                <div>
+                  <div class="muted mini">Overall Score</div>
+                  <div class="flex">
+                    <div id="overall-score" class="score-badge">—</div>
+                    <div class="space"></div>
+                    <div>
+                      <div class="muted mini">Grade</div>
+                      <div id="overall-grade" class="grade-badge">—</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="right">
+                  <div class="tags" id="tags-area">
+                    <span class="chip">SEO</span>
+                    <span class="chip">Performance</span>
+                    <span class="chip">Links</span>
+                    <span class="chip">Competitors</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-12 kpis">
+                <div class="kpi"><div class="label">SEO Score</div><div id="seo-score" class="value">—</div></div>
+                <div class="kpi"><div class="label">Performance Score</div><div id="perf-score" class="value">—</div></div>
+                <div class="kpi"><div class="label">LCP (ms)</div><div id="lcp-ms" class="value">—</div></div>
+                <div class="kpi"><div class="label">Top Competitor Score</div><div id="comp-score" class="value">—</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-16 grid-2">
+            <div class="card">
+              <h3 class="mb-0">Score Breakdown</h3>
+              <div class="muted mini">Adapts to backend-provided chart_data or builds from scores</div>
+              <canvas id="chart-bar"></canvas>
+            </div>
+            <div class="card">
+              <h3 class="mb-0">Links Health</h3>
+              <div class="muted mini">Healthy / Warning / Broken</div>
+              <canvas id="chart-doughnut"></canvas>
+              <div class="mt-12 kpis">
+                <div class="kpi"><div class="label">Internal</div><div id="kpi-internal" class="value">—</div></div>
+                <div class="kpi"><div class="label">Warning</div><div id="kpi-warning" class="value">—</div></div>
+                <div class="kpi"><div class="label">Broken</div><div id="kpi-broken" class="value">—</div></div>
+                <div class="kpi"><div class="label">External</div><div id="kpi-external" class="value">—</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-16 grid-2">
+            <div class="card">
+              <h3 class="mb-0">Competitors</h3>
+              <div class="muted mini">Top 3 (if provided)</div>
+              <div class="tags mt-12" id="competitors-tags"></div>
+              <details class="mt-12">
+                <summary>Show competitor items (names & scores)</summary>
+                <div class="json" id="competitors-items-json">[]</div>
+              </details>
+            </div>
+            <div class="card">
+              <h3 class="mb-0">Raw SEO & Performance Extras</h3>
+              <details class="mt-12">
+                <summary>SEO Raw</summary>
+                <div class="json" id="seo-raw-json">{}<div></div></div>
+              </details>
+              <details class="mt-12">
+                <summary>Performance Extras</summary>
+                <div class="json" id="perf-extras-json">{}<div></div></div>
+              </details>
+            </div>
+          </div>
+
+          <div class="mt-16 card">
+            <h3 class="mb-0">All Data (Final Payload)</h3>
+            <div class="muted mini">For debugging and future fields (always shown)</div>
+            <div class="mt-12 json" id="payload-json">Waiting…</div>
+          </div>
+
+          <div class="footer">Made flexible for evolving backends · Works with SSE / WebSockets / Polling / JSON Paste</div>
+        </div>
       </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto p-4 space-y-6">
-    <!-- Controls -->
-    <section class="card">
-      <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-end">
-        <div class="flex-1">
-          <label for="urlInput" class="block text-sm font-medium mb-1">Website URL</label>
-          <input
-            id="urlInput"
-            type="text"
-            placeholder="https://www.haier.com.pk"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Transport</label>
-          <select id="transportSelect" class="rounded-md border border-slate-300 px-3 py-2">
-            <option value="sse" selected>Server-Sent Events (SSE)</option>
-            <option value="post">One-shot (POST)</option>
-            <option value="ws">WebSocket</option>
-          </select>
-        </div>
-        <div class="flex gap-2">
-          <button
-            id="startBtn"
-            class="rounded-md bg-indigo-600 text-white px-4 py-2 hover:bg-indigo-700"
-          >Start Audit</button>
-          <button
-            id="cancelBtn"
-            class="rounded-md bg-slate-200 text-slate-700 px-4 py-2 hover:bg-slate-300"
-            disabled
-          >Cancel</button>
-        </div>
-      </div>
-
-      <!-- Progress -->
-      <div class="mt-4">
-        <div class="flex items-center justify-between">
-          <div class="text-sm text-slate-600" id="statusLine">Status: Idle</div>
-          <div class="text-sm text-slate-500" id="progressPct">0%</div>
-        </div>
-        <div class="w-full bg-slate-200 rounded h-2 mt-2">
-          <div id="progressBar" class="h-2 rounded bg-indigo-500" style="width: 0%"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Summary -->
-    <section class="grid md:grid-cols-4 gap-4">
-      <div class="card">
-        <div class="text-sm text-slate-500">Overall Score</div>
-        <div class="text-3xl font-bold" id="overallScore">—</div>
-      </div>
-      <div class="card">
-        <div class="text-sm text-slate-500">Grade</div>
-        <div class="text-3xl font-bold" id="grade">—</div>
-      </div>
-      <div class="card">
-        <div class="text-sm text-slate-500">SEO Score</div>
-        <div class="text-3xl font-bold text-amber-600" id="seoScore">—</div>
-      </div>
-      <div class="card">
-        <div class="text-sm text-slate-500">Performance Score</div>
-        <div class="text-3xl font-bold text-indigo-600" id="perfScore">—</div>
-        <div class="text-xs text-slate-500 mt-1">LCP (ms): <span id="lcpValue">—</span></div>
-      </div>
-    </section>
-
-    <!-- Charts -->
-    <section class="grid lg:grid-cols-2 gap-4">
-      <div class="card">
-        <div class="flex items-center justify-between mb-2">
-          <h3 class="font-semibold">Scores</h3>
-          <span class="badge-indigo badge">Bar</span>
-        </div>
-        <canvas id="barChart" height="160"></canvas>
-      </div>
-      <div class="card">
-        <div class="flex items-center justify-between mb-2">
-          <h3 class="font-semibold">Link Health</h3>
-          <span class="badge-indigo badge">Doughnut</span>
-        </div>
-        <canvas id="doughnutChart" height="160"></canvas>
-      </div>
-    </section>
-
-    <!-- Links & Competitors -->
-    <section class="grid lg:grid-cols-2 gap-4">
-      <div class="card">
-        <div class="flex items-center justify-between">
-          <h3 class="font-semibold">Links Summary</h3>
-          <span class="badge">from runner</span>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-          <div class="p-3 rounded bg-slate-100">
-            <div class="text-xs text-slate-500">Internal</div>
-            <div class="text-xl font-semibold" id="lnkInternal">0</div>
-          </div>
-          <div class="p-3 rounded bg-slate-100">
-            <div class="text-xs text-slate-500">External</div>
-            <div class="text-xl font-semibold" id="lnkExternal">0</div>
-          </div>
-          <div class="p-3 rounded bg-amber-50">
-            <div class="text-xs text-amber-700">Warning</div>
-            <div class="text-xl font-semibold text-amber-700" id="lnkWarning">0</div>
-          </div>
-          <div class="p-3 rounded bg-rose-50">
-            <div class="text-xs text-rose-700">Broken</div>
-            <div class="text-xl font-semibold text-rose-700" id="lnkBroken">0</div>
-          </div>
-        </div>
-        <div class="mt-3 text-xs text-slate-500">Additional link fields (if any) are visible below in <strong>Dynamic → Links</strong>.</div>
-      </div>
-
-      <div class="card">
-        <div class="flex items-center justify-between">
-          <h3 class="font-semibold">Competitors</h3>
-          <span class="badge">top 3 (if available)</span>
-        </div>
-        <div class="mt-2 text-sm">
-          <div>Top Competitor Score: <span class="font-semibold" id="compScore">—</span></div>
-        </div>
-        <ul id="compNames" class="list-disc pl-6 mt-2 text-sm space-y-1">
-          <!-- Competitor names will render here -->
-        </ul>
-        <div id="compItemsWrap" class="mt-3 hidden">
-          <div class="text-xs text-slate-500 mb-2">With scores:</div>
-          <div id="compItems" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <!-- {name, score} chips -->
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Dynamic Cards -->
-    <section class="card">
-      <div class="flex items-center justify-between">
-        <h3 class="font-semibold">Dynamic Cards</h3>
-        <span class="badge">auto-generated</span>
-      </div>
-      <div id="dynCards" class="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <!-- filled programmatically -->
-      </div>
-    </section>
-
-    <!-- Dynamic Key/Value blocks -->
-    <section class="card">
-      <div class="flex items-center justify-between">
-        <h3 class="font-semibold">Dynamic Details</h3>
-        <span class="badge">performance • seo • links • competitors • plugins</span>
-      </div>
-      <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div>
-          <h4 class="font-semibold text-slate-700">Performance</h4>
-          <ul id="kvPerformance" class="mt-2 space-y-1 text-sm"></ul>
-        </div>
-        <div>
-          <h4 class="font-semibold text-slate-700">SEO</h4>
-          <ul id="kvSEO" class="mt-2 space-y-1 text-sm"></ul>
-        </div>
-        <div>
-          <h4 class="font-semibold text-slate-700">Links</h4>
-          <ul id="kvLinks" class="mt-2 space-y-1 text-sm"></ul>
-        </div>
-        <div>
-          <h4 class="font-semibold text-slate-700">Competitors</h4>
-          <ul id="kvCompetitors" class="mt-2 space-y-1 text-sm"></ul>
-        </div>
-      </div>
-
-      <!-- Plugins -->
-      <div class="mt-6">
-        <h4 class="font-semibold text-slate-700">Plugins</h4>
-        <div id="pluginsWrap" class="mt-2 space-y-4">
-          <!-- Each plugin renders its own cards and kv -->
-        </div>
-      </div>
-    </section>
-
-    <!-- Raw JSON -->
-    <section class="card">
-      <div class="flex items-center justify-between">
-        <h3 class="font-semibold">Raw JSON</h3>
-        <div class="flex gap-2">
-          <button id="copyJsonBtn" class="rounded bg-slate-200 px-3 py-1 text-sm">Copy</button>
-          <button id="downloadJsonBtn" class="rounded bg-indigo-600 text-white px-3 py-1 text-sm">Download</button>
-        </div>
-      </div>
-      <pre id="rawJson" class="mono text-xs bg-slate-900 text-slate-50 rounded mt-3 p-3 overflow-auto max-h-96">—</pre>
-    </section>
-  </main>
-
-  <footer class="max-w-7xl mx-auto px-4 py-8 text-center text-xs text-slate-500">
-    Built for the flexible audit engine. Streaming via SSE / WebSocket, or one‑shot POST.
-  </footer>
-
   <script>
-    // --------------- State ---------------
-    let es = null;              // EventSource
-    let ws = null;              // WebSocket
-    let abortController = null; // For POST cancel (if needed)
-    let barChart = null;
-    let doughnutChart = null;
+    /******************************************************************
+     * Configuration — change these if your server routes are different
+     ******************************************************************/
+    const ENDPOINTS = {
+      // Preferred: POST start (returns {jobId}) then stream via SSE / WS
+      start: "/api/audit/start",
+      // Or directly stream with URL param (server can start+stream in one)
+      sse: "/api/audit/stream",
+      ws: (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/audit",
+      // Optional polling endpoint (expects final JSON or streaming chunks)
+      poll: "/api/audit/status"
+    };
+
+    /******************************************************************
+     * Utilities
+     ******************************************************************/
+    const $ = (id) => document.getElementById(id);
+
+    function safeGet(obj, path, dflt = undefined) {
+      try {
+        return path.split('.').reduce((o, k) => (o && k in o) ? o[k] : undefined, obj) ?? dflt;
+      } catch { return dflt; }
+    }
+
+    function toInt(x, d=0){ const n = Number(x); return isNaN(n) ? d : Math.round(n); }
+
+    function pretty(obj){
+      try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+    }
+
+    function setStatus(text, progress=null){
+      $("status-text").textContent = text;
+      if(progress !== null){
+        $("progress-bar").style.width = Math.max(0, Math.min(100, progress)) + "%";
+      }
+    }
+
+    function colorForScore(n){
+      if(n >= 90) return "var(--ok)";
+      if(n >= 70) return "var(--accent)";
+      return "var(--bad)";
+    }
+
+    function setBadge(el, value){
+      el.textContent = (value ?? "—");
+      el.style.borderColor = colorForScore(toInt(value, 0));
+      el.style.background = "linear-gradient(180deg, " + colorForScore(toInt(value, 0)) + "22, transparent)";
+    }
+
+    function addChips(container, items, icon="🏷️"){
+      container.innerHTML = "";
+      (items || []).forEach(t=>{
+        const span = document.createElement("span");
+        span.className="chip";
+        span.textContent = `${icon} ${t}`;
+        container.appendChild(span);
+      });
+    }
+
+    function download(name, dataStr){
+      const a = document.createElement("a");
+      a.href = "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
+      a.download = name;
+      a.click();
+    }
+
+    function tryGetChart(){
+      // Chart.js may not be available (e.g., blocked CDN); degrade gracefully
+      try{
+        if(typeof window.Chart !== "undefined") return window.Chart;
+      }catch(e){}
+      return null;
+    }
+
+    /******************************************************************
+     * Charts (build if Chart.js exists; else, show fallback)
+     ******************************************************************/
+    let barChart, doughnutChart;
+
+    function renderBarChart(data){
+      const ctx = $("chart-bar").getContext("2d");
+      const Chart = tryGetChart();
+      const defaultData = {
+        labels: ["SEO", "Speed", "Security", "AI"],
+        datasets: [{
+          label: "Scores",
+          data: [ toInt($("seo-score").textContent, 0), toInt($("perf-score").textContent, 0), 90, 95 ],
+          backgroundColor: [
+            "rgba(255, 215, 0, 0.8)",
+            "rgba(59, 130, 246, 0.8)",
+            "rgba(16, 185, 129, 0.8)",
+            "rgba(147, 51, 234, 0.8)"
+          ],
+          borderColor: [
+            "rgba(255, 215, 0, 1)",
+            "rgba(59, 130, 246, 1)",
+            "rgba(16, 185, 129, 1)",
+            "rgba(147, 51, 234, 1)"
+          ],
+          borderWidth: 1
+        }]
+      };
+      const chartData = data || defaultData;
+
+      if(Chart){
+        if(barChart) barChart.destroy();
+        barChart = new Chart(ctx, {
+          type: "bar",
+          data: chartData,
+          options: { responsive:true, maintainAspectRatio:false, scales: { y: { beginAtZero:true, suggestedMax:100 } } }
+        });
+      }else{
+        // Fallback: show minimal bars using text (no js chart)
+        $("chart-bar").outerHTML = `
+          <div class="mini muted">Chart unavailable (Chart.js not loaded). Showing fallback.</div>
+          <div class="mt-12">
+            ${(chartData.labels || []).map((lbl, i)=>{
+              const v = (chartData.datasets?.[0]?.data?.[i]) ?? 0;
+              return `
+                <div class="mini">${lbl} — <strong>${v}</strong></div>
+                <div class="progress"><div style="width:${Math.min(100, v)}%; background:${colorForScore(v)}"></div></div>
+                <div style="height:6px"></div>
+              `;
+            }).join("")}
+          </div>
+        `;
+      }
+    }
+
+    function renderDoughnutChart(data){
+      const ctx = $("chart-doughnut").getContext("2d");
+      const Chart = tryGetChart();
+      const defaultData = {
+        labels: ["Healthy", "Warning", "Broken"],
+        datasets: [{
+          data: [
+            toInt($("kpi-internal").textContent, 0),
+            toInt($("kpi-warning").textContent, 0),
+            toInt($("kpi-broken").textContent, 0)
+          ],
+          backgroundColor: [
+            "rgba(34, 197, 94, 0.7)",
+            "rgba(234, 179, 8, 0.7)",
+            "rgba(239, 68, 68, 0.7)"
+          ],
+          borderColor: [
+            "rgba(34, 197, 94, 1)",
+            "rgba(234, 179, 8, 1)",
+            "rgba(239, 68, 68, 1)"
+          ],
+          borderWidth: 1
+        }]
+      };
+      const chartData = data || defaultData;
+
+      if(Chart){
+        if(doughnutChart) doughnutChart.destroy();
+        doughnutChart = new Chart(ctx, { type:"doughnut", data: chartData, options:{ responsive:true, maintainAspectRatio:false } });
+      }else{
+        $("chart-doughnut").outerHTML = `
+          <div class="mini muted">Chart unavailable (Chart.js not loaded). Showing fallback.</div>
+          ${(chartData.labels || []).map((lbl, i)=>{
+            const v = (chartData.datasets?.[0]?.data?.[i]) ?? 0;
+            return `
+              <div class="mini">${lbl} — <strong>${v}</strong></div>
+              <div class="progress"><div style="width:${Math.min(100, v)}%; background:${colorForScore(v)}"></div></div>
+              <div style="height:6px"></div>
+            `;
+          }).join("")}
+        `;
+      }
+    }
+
+    /******************************************************************
+     * Flexible Renderer (adapts to any payload shape)
+     ******************************************************************/
     let lastPayload = null;
 
-    // --------------- Elements ---------------
-    const urlInput = document.getElementById('urlInput');
-    const startBtn = document.getElementById('startBtn');
-    const cancelBtn = document.getElementById('cancelBtn');
-    const liveDot = document.getElementById('liveDot');
-    const liveText = document.getElementById('liveText');
-    const statusLine = document.getElementById('statusLine');
-    const progressPct = document.getElementById('progressPct');
-    const progressBar = document.getElementById('progressBar');
-
-    const overallScoreEl = document.getElementById('overallScore');
-    const gradeEl = document.getElementById('grade');
-    const seoScoreEl = document.getElementById('seoScore');
-    const perfScoreEl = document.getElementById('perfScore');
-    const lcpValueEl = document.getElementById('lcpValue');
-
-    const lnkInternalEl = document.getElementById('lnkInternal');
-    const lnkExternalEl = document.getElementById('lnkExternal');
-    const lnkWarningEl = document.getElementById('lnkWarning');
-    const lnkBrokenEl = document.getElementById('lnkBroken');
-
-    const compScoreEl = document.getElementById('compScore');
-    const compNamesEl = document.getElementById('compNames');
-    const compItemsWrapEl = document.getElementById('compItemsWrap');
-    const compItemsEl = document.getElementById('compItems');
-
-    const dynCardsEl = document.getElementById('dynCards');
-    const kvPerformanceEl = document.getElementById('kvPerformance');
-    const kvSEOEl = document.getElementById('kvSEO');
-    const kvLinksEl = document.getElementById('kvLinks');
-    const kvCompetitorsEl = document.getElementById('kvCompetitors');
-    const pluginsWrapEl = document.getElementById('pluginsWrap');
-
-    const rawJsonEl = document.getElementById('rawJson');
-    const copyJsonBtn = document.getElementById('copyJsonBtn');
-    const downloadJsonBtn = document.getElementById('downloadJsonBtn');
-    const transportSelect = document.getElementById('transportSelect');
-
-    // --------------- Helpers ---------------
-    function setLive(stateText, isActive) {
-      liveText.textContent = stateText;
-      liveDot.style.background = isActive ? '#22c55e' : '#94a3b8';
-    }
-
-    function setProgress(pct, statusText) {
-      const v = Math.max(0, Math.min(100, Math.round(pct || 0)));
-      progressBar.style.width = v + '%';
-      progressPct.textContent = v + '%';
-      if (statusText) statusLine.textContent = 'Status: ' + statusText;
-    }
-
-    function clearResults() {
-      overallScoreEl.textContent = '—';
-      gradeEl.textContent = '—';
-      seoScoreEl.textContent = '—';
-      perfScoreEl.textContent = '—';
-      lcpValueEl.textContent = '—';
-
-      lnkInternalEl.textContent = '0';
-      lnkExternalEl.textContent = '0';
-      lnkWarningEl.textContent = '0';
-      lnkBrokenEl.textContent = '0';
-
-      compScoreEl.textContent = '—';
-      compNamesEl.innerHTML = '';
-      compItemsEl.innerHTML = '';
-      compItemsWrapEl.classList.add('hidden');
-
-      dynCardsEl.innerHTML = '';
-      kvPerformanceEl.innerHTML = '';
-      kvSEOEl.innerHTML = '';
-      kvLinksEl.innerHTML = '';
-      kvCompetitorsEl.innerHTML = '';
-      pluginsWrapEl.innerHTML = '';
-
-      rawJsonEl.textContent = '—';
-
-      destroyCharts();
-    }
-
-    function destroyCharts() {
-      try { barChart && barChart.destroy(); } catch(e) {}
-      try { doughnutChart && doughnutChart.destroy(); } catch(e) {}
-      barChart = null;
-      doughnutChart = null;
-    }
-
-    function ensureUrl(u) {
-      if (!u) return '';
-      const s = u.trim();
-      if (!s) return '';
-      return s.startsWith('http') ? s : 'https://' + s;
-    }
-
-    function chip(text) {
-      const span = document.createElement('span');
-      span.className = 'inline-flex items-center gap-2 rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs';
-      span.textContent = text;
-      return span;
-    }
-
-    function kvLi(key, value) {
-      const li = document.createElement('li');
-      const k = document.createElement('span');
-      k.className = 'mono text-slate-500';
-      k.textContent = key + ': ';
-      const v = document.createElement('span');
-      v.className = 'mono font-semibold';
-      v.textContent = (value === null || value === undefined) ? '—' : String(value);
-      li.appendChild(k);
-      li.appendChild(v);
-      return li;
-    }
-
-    function cardEl(title, value, unit) {
-      const div = document.createElement('div');
-      div.className = 'p-3 rounded border border-slate-200 bg-white';
-      const t = document.createElement('div');
-      t.className = 'text-xs text-slate-500';
-      t.textContent = title;
-      const v = document.createElement('div');
-      v.className = 'text-xl font-semibold';
-      v.textContent = value === undefined ? '—' : String(value);
-      div.appendChild(t);
-      div.appendChild(v);
-      if (unit) {
-        const u = document.createElement('div');
-        u.className = 'text-[10px] text-slate-400';
-        u.textContent = unit;
-        div.appendChild(u);
-      }
-      return div;
-    }
-
-    function renderCharts(chartData) {
-      if (!chartData) return;
-      destroyCharts();
-      const barCtx = document.getElementById('barChart').getContext('2d');
-      barChart = new Chart(barCtx, {
-        type: 'bar',
-        data: chartData.bar || { labels: [], datasets: [] },
-        options: {
-          responsive: true,
-          plugins: { legend: { display: true } },
-          scales: { y: { beginAtZero: true, max: 100 } }
-        }
-      });
-
-      const doughnutCtx = document.getElementById('doughnutChart').getContext('2d');
-      doughnutChart = new Chart(doughnutCtx, {
-        type: 'doughnut',
-        data: chartData.doughnut || { labels: [], datasets: [] },
-        options: { responsive: true, plugins: { legend: { display: true } } }
-      });
-    }
-
-    function renderFinal(payload) {
-      // Summary
-      overallScoreEl.textContent = payload.overall_score ?? '—';
-      gradeEl.textContent = payload.grade ?? '—';
-
-      const br = payload.breakdown || {};
-      const perf = br.performance || {};
-      const links = br.links || {};
-      const comp = br.competitors || {};
-
-      seoScoreEl.textContent = br.seo ?? '—';
-      perfScoreEl.textContent = perf.score ?? '—';
-      lcpValueEl.textContent = perf.lcp_ms ?? '—';
-
-      lnkInternalEl.textContent = Number(links.internal_links_count || 0);
-      lnkExternalEl.textContent = Number(links.external_links_count || 0);
-      lnkWarningEl.textContent = Number(links.warning_links_count || 0);
-      lnkBrokenEl.textContent = Number(links.broken_internal_links || 0);
-
-      compScoreEl.textContent = comp.top_competitor_score ?? '—';
-      compNamesEl.innerHTML = '';
-      (Array.isArray(comp.names) ? comp.names : []).forEach(n => {
-        const li = document.createElement('li');
-        li.textContent = n;
-        compNamesEl.appendChild(li);
-      });
-
-      compItemsEl.innerHTML = '';
-      const items = Array.isArray(comp.items) ? comp.items : [];
-      if (items.length) {
-        compItemsWrapEl.classList.remove('hidden');
-        items.forEach(it => {
-          const wrap = document.createElement('div');
-          wrap.className = 'flex items-center justify-between rounded bg-slate-100 px-3 py-2 text-sm';
-          const nm = document.createElement('span'); nm.textContent = it.name ?? '—';
-          const sc = document.createElement('span'); sc.className = 'mono font-semibold'; sc.textContent = (it.score ?? '—');
-          wrap.appendChild(nm); wrap.appendChild(sc);
-          compItemsEl.appendChild(wrap);
-        });
-      } else {
-        compItemsWrapEl.classList.add('hidden');
-      }
-
-      // Charts
-      renderCharts(payload.chart_data);
-
-      // Dynamic blocks
-      const dynamic = payload.dynamic || {};
-      dynCardsEl.innerHTML = '';
-      (dynamic.cards || []).forEach(c => {
-        dynCardsEl.appendChild(cardEl(c.title ?? '—', c.value, c.unit));
-      });
-
-      kvPerformanceEl.innerHTML = '';
-      (dynamic.kv?.performance || []).forEach(({key, value}) => kvPerformanceEl.appendChild(kvLi(key, value)));
-
-      kvSEOEl.innerHTML = '';
-      (dynamic.kv?.seo || []).forEach(({key, value}) => kvSEOEl.appendChild(kvLi(key, value)));
-
-      kvLinksEl.innerHTML = '';
-      (dynamic.kv?.links || []).forEach(({key, value}) => kvLinksEl.appendChild(kvLi(key, value)));
-
-      kvCompetitorsEl.innerHTML = '';
-      (dynamic.kv?.competitors || []).forEach(({key, value}) => kvCompetitorsEl.appendChild(kvLi(key, value)));
-
-      // Plugins (cards + kv per plugin)
-      pluginsWrapEl.innerHTML = '';
-      const plugins = dynamic.plugins || {};
-      Object.keys(plugins).forEach(name => {
-        const sec = document.createElement('div');
-        sec.className = 'border border-slate-200 rounded p-3 bg-white';
-        const head = document.createElement('div');
-        head.className = 'flex items-center justify-between mb-2';
-        const h = document.createElement('h5');
-        h.className = 'font-semibold text-slate-700';
-        h.textContent = name;
-        const b = document.createElement('span');
-        b.className = 'badge';
-        b.textContent = 'plugin';
-        head.appendChild(h); head.appendChild(b);
-        sec.appendChild(head);
-
-        // cards
-        const cardsWrap = document.createElement('div');
-        cardsWrap.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2';
-        (plugins[name].cards || []).forEach(c => cardsWrap.appendChild(cardEl(c.title ?? '—', c.value, c.unit)));
-        sec.appendChild(cardsWrap);
-
-        // kv
-        const kvList = document.createElement('ul');
-        kvList.className = 'mt-2 space-y-1 text-sm';
-        (plugins[name].kv || []).forEach(({key, value}) => kvList.appendChild(kvLi(key, value)));
-        sec.appendChild(kvList);
-
-        pluginsWrapEl.appendChild(sec);
-      });
-
-      // Raw JSON
-      rawJsonEl.textContent = JSON.stringify(payload, null, 2);
+    function renderPayload(payload){
       lastPayload = payload;
+      // Status/progress
+      const prog = safeGet(payload, "crawl_progress");
+      if(typeof prog === "number") $("progress-bar").style.width = prog + "%";
+
+      // Overall KPIs
+      setBadge($("overall-score"), safeGet(payload, "overall_score", "—"));
+      $("overall-grade").textContent = safeGet(payload, "grade", "—");
+
+      const seoScore = safeGet(payload, "breakdown.seo", 0);
+      const perfScore = safeGet(payload, "breakdown.performance.score", 0);
+      const lcpMs    = safeGet(payload, "breakdown.performance.lcp_ms", 0);
+      const compTop  = safeGet(payload, "breakdown.competitors.top_competitor_score", 0);
+
+      $("seo-score").textContent  = seoScore;
+      $("perf-score").textContent = perfScore;
+      $("lcp-ms").textContent     = lcpMs;
+      $("comp-score").textContent = compTop;
+
+      // Links KPIs
+      const links = safeGet(payload, "breakdown.links", {});
+      $("kpi-internal").textContent = links.internal_links_count ?? 0;
+      $("kpi-warning").textContent  = links.warning_links_count ?? 0;
+      $("kpi-broken").textContent   = links.broken_internal_links ?? 0;
+      $("kpi-external").textContent = links.external_links_count ?? 0;
+
+      // Competitors chips
+      const compNames = safeGet(payload, "breakdown.competitors.names", []);
+      addChips($("competitors-tags"), compNames, "🏁");
+      $("competitors-items-json").textContent = pretty(safeGet(payload, "breakdown.competitors.items", []));
+
+      // Raw extras
+      $("seo-raw-json").textContent  = pretty(safeGet(payload, "extras.seo_raw", {}));
+      $("perf-extras-json").textContent = pretty(safeGet(payload, "breakdown.performance.extras", {}));
+
+      // Payload dump
+      $("payload-json").textContent = pretty(payload);
+
+      // Charts (prefer backend chart_data, else build)
+      const barData = safeGet(payload, "chart_data.bar");
+      const doughData = safeGet(payload, "chart_data.doughnut");
+
+      renderBarChart(barData);
+      renderDoughnutChart(doughData);
+
+      if(payload.finished){
+        setStatus("✅ Finished", 100);
+        $("btn-start").disabled = false;
+        $("btn-stop").disabled = true;
+      }
     }
 
-    function handleStreamMessage(msg) {
-      // Status update
-      if (msg.status) {
-        setProgress(msg.crawl_progress ?? 0, msg.status);
-      }
-      // Final payload
-      if (msg.finished || msg.overall_score !== undefined || msg.grade !== undefined) {
-        setProgress(100, 'Finished');
-        setLive('Completed', false);
-        startBtn.disabled = false;
-        cancelBtn.disabled = true;
-        renderFinal(msg);
-      }
-      // Error
-      if (msg.error) {
-        setLive('Error', false);
-        startBtn.disabled = false;
-        cancelBtn.disabled = true;
-        rawJsonEl.textContent = JSON.stringify(msg, null, 2);
-      }
-    }
+    /******************************************************************
+     * Transport Layer: SSE → WebSocket → Polling → Manual Paste
+     ******************************************************************/
+    let activeSource = null; // EventSource or WebSocket
+    let pollTimer = null;
 
-    // --------------- Transports ---------------
-    function startSSE(url) {
-      const target = '/api/audit?url=' + encodeURIComponent(url);
-      es = new EventSource(target);
-      es.onmessage = (evt) => {
-        try {
-          const data = JSON.parse(evt.data);
-          handleStreamMessage(data);
-        } catch (e) {
-          console.warn('Bad SSE message', e);
-        }
-      };
-      es.onerror = () => {
-        // Fallback to POST if SSE fails early
-        if (progressPct.textContent === '0%') {
-          console.warn('SSE failed. Falling back to POST.');
-          es && es.close();
-          startPOST(url);
-        } else {
-          setLive('SSE Error', false);
-        }
-      };
-    }
+    async function startAudit(){
+      const url = $("input-url").value.trim();
+      if(!url){ alert("Please enter a URL"); return; }
+      cleanupTransports();
+      $("btn-start").disabled = true; $("btn-stop").disabled = false;
+      setStatus("🌐 Starting…", 5);
 
-    async function startPOST(url) {
-      try {
-        abortController = new AbortController();
-        setProgress(10, 'Submitting (POST)...');
-        const res = await fetch('/api/audit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-          signal: abortController.signal
+      // Strategy 1: POST /start to get jobId, then try SSE/WS
+      try{
+        const res = await fetch(ENDPOINTS.start, {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ url })
         });
-        const data = await res.json();
-        handleStreamMessage(data);
-      } catch (e) {
-        handleStreamMessage({ error: String(e), finished: true });
+        if(res.ok){
+          const data = await res.json().catch(()=> ({}));
+          const jobId = data.jobId || data.id || null;
+          if(jobId){
+            // Try SSE with jobId
+            if(trySSE(`${ENDPOINTS.sse}/${encodeURIComponent(jobId)}`)) return;
+            // Try WS with jobId
+            if(tryWS(`${ENDPOINTS.ws}?jobId=${encodeURIComponent(jobId)}`)) return;
+            // Fallback to polling with jobId
+            tryPoll(`${ENDPOINTS.poll}/${encodeURIComponent(jobId)}`);
+            return;
+          }
+        }
+      }catch(e){
+        console.debug("POST start failed, will fallback:", e);
+      }
+
+      // Strategy 2: Direct SSE with ?url=
+      if(trySSE(`${ENDPOINTS.sse}?url=${encodeURIComponent(url)}`)) return;
+
+      // Strategy 3: WebSocket with ?url=
+      if(tryWS(`${ENDPOINTS.ws}?url=${encodeURIComponent(url)}`)) return;
+
+      // Strategy 4: Polling as last resort
+      tryPoll(`${ENDPOINTS.poll}?url=${encodeURIComponent(url)}`);
+    }
+
+    function cleanupTransports(){
+      try{ if(activeSource && activeSource.close) activeSource.close(); }catch{}
+      try{ if(activeSource && activeSource.readyState===WebSocket.OPEN) activeSource.close(); }catch{}
+      activeSource = null;
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    function trySSE(url){
+      if(typeof EventSource === "undefined") return false;
+      try{
+        setStatus("📡 Connecting (SSE)…", 8);
+        const es = new EventSource(url);
+        activeSource = es;
+
+        es.onmessage = (ev)=>{
+          try{
+            const data = JSON.parse(ev.data);
+            if(data.status){ setStatus(data.status, data.crawl_progress ?? null); }
+            if(data.error){ setStatus("❌ " + data.error, 100); }
+            renderPayload(data);
+          }catch(e){
+            console.debug("SSE parse issue:", e);
+          }
+        };
+        es.onerror = ()=>{
+          setStatus("SSE error; trying fallback…", 15);
+          es.close();
+          // Try WS next
+          return false;
+        };
+        return true;
+      }catch(e){
+        console.debug("SSE failed:", e);
+        return false;
       }
     }
 
-    function startWS(url) {
-      ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ url }));
-      };
-      ws.onmessage = (evt) => {
-        try {
-          const data = JSON.parse(evt.data);
-          handleStreamMessage(data);
-        } catch (e) {}
-      };
-      ws.onerror = () => {
-        setLive('WS Error', false);
-      };
-      ws.onclose = () => {
-        // ignore
-      };
+    function tryWS(url){
+      try{
+        setStatus("🔌 Connecting (WebSocket)…", 8);
+        const ws = new WebSocket(url);
+        activeSource = ws;
+
+        ws.onopen = ()=> setStatus("✅ WS connected", 12);
+        ws.onmessage = (ev)=>{
+          try{
+            const data = JSON.parse(ev.data);
+            if(data.status){ setStatus(data.status, data.crawl_progress ?? null); }
+            if(data.error){ setStatus("❌ " + data.error, 100); }
+            renderPayload(data);
+          }catch(e){
+            console.debug("WS parse issue:", e);
+          }
+        };
+        ws.onerror = ()=> setStatus("WS error; trying polling…", 18);
+        ws.onclose = ()=> {
+          // If not finished, try polling
+          if(!lastPayload || !lastPayload.finished){
+            tryPoll(ENDPOINTS.poll);
+          }
+        };
+        return true;
+      }catch(e){
+        console.debug("WS failed:", e);
+        return false;
+      }
     }
 
-    function cancelActive() {
-      try { es && es.close(); } catch(e) {}
-      try { ws && ws.close(); } catch(e) {}
-      try { abortController && abortController.abort(); } catch(e) {}
-      es = null; ws = null; abortController = null;
-      setLive('Canceled', false);
-      startBtn.disabled = false;
-      cancelBtn.disabled = true;
+    function tryPoll(url){
+      setStatus("⏳ Polling…", 20);
+      let ticks = 0;
+      pollTimer = setInterval(async ()=>{
+        ticks++;
+        try{
+          const res = await fetch(url, { headers:{ "Cache-Control":"no-cache" } });
+          if(!res.ok) throw new Error("poll HTTP " + res.status);
+          const text = await res.text();
+          // Support NDJSON (one JSON per line) OR single JSON
+          const lines = text.split(/\n+/).filter(Boolean);
+          for(const line of lines){
+            try{
+              const data = JSON.parse(line);
+              if(data.status){ setStatus(data.status, data.crawl_progress ?? null); }
+              renderPayload(data);
+            }catch(e){}
+          }
+          if(lastPayload && lastPayload.finished){
+            clearInterval(pollTimer); pollTimer=null;
+            setStatus("✅ Finished", 100);
+            $("btn-start").disabled = false; $("btn-stop").disabled = true;
+          }else{
+            const prog = 20 + Math.min(70, ticks*2);
+            $("progress-bar").style.width = prog + "%";
+          }
+        }catch(e){
+          console.debug("Polling error:", e);
+          if(ticks>20){
+            clearInterval(pollTimer); pollTimer=null;
+            setStatus("❌ Polling failed", 100);
+            $("btn-start").disabled = false; $("btn-stop").disabled = true;
+          }
+        }
+      }, 1500);
     }
 
-    // --------------- Actions ---------------
-    startBtn.addEventListener('click', () => {
-      const u = ensureUrl(urlInput.value);
-      if (!u) {
-        alert('Enter a valid URL');
-        return;
-      }
-      clearResults();
-      setLive('Running…', true);
-      setProgress(0, 'Queued');
-      startBtn.disabled = true;
-      cancelBtn.disabled = false;
+    function stopAudit(){
+      cleanupTransports();
+      setStatus("⏹️ Stopped by user", 100);
+      $("btn-start").disabled = false; $("btn-stop").disabled = true;
+    }
 
-      const mode = transportSelect.value;
-      if (mode === 'post') {
-        startPOST(u);
-      } else if (mode === 'ws') {
-        startWS(u);
-      } else {
-        startSSE(u);
+    /******************************************************************
+     * Manual JSON Paste (for offline review or testing)
+     ******************************************************************/
+    function pasteJSON(){
+      const txt = prompt("Paste the final JSON payload:");
+      if(!txt) return;
+      try{
+        const data = JSON.parse(txt);
+        setStatus("📄 Rendered from pasted JSON", 100);
+        renderPayload(data);
+      }catch(e){
+        alert("Invalid JSON. " + e.message);
       }
+    }
+
+    /******************************************************************
+     * Events
+     ******************************************************************/
+    $("btn-start").addEventListener("click", startAudit);
+    $("btn-stop").addEventListener("click", stopAudit);
+    $("btn-paste-json").addEventListener("click", pasteJSON);
+    $("btn-print").addEventListener("click", ()=> window.print());
+    $("btn-export-json").addEventListener("click", ()=> {
+      if(!lastPayload) return alert("No data yet.");
+      download("audit-result.json", pretty(lastPayload));
     });
 
-    cancelBtn.addEventListener('click', cancelActive);
-
-    copyJsonBtn.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(rawJsonEl.textContent || '');
-        copyJsonBtn.textContent = 'Copied';
-        setTimeout(() => copyJsonBtn.textContent = 'Copy', 1200);
-      } catch (e) {
-        alert('Copy failed');
-      }
+    $("toggle-theme").addEventListener("click", ()=>{
+      const isLight = document.documentElement.getAttribute("data-theme")==="light";
+      document.documentElement.setAttribute("data-theme", isLight ? "dark" : "light");
     });
 
-    downloadJsonBtn.addEventListener('click', () => {
-      const blob = new Blob([rawJsonEl.textContent || '{}'], { type: 'application/json' });
-      const a = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      a.href = url;
-      a.download = 'audit-result.json';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 0);
-    });
+    // Convenience: start on Enter
+    $("input-url").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ startAudit(); } });
 
-    // Pre-fill sample for convenience (you can remove this)
-    urlInput.value = 'https://www.haier.com.pk';
+    // Initial status
+    setStatus("Ready");
   </script>
 </body>
 </html>
