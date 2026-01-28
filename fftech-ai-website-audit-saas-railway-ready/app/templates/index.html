@@ -121,7 +121,7 @@
     <!-- Error Display -->
     <div id="errorBox" class="error-box d-none"></div>
 
-    <!-- Main Results Area – dynamically populated -->
+    <!-- Main Results Area -->
     <div id="resultsArea" class="d-none">
       <!-- KPIs -->
       <section class="row g-4 mb-5" id="kpiSection"></section>
@@ -158,7 +158,7 @@
     };
 
     // ──────────────────────────────────────────────
-    // Charts – dynamic creation
+    // Charts – dynamic
     // ──────────────────────────────────────────────
     function renderChart(container, title, data, type = "bar") {
       const card = create("div", "card p-4 mb-4");
@@ -202,7 +202,7 @@
     function renderAll(msg) {
       $("resultsArea").classList.remove("d-none");
 
-      // 1. KPIs – any number-like field
+      // 1. KPIs – auto-detect number-like fields
       const kpiSection = $("#kpiSection");
       kpiSection.empty();
       const possibleKpis = [
@@ -239,7 +239,7 @@
         });
       }
 
-      // 3. Breakdown sections – recursive rendering
+      // 3. Breakdown sections – recursive
       const breakdownSection = $("#breakdownSection");
       breakdownSection.empty();
 
@@ -253,7 +253,7 @@
           section.innerHTML = `<h5 class="text-warning mb-3">${sectionName.charAt(0).toUpperCase() + sectionName.slice(1)}</h5>`;
 
           if (typeof data === "object" && data !== null) {
-            const pre = create("pre", "small-mono");
+            const pre = create("pre", "code-block");
             pre.textContent = pretty(data);
             section.appendChild(pre);
           } else {
@@ -293,7 +293,7 @@
             h6.textContent = key.charAt(0).toUpperCase() + key.slice(1);
             breakdownSection.append(h6);
 
-            const pre = create("pre", "small-mono");
+            const pre = create("pre", "code-block");
             pre.textContent = pretty(pairs);
             breakdownSection.append(pre);
           });
@@ -323,7 +323,7 @@
             }
 
             if (pluginData.kv) {
-              const pre = create("pre", "small-mono mt-2");
+              const pre = create("pre", "code-block mt-2");
               pre.textContent = pretty(pluginData.kv);
               breakdownSection.append(pre);
             }
@@ -334,14 +334,14 @@
       // 5. Raw JSON fallback
       const rawSection = create("div", "card p-4 mt-5");
       rawSection.innerHTML = `<h5 class="text-warning mb-3">Raw Payload (Debug)</h5>`;
-      const pre = create("pre", "small-mono");
+      const pre = create("pre", "code-block");
       pre.textContent = pretty(msg);
       rawSection.appendChild(pre);
       breakdownSection.append(rawSection);
     }
 
     // ──────────────────────────────────────────────
-    // WebSocket
+    // WebSocket – FIXED to /ws
     // ──────────────────────────────────────────────
     function makeWsUrl(path) {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
