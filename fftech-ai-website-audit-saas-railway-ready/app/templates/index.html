@@ -25,71 +25,19 @@
       min-height: 100vh;
       font-family: system-ui, sans-serif;
     }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 0.75rem;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    }
-    .kpi {
-      font-weight: 800;
-      font-size: 2.8rem;
-      color: var(--primary);
-      line-height: 1;
-    }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    .kpi { font-weight: 800; font-size: 2.8rem; color: var(--primary); line-height: 1; }
     .muted { color: var(--muted); }
-    .progress {
-      height: 12px;
-      background: #1e293b;
-      border-radius: 6px;
-      overflow: hidden;
-    }
-    .badge-grade {
-      font-size: 1.6rem;
-      padding: 0.6rem 1.4rem;
-    }
-    pre.code-block {
-      background: #0f172a;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      font-size: 0.9rem;
-      max-height: 300px;
-      overflow: auto;
-    }
-    .error-box {
-      background: rgba(239,68,68,0.15);
-      border: 1px solid var(--danger);
-      color: #fecaca;
-      padding: 1.25rem;
-      border-radius: 0.5rem;
-      margin: 1.5rem 0;
-    }
+    .progress { height: 12px; background: #1e293b; border-radius: 6px; overflow: hidden; }
+    .badge-grade { font-size: 1.6rem; padding: 0.6rem 1.4rem; }
+    pre.code-block { background: #0f172a; border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; font-size: 0.9rem; max-height: 300px; overflow: auto; }
+    .error-box { background: rgba(239,68,68,0.15); border: 1px solid var(--danger); color: #fecaca; padding: 1.25rem; border-radius: 0.5rem; margin: 1.5rem 0; }
     canvas { max-height: 280px; margin: 0 auto; display: block; }
-    .dynamic-card {
-      background: #1e293b;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      text-align: center;
-    }
-    .dynamic-card .title {
-      font-size: 0.9rem;
-      color: var(--muted);
-      margin-bottom: 0.5rem;
-    }
-    .dynamic-card .value {
-      font-size: 1.8rem;
-      font-weight: bold;
-      color: var(--primary);
-    }
-    .section-header {
-      color: var(--primary);
-      margin: 2rem 0 1rem;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 0.5rem;
-    }
+    .dynamic-card { background: #1e293b; border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; text-align: center; }
+    .dynamic-card .title { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .dynamic-card .value { font-size: 1.8rem; font-weight: bold; color: var(--primary); }
+    .section-header { color: var(--primary); margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    #debugPanel { background: #0f172a; border: 1px solid #ef4444; color: #fecaca; padding: 1rem; border-radius: 0.5rem; max-height: 300px; overflow: auto; font-family: monospace; font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -120,6 +68,12 @@
 
     <!-- Error Display -->
     <div id="errorBox" class="error-box d-none"></div>
+
+    <!-- Debug Panel (shows live WS messages) -->
+    <div id="debugPanel" class="mb-4 d-none">
+      <strong>Debug Log (open browser console F12 for more):</strong><br>
+      <div id="debugLog"></div>
+    </div>
 
     <!-- Main Results Area -->
     <div id="resultsArea" class="d-none">
@@ -156,6 +110,15 @@
         return path.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), obj) ?? fallback;
       } catch { return fallback; }
     };
+
+    function logDebug(msg) {
+      console.log(msg);
+      const log = $("#debugLog");
+      if (log) {
+        log.textContent += msg + "\n";
+        log.scrollTop = log.scrollHeight;
+      }
+    }
 
     // ──────────────────────────────────────────────
     // Charts – dynamic
@@ -194,6 +157,8 @@
       $("resultsArea").classList.add("d-none");
       $("errorBox").textContent = "";
       $("errorBox").classList.add("d-none");
+      $("#debugPanel").classList.add("d-none");
+      $("#debugLog").textContent = "";
     }
 
     // ──────────────────────────────────────────────
@@ -202,7 +167,7 @@
     function renderAll(msg) {
       $("resultsArea").classList.remove("d-none");
 
-      // 1. KPIs – auto-detect number-like fields
+      // 1. KPIs – auto-detect
       const kpiSection = $("#kpiSection");
       kpiSection.empty();
       const possibleKpis = [
@@ -230,7 +195,7 @@
         }
       });
 
-      // 2. Charts – any chart_data entry
+      // 2. Charts
       const chartsSection = $("#chartsSection");
       chartsSection.empty();
       if (msg.chart_data) {
@@ -239,7 +204,7 @@
         });
       }
 
-      // 3. Breakdown sections – recursive
+      // 3. Breakdown
       const breakdownSection = $("#breakdownSection");
       breakdownSection.empty();
 
@@ -251,25 +216,19 @@
         Object.entries(msg.breakdown).forEach(([sectionName, data]) => {
           const section = create("div", "card p-4 mb-4");
           section.innerHTML = `<h5 class="text-warning mb-3">${sectionName.charAt(0).toUpperCase() + sectionName.slice(1)}</h5>`;
-
-          if (typeof data === "object" && data !== null) {
-            const pre = create("pre", "code-block");
-            pre.textContent = pretty(data);
-            section.appendChild(pre);
-          } else {
-            section.innerHTML += `<p>${data}</p>`;
-          }
+          const pre = create("pre", "code-block");
+          pre.textContent = pretty(data);
+          section.appendChild(pre);
           breakdownSection.append(section);
         });
       }
 
-      // 4. Dynamic section – cards + kv + plugins
+      // 4. Dynamic
       if (msg.dynamic) {
         const h2 = create("h4", "section-header");
         h2.textContent = "Dynamic & Plugin Insights";
         breakdownSection.append(h2);
 
-        // Cards
         if (msg.dynamic.cards && Array.isArray(msg.dynamic.cards)) {
           const row = create("div", "row g-4 mb-4");
           msg.dynamic.cards.forEach(card => {
@@ -286,20 +245,17 @@
           breakdownSection.append(row);
         }
 
-        // KV per section
         if (msg.dynamic.kv && typeof msg.dynamic.kv === "object") {
           Object.entries(msg.dynamic.kv).forEach(([key, pairs]) => {
             const h6 = create("h6", "text-info mt-4 mb-2");
             h6.textContent = key.charAt(0).toUpperCase() + key.slice(1);
             breakdownSection.append(h6);
-
             const pre = create("pre", "code-block");
             pre.textContent = pretty(pairs);
             breakdownSection.append(pre);
           });
         }
 
-        // Plugins
         if (msg.dynamic.plugins && typeof msg.dynamic.plugins === "object") {
           Object.entries(msg.dynamic.plugins).forEach(([name, pluginData]) => {
             const h6 = create("h6", "text-success mt-4 mb-2");
@@ -331,7 +287,7 @@
         }
       }
 
-      // 5. Raw JSON fallback
+      // 5. Raw JSON
       const rawSection = create("div", "card p-4 mt-5");
       rawSection.innerHTML = `<h5 class="text-warning mb-3">Raw Payload (Debug)</h5>`;
       const pre = create("pre", "code-block");
@@ -341,7 +297,7 @@
     }
 
     // ──────────────────────────────────────────────
-    // WebSocket – FIXED to /ws
+    // WebSocket – FIXED & Debugged
     // ──────────────────────────────────────────────
     function makeWsUrl(path) {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -374,24 +330,39 @@
 
     function runAudit(url) {
       resetUI();
-      $("statusLine").textContent = "Status: Connecting…";
+      $("statusLine").textContent = "Status: Connecting to WebSocket…";
       $("progressBar").style.width = "5%";
       $("errorBox").classList.add("d-none");
+      $("#debugPanel").classList.remove("d-none");
+      logDebug(`Starting audit for: ${url}`);
 
-      if (socket?.readyState === WebSocket.OPEN) socket.close();
+      if (socket?.readyState === WebSocket.OPEN) {
+        logDebug("Closing old socket...");
+        socket.close();
+      }
 
-      socket = new WebSocket(makeWsUrl("/ws"));
+      const wsUrl = makeWsUrl("/ws");
+      logDebug(`Connecting to WebSocket: ${wsUrl}`);
+
+      socket = new WebSocket(wsUrl);
 
       socket.addEventListener("open", () => {
-        $("statusLine").textContent = "Status: Connected. Starting audit…";
+        logDebug("WebSocket connected!");
+        $("statusLine").textContent = "Status: Connected. Sending URL…";
         socket.send(JSON.stringify({ url }));
+        logDebug("Sent: " + JSON.stringify({ url }));
       });
 
       socket.addEventListener("message", ev => {
+        logDebug("Received raw: " + ev.data);
         let msg;
-        try { msg = JSON.parse(ev.data); } catch { console.error("Invalid JSON:", ev.data); return; }
-
-        console.log("WS message:", msg);
+        try {
+          msg = JSON.parse(ev.data);
+          logDebug("Parsed message: " + JSON.stringify(msg));
+        } catch (e) {
+          logDebug("Parse error: " + e);
+          return;
+        }
 
         if (msg.status || typeof msg.crawl_progress === "number") {
           updateStatus(msg);
@@ -400,22 +371,25 @@
         if (msg.error) {
           $("errorBox").textContent = msg.error;
           $("errorBox").classList.remove("d-none");
+          logDebug("Error from server: " + msg.error);
         }
 
         if (msg.finished && !msg.error) {
           updateStatus({ status: "✅ Completed", crawl_progress: 100 });
+          logDebug("Audit finished – rendering results");
           renderAll(msg);
         }
       });
 
-      socket.addEventListener("close", () => {
+      socket.addEventListener("close", ev => {
+        logDebug(`WebSocket closed. Code: ${ev.code}, Reason: ${ev.reason || "none"}`);
         $("statusLine").textContent += " (connection closed)";
-        console.log("WebSocket closed");
       });
 
       socket.addEventListener("error", ev => {
+        logDebug("WebSocket error event fired");
         console.error("WebSocket error:", ev);
-        $("errorBox").textContent = "Connection failed – check console (F12) or server logs";
+        $("errorBox").textContent = "Connection failed. Check console (F12) for details.";
         $("errorBox").classList.remove("d-none");
       });
     }
