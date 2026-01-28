@@ -1,85 +1,80 @@
-# app/main.py
+# main.py
+import json
 import os
-import asyncio
-import logging
 from pathlib import Path
+from typing import Any, Dict
 
-from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.audit.runner import WebsiteAuditRunner
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("main")
+# --- FastAPI app
+app = FastAPI(title="SEO Audit Runner", version="1.0")
 
-app = FastAPI(title="FF Tech Website Audit Engine")
+# --- CORS (adjust origins as needed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# --------------------------------------------------
-# Resolve BASE directory safely (Docker/Railway safe)
-# --------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-INDEX_FILE = STATIC_DIR / "index.html"
+# --- Static (optional): if you store assets like /static/app.css, /static/logo.svg
+static_dir = Path("static")
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# --------------------------------------------------
-# Mount static files ONLY if folder exists
-# --------------------------------------------------
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-else:
-    logger.warning("Static directory not found:", STATIC_DIR)
-
-# --------------------------------------------------
-# Home Route
-# --------------------------------------------------
+# --- Serve index.html
 @app.get("/", response_class=HTMLResponse)
-async def home():
-    if INDEX_FILE.exists():
-        return FileResponse(INDEX_FILE)
-    return HTMLResponse(
-        content="""
-        <h2>Frontend not found</h2>
-        <p>index.html is missing.</p>
-        <p>Expected path:</p>
-        <pre>app/static/index.html</pre>
-        """,
-        status_code=500
-    )
+async def root():
+    index_path = Path("index.html")
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    # fallback
+    return HTMLResponse("<h2>index.html not found</h2>", status_code=404)
 
-# --------------------------------------------------
-# Health Check
-# --------------------------------------------------
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-
-# --------------------------------------------------
-# Run Audit (REAL)
-# --------------------------------------------------
-@app.get("/api/audit")
-async def run_audit(url: str = Query(...)):
+# --- WebSocket for streaming audit
+@app.websocket("/ws/audit")
+async def ws_audit(ws: WebSocket):
+    await ws.accept()
     try:
+        # Expect a JSON message like: {"url": "www.haier.com.pk"}
+        init_msg = await ws.receive_text()
+        data = json.loads(init_msg)
+        url = (data.get("url") or "").strip()
+        if not url:
+            await ws.send_json({"error": "No URL provided", "finished": True})
+            await ws.close()
+            return
+
         runner = WebsiteAuditRunner(url)
 
-        if asyncio.iscoroutinefunction(runner.run):
-            result = await runner.run()
-        else:
-            result = await asyncio.to_thread(runner.run)
+        async def callback(message: Dict[str, Any]):
+            # Stream runner messages to the client
+            try:
+                await ws.send_json(message)
+            except WebSocketDisconnect:
+                # Client gone; stop streaming silently
+                pass
 
-        return JSONResponse(content=result)
+        await runner.run_audit(callback)
+        await ws.close()
 
+    except WebSocketDisconnect:
+        # Client disconnected mid-run
+        return
     except Exception as e:
-        logger.exception("Audit failed")
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
+        try:
+            await ws.send_json({"error": f"Server Error: {str(e)}", "finished": True})
+        except Exception:
+            pass
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
-# --------------------------------------------------
-# Entrypoint
-# --------------------------------------------------
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
+# --- Local dev entrypoint:
+# uvicorn main:app --reload --host 0.0.0.0 --port 8000
