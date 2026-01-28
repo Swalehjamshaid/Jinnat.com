@@ -1,392 +1,669 @@
-<!doctype html>
-<html lang="en" data-bs-theme="dark">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FF Tech Audit Engine – Adaptive Runner</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1"
+  />
+  <title>Flexible Audit Runner</title>
+
+  <!-- TailwindCSS (for fast layout). If you prefer plain CSS, you can replace this. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Chart.js v4 -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
   <style>
-    :root {
-      --primary: #fbbf24;
-      --bg: #0f172a;
-      --card: #111827;
-      --border: #1f2937;
-      --muted: #94a3b8;
-      --text: #e2e8f0;
+    /* Simple pulse for status dot */
+    .pulse {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 9999px;
+      background: #22c55e;
+      box-shadow: 0 0 0 rgba(34,197,94, 0.7);
+      animation: pulse 2s infinite;
     }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      font-family: system-ui, sans-serif;
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34,197,94, 0.7); }
+      70% { box-shadow: 0 0 0 12px rgba(34,197,94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34,197,94, 0); }
     }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 0.75rem;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      @apply bg-white rounded-lg shadow-sm border border-slate-200 p-4;
     }
-    .kpi {
-      font-weight: 800;
-      font-size: 2.8rem;
-      color: var(--primary);
-      line-height: 1;
+    .badge {
+      @apply rounded-md px-2 py-1 text-xs font-semibold bg-slate-100 text-slate-700;
     }
-    .muted { color: var(--muted); }
-    .progress {
-      height: 12px;
-      background: #1e293b;
-      border-radius: 6px;
-      overflow: hidden;
-    }
-    .badge-grade {
-      font-size: 1.6rem;
-      padding: 0.6rem 1.4rem;
-    }
-    pre.small-mono {
-      background: #0f172a;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      font-size: 0.9rem;
-      max-height: 260px;
-      overflow: auto;
-    }
-    .error-box {
-      background: rgba(239,68,68,0.15);
-      border: 1px solid #ef4444;
-      color: #fecaca;
-      padding: 1.25rem;
-      border-radius: 0.5rem;
-      margin: 1.5rem 0;
-    }
-    canvas { max-height: 280px; }
-    ul.competitors li {
-      background: #1e293b;
-      margin: 0.75rem 0;
-      padding: 1rem;
-      border-radius: 0.5rem;
-      border-left: 5px solid var(--primary);
-    }
+    .badge-green { @apply bg-emerald-100 text-emerald-700; }
+    .badge-amber { @apply bg-amber-100 text-amber-700; }
+    .badge-red { @apply bg-rose-100 text-rose-700; }
+    .badge-indigo { @apply bg-indigo-100 text-indigo-700; }
+    .hidden { display: none; }
   </style>
 </head>
-<body>
-  <div class="container py-5">
-    <header class="text-center mb-5">
-      <h1 class="display-4 fw-bold text-warning">FF Tech Audit Engine</h1>
-      <p class="lead muted">Adaptive • Flexible • Future-Proof Website Audit</p>
-    </header>
+<body class="bg-slate-50 text-slate-900">
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-4 py-5 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span class="text-xl font-bold">Flexible Audit Runner</span>
+        <span class="badge">v1.0</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="pulse" id="liveDot" title="Live"></span>
+        <span class="text-sm text-slate-500" id="liveText">Idle</span>
+      </div>
+    </div>
+  </header>
 
-    <!-- Input & Controls -->
-    <section class="card p-4 mb-5 shadow-lg">
-      <div class="row g-3 align-items-end">
-        <div class="col-md-8">
-          <label for="urlInput" class="form-label fw-semibold mb-1">Website URL</label>
-          <input id="urlInput" type="text" class="form-control bg-dark text-white border-secondary"
-                 placeholder="e.g., www.haier.com.pk" autofocus />
+  <main class="max-w-7xl mx-auto p-4 space-y-6">
+    <!-- Controls -->
+    <section class="card">
+      <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-end">
+        <div class="flex-1">
+          <label for="urlInput" class="block text-sm font-medium mb-1">Website URL</label>
+          <input
+            id="urlInput"
+            type="text"
+            placeholder="https://www.haier.com.pk"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
         </div>
-        <div class="col-md-4 d-flex gap-2">
-          <button id="runBtn" class="btn btn-warning fw-bold w-100">RUN AUDIT</button>
-          <button id="resetBtn" class="btn btn-outline-danger w-100">RESET</button>
+        <div>
+          <label class="block text-sm font-medium mb-1">Transport</label>
+          <select id="transportSelect" class="rounded-md border border-slate-300 px-3 py-2">
+            <option value="sse" selected>Server-Sent Events (SSE)</option>
+            <option value="post">One-shot (POST)</option>
+            <option value="ws">WebSocket</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button
+            id="startBtn"
+            class="rounded-md bg-indigo-600 text-white px-4 py-2 hover:bg-indigo-700"
+          >Start Audit</button>
+          <button
+            id="cancelBtn"
+            class="rounded-md bg-slate-200 text-slate-700 px-4 py-2 hover:bg-slate-300"
+            disabled
+          >Cancel</button>
         </div>
       </div>
-      <div id="statusLine" class="mt-3 small fw-semibold text-info">Status: Idle</div>
-      <div class="progress mt-2">
-        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
+
+      <!-- Progress -->
+      <div class="mt-4">
+        <div class="flex items-center justify-between">
+          <div class="text-sm text-slate-600" id="statusLine">Status: Idle</div>
+          <div class="text-sm text-slate-500" id="progressPct">0%</div>
+        </div>
+        <div class="w-full bg-slate-200 rounded h-2 mt-2">
+          <div id="progressBar" class="h-2 rounded bg-indigo-500" style="width: 0%"></div>
+        </div>
       </div>
     </section>
 
-    <!-- KPIs -->
-    <section class="row g-4 mb-5">
-      <div class="col-md-3">
-        <div class="card p-4 text-center">
-          <div class="muted small fw-semibold mb-1">Overall Score</div>
-          <div id="overallScore" class="kpi">—</div>
-        </div>
+    <!-- Summary -->
+    <section class="grid md:grid-cols-4 gap-4">
+      <div class="card">
+        <div class="text-sm text-slate-500">Overall Score</div>
+        <div class="text-3xl font-bold" id="overallScore">—</div>
       </div>
-      <div class="col-md-3">
-        <div class="card p-4 text-center">
-          <div class="muted small fw-semibold mb-1">Grade</div>
-          <div id="grade" class="badge-grade badge bg-success">—</div>
-        </div>
+      <div class="card">
+        <div class="text-sm text-slate-500">Grade</div>
+        <div class="text-3xl font-bold" id="grade">—</div>
       </div>
-      <div class="col-md-3">
-        <div class="card p-4 text-center">
-          <div class="muted small fw-semibold mb-1">SEO Score</div>
-          <div id="seoScore" class="kpi">—</div>
-        </div>
+      <div class="card">
+        <div class="text-sm text-slate-500">SEO Score</div>
+        <div class="text-3xl font-bold text-amber-600" id="seoScore">—</div>
       </div>
-      <div class="col-md-3">
-        <div class="card p-4 text-center">
-          <div class="muted small fw-semibold mb-1">Speed Score</div>
-          <div id="perfScore" class="kpi">—</div>
-        </div>
+      <div class="card">
+        <div class="text-sm text-slate-500">Performance Score</div>
+        <div class="text-3xl font-bold text-indigo-600" id="perfScore">—</div>
+        <div class="text-xs text-slate-500 mt-1">LCP (ms): <span id="lcpValue">—</span></div>
       </div>
     </section>
 
     <!-- Charts -->
-    <section class="row g-4 mb-5">
-      <div class="col-md-6">
-        <div class="card p-4">
-          <h6 class="muted fw-semibold mb-3">Score Breakdown</h6>
-          <canvas id="barChart"></canvas>
+    <section class="grid lg:grid-cols-2 gap-4">
+      <div class="card">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold">Scores</h3>
+          <span class="badge-indigo badge">Bar</span>
         </div>
+        <canvas id="barChart" height="160"></canvas>
       </div>
-      <div class="col-md-6">
-        <div class="card p-4">
-          <h6 class="muted fw-semibold mb-3">Link Health</h6>
-          <canvas id="doughnutChart"></canvas>
+      <div class="card">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold">Link Health</h3>
+          <span class="badge-indigo badge">Doughnut</span>
+        </div>
+        <canvas id="doughnutChart" height="160"></canvas>
+      </div>
+    </section>
+
+    <!-- Links & Competitors -->
+    <section class="grid lg:grid-cols-2 gap-4">
+      <div class="card">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">Links Summary</h3>
+          <span class="badge">from runner</span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+          <div class="p-3 rounded bg-slate-100">
+            <div class="text-xs text-slate-500">Internal</div>
+            <div class="text-xl font-semibold" id="lnkInternal">0</div>
+          </div>
+          <div class="p-3 rounded bg-slate-100">
+            <div class="text-xs text-slate-500">External</div>
+            <div class="text-xl font-semibold" id="lnkExternal">0</div>
+          </div>
+          <div class="p-3 rounded bg-amber-50">
+            <div class="text-xs text-amber-700">Warning</div>
+            <div class="text-xl font-semibold text-amber-700" id="lnkWarning">0</div>
+          </div>
+          <div class="p-3 rounded bg-rose-50">
+            <div class="text-xs text-rose-700">Broken</div>
+            <div class="text-xl font-semibold text-rose-700" id="lnkBroken">0</div>
+          </div>
+        </div>
+        <div class="mt-3 text-xs text-slate-500">Additional link fields (if any) are visible below in <strong>Dynamic → Links</strong>.</div>
+      </div>
+
+      <div class="card">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">Competitors</h3>
+          <span class="badge">top 3 (if available)</span>
+        </div>
+        <div class="mt-2 text-sm">
+          <div>Top Competitor Score: <span class="font-semibold" id="compScore">—</span></div>
+        </div>
+        <ul id="compNames" class="list-disc pl-6 mt-2 text-sm space-y-1">
+          <!-- Competitor names will render here -->
+        </ul>
+        <div id="compItemsWrap" class="mt-3 hidden">
+          <div class="text-xs text-slate-500 mb-2">With scores:</div>
+          <div id="compItems" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <!-- {name, score} chips -->
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- Details: Links & Performance -->
-    <section class="row g-4 mb-5">
-      <div class="col-md-6">
-        <div class="card p-4">
-          <h6 class="muted mb-3">Links Overview</h6>
-          <div id="linksSummary" class="small mb-2">Internal: — | External: — | Warnings: — | Broken: —</div>
-          <pre id="linksRaw" class="small-mono"></pre>
+    <!-- Dynamic Cards -->
+    <section class="card">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Dynamic Cards</h3>
+        <span class="badge">auto-generated</span>
+      </div>
+      <div id="dynCards" class="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <!-- filled programmatically -->
+      </div>
+    </section>
+
+    <!-- Dynamic Key/Value blocks -->
+    <section class="card">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Dynamic Details</h3>
+        <span class="badge">performance • seo • links • competitors • plugins</span>
+      </div>
+      <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <h4 class="font-semibold text-slate-700">Performance</h4>
+          <ul id="kvPerformance" class="mt-2 space-y-1 text-sm"></ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-slate-700">SEO</h4>
+          <ul id="kvSEO" class="mt-2 space-y-1 text-sm"></ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-slate-700">Links</h4>
+          <ul id="kvLinks" class="mt-2 space-y-1 text-sm"></ul>
+        </div>
+        <div>
+          <h4 class="font-semibold text-slate-700">Competitors</h4>
+          <ul id="kvCompetitors" class="mt-2 space-y-1 text-sm"></ul>
         </div>
       </div>
-      <div class="col-md-6">
-        <div class="card p-4">
-          <h6 class="muted mb-3">Performance</h6>
-          <div id="perfSummary" class="small mb-2">LCP (ms): — | Score: —</div>
-          <pre id="perfExtras" class="small-mono"></pre>
+
+      <!-- Plugins -->
+      <div class="mt-6">
+        <h4 class="font-semibold text-slate-700">Plugins</h4>
+        <div id="pluginsWrap" class="mt-2 space-y-4">
+          <!-- Each plugin renders its own cards and kv -->
         </div>
       </div>
     </section>
 
-    <!-- Competitors -->
-    <section class="card p-4 mb-5 shadow-lg">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="muted fw-semibold mb-0">Top 3 Competitors</h5>
-        <small class="text-info">Flexible rendering from analyzer</small>
+    <!-- Raw JSON -->
+    <section class="card">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Raw JSON</h3>
+        <div class="flex gap-2">
+          <button id="copyJsonBtn" class="rounded bg-slate-200 px-3 py-1 text-sm">Copy</button>
+          <button id="downloadJsonBtn" class="rounded bg-indigo-600 text-white px-3 py-1 text-sm">Download</button>
+        </div>
       </div>
-      <ul id="competitorList" class="competitors mb-3"></ul>
-      <pre id="competitorItems" class="small-mono"></pre>
+      <pre id="rawJson" class="mono text-xs bg-slate-900 text-slate-50 rounded mt-3 p-3 overflow-auto max-h-96">—</pre>
     </section>
+  </main>
 
-    <!-- Error -->
-    <div id="errorBox" class="error-box d-none"></div>
-
-    <footer class="text-center small muted mt-5">
-      © FF Tech Audit Engine – Adaptive & Future-Proof – Powered by Flexible Runner
-    </footer>
-  </div>
+  <footer class="max-w-7xl mx-auto px-4 py-8 text-center text-xs text-slate-500">
+    Built for the flexible audit engine. Streaming via SSE / WebSocket, or one‑shot POST.
+  </footer>
 
   <script>
-    // ──────────────────────────────────────────────
-    // Utilities
-    // ──────────────────────────────────────────────
-    const $ = id => document.getElementById(id);
-    const setText = (id, val) => { if ($(id)) $(id).textContent = val ?? "—"; };
-    const pretty = obj => JSON.stringify(obj, null, 2);
-    const deepGet = (obj, path, fallback = "—") => {
-      try {
-        return path.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), obj) ?? fallback;
-      } catch { return fallback; }
-    };
+    // --------------- State ---------------
+    let es = null;              // EventSource
+    let ws = null;              // WebSocket
+    let abortController = null; // For POST cancel (if needed)
+    let barChart = null;
+    let doughnutChart = null;
+    let lastPayload = null;
 
-    // ──────────────────────────────────────────────
-    // Charts
-    // ──────────────────────────────────────────────
-    let barChart, doughnutChart;
+    // --------------- Elements ---------------
+    const urlInput = document.getElementById('urlInput');
+    const startBtn = document.getElementById('startBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const liveDot = document.getElementById('liveDot');
+    const liveText = document.getElementById('liveText');
+    const statusLine = document.getElementById('statusLine');
+    const progressPct = document.getElementById('progressPct');
+    const progressBar = document.getElementById('progressBar');
+
+    const overallScoreEl = document.getElementById('overallScore');
+    const gradeEl = document.getElementById('grade');
+    const seoScoreEl = document.getElementById('seoScore');
+    const perfScoreEl = document.getElementById('perfScore');
+    const lcpValueEl = document.getElementById('lcpValue');
+
+    const lnkInternalEl = document.getElementById('lnkInternal');
+    const lnkExternalEl = document.getElementById('lnkExternal');
+    const lnkWarningEl = document.getElementById('lnkWarning');
+    const lnkBrokenEl = document.getElementById('lnkBroken');
+
+    const compScoreEl = document.getElementById('compScore');
+    const compNamesEl = document.getElementById('compNames');
+    const compItemsWrapEl = document.getElementById('compItemsWrap');
+    const compItemsEl = document.getElementById('compItems');
+
+    const dynCardsEl = document.getElementById('dynCards');
+    const kvPerformanceEl = document.getElementById('kvPerformance');
+    const kvSEOEl = document.getElementById('kvSEO');
+    const kvLinksEl = document.getElementById('kvLinks');
+    const kvCompetitorsEl = document.getElementById('kvCompetitors');
+    const pluginsWrapEl = document.getElementById('pluginsWrap');
+
+    const rawJsonEl = document.getElementById('rawJson');
+    const copyJsonBtn = document.getElementById('copyJsonBtn');
+    const downloadJsonBtn = document.getElementById('downloadJsonBtn');
+    const transportSelect = document.getElementById('transportSelect');
+
+    // --------------- Helpers ---------------
+    function setLive(stateText, isActive) {
+      liveText.textContent = stateText;
+      liveDot.style.background = isActive ? '#22c55e' : '#94a3b8';
+    }
+
+    function setProgress(pct, statusText) {
+      const v = Math.max(0, Math.min(100, Math.round(pct || 0)));
+      progressBar.style.width = v + '%';
+      progressPct.textContent = v + '%';
+      if (statusText) statusLine.textContent = 'Status: ' + statusText;
+    }
+
+    function clearResults() {
+      overallScoreEl.textContent = '—';
+      gradeEl.textContent = '—';
+      seoScoreEl.textContent = '—';
+      perfScoreEl.textContent = '—';
+      lcpValueEl.textContent = '—';
+
+      lnkInternalEl.textContent = '0';
+      lnkExternalEl.textContent = '0';
+      lnkWarningEl.textContent = '0';
+      lnkBrokenEl.textContent = '0';
+
+      compScoreEl.textContent = '—';
+      compNamesEl.innerHTML = '';
+      compItemsEl.innerHTML = '';
+      compItemsWrapEl.classList.add('hidden');
+
+      dynCardsEl.innerHTML = '';
+      kvPerformanceEl.innerHTML = '';
+      kvSEOEl.innerHTML = '';
+      kvLinksEl.innerHTML = '';
+      kvCompetitorsEl.innerHTML = '';
+      pluginsWrapEl.innerHTML = '';
+
+      rawJsonEl.textContent = '—';
+
+      destroyCharts();
+    }
+
     function destroyCharts() {
-      [barChart, doughnutChart].forEach(c => c?.destroy());
-      barChart = doughnutChart = null;
+      try { barChart && barChart.destroy(); } catch(e) {}
+      try { doughnutChart && doughnutChart.destroy(); } catch(e) {}
+      barChart = null;
+      doughnutChart = null;
     }
 
-    function renderBarChart(data) {
-      if (!data || !$("barChart")) return;
-      const ctx = $("barChart").getContext("2d");
+    function ensureUrl(u) {
+      if (!u) return '';
+      const s = u.trim();
+      if (!s) return '';
+      return s.startsWith('http') ? s : 'https://' + s;
+    }
+
+    function chip(text) {
+      const span = document.createElement('span');
+      span.className = 'inline-flex items-center gap-2 rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs';
+      span.textContent = text;
+      return span;
+    }
+
+    function kvLi(key, value) {
+      const li = document.createElement('li');
+      const k = document.createElement('span');
+      k.className = 'mono text-slate-500';
+      k.textContent = key + ': ';
+      const v = document.createElement('span');
+      v.className = 'mono font-semibold';
+      v.textContent = (value === null || value === undefined) ? '—' : String(value);
+      li.appendChild(k);
+      li.appendChild(v);
+      return li;
+    }
+
+    function cardEl(title, value, unit) {
+      const div = document.createElement('div');
+      div.className = 'p-3 rounded border border-slate-200 bg-white';
+      const t = document.createElement('div');
+      t.className = 'text-xs text-slate-500';
+      t.textContent = title;
+      const v = document.createElement('div');
+      v.className = 'text-xl font-semibold';
+      v.textContent = value === undefined ? '—' : String(value);
+      div.appendChild(t);
+      div.appendChild(v);
+      if (unit) {
+        const u = document.createElement('div');
+        u.className = 'text-[10px] text-slate-400';
+        u.textContent = unit;
+        div.appendChild(u);
+      }
+      return div;
+    }
+
+    function renderCharts(chartData) {
+      if (!chartData) return;
       destroyCharts();
-      barChart = new Chart(ctx, {
-        type: "bar",
-        data: data,
+      const barCtx = document.getElementById('barChart').getContext('2d');
+      barChart = new Chart(barCtx, {
+        type: 'bar',
+        data: chartData.bar || { labels: [], datasets: [] },
         options: {
           responsive: true,
-          plugins: { legend: { labels: { color: "#e2e8f0" } } },
-          scales: {
-            x: { ticks: { color: "#93c5fd" }, grid: { color: "#1f2937" } },
-            y: { ticks: { color: "#93c5fd" }, grid: { color: "#1f2937" }, beginAtZero: true, max: 100 }
-          }
+          plugins: { legend: { display: true } },
+          scales: { y: { beginAtZero: true, max: 100 } }
         }
+      });
+
+      const doughnutCtx = document.getElementById('doughnutChart').getContext('2d');
+      doughnutChart = new Chart(doughnutCtx, {
+        type: 'doughnut',
+        data: chartData.doughnut || { labels: [], datasets: [] },
+        options: { responsive: true, plugins: { legend: { display: true } } }
       });
     }
 
-    function renderDoughnutChart(data) {
-      if (!data || !$("doughnutChart")) return;
-      const ctx = $("doughnutChart").getContext("2d");
-      destroyCharts();
-      doughnutChart = new Chart(ctx, {
-        type: "doughnut",
-        data: data,
-        options: {
-          responsive: true,
-          plugins: { legend: { position: "top", labels: { color: "#e2e8f0" } } }
-        }
+    function renderFinal(payload) {
+      // Summary
+      overallScoreEl.textContent = payload.overall_score ?? '—';
+      gradeEl.textContent = payload.grade ?? '—';
+
+      const br = payload.breakdown || {};
+      const perf = br.performance || {};
+      const links = br.links || {};
+      const comp = br.competitors || {};
+
+      seoScoreEl.textContent = br.seo ?? '—';
+      perfScoreEl.textContent = perf.score ?? '—';
+      lcpValueEl.textContent = perf.lcp_ms ?? '—';
+
+      lnkInternalEl.textContent = Number(links.internal_links_count || 0);
+      lnkExternalEl.textContent = Number(links.external_links_count || 0);
+      lnkWarningEl.textContent = Number(links.warning_links_count || 0);
+      lnkBrokenEl.textContent = Number(links.broken_internal_links || 0);
+
+      compScoreEl.textContent = comp.top_competitor_score ?? '—';
+      compNamesEl.innerHTML = '';
+      (Array.isArray(comp.names) ? comp.names : []).forEach(n => {
+        const li = document.createElement('li');
+        li.textContent = n;
+        compNamesEl.appendChild(li);
       });
-    }
 
-    // ──────────────────────────────────────────────
-    // Reset UI
-    // ──────────────────────────────────────────────
-    function resetUI() {
-      setText("statusLine", "Status: Idle");
-      $("progressBar").style.width = "0%";
-      setText("overallScore", "—");
-      setText("grade", "—");
-      setText("seoScore", "—");
-      setText("perfScore", "—");
-      setText("linksSummary", "Internal: — | External: — | Warnings: — | Broken: —");
-      setText("perfSummary", "LCP (ms): — | Score: —");
-      $("linksRaw").textContent = "";
-      $("perfExtras").textContent = "";
-      $("competitorList").innerHTML = "";
-      $("competitorItems").textContent = "";
-      $("errorBox").textContent = "";
-      $("errorBox").classList.add("d-none");
-      destroyCharts();
-    }
-
-    // ──────────────────────────────────────────────
-    // WebSocket – FIXED to match main.py /ws
-    // ──────────────────────────────────────────────
-    function makeWsUrl(path) {
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      return `${proto}//${location.host}${path}`;
-    }
-
-    let socket = null;
-
-    $("resetBtn")?.addEventListener("click", () => {
-      if (socket?.readyState === WebSocket.OPEN) socket.close();
-      resetUI();
-    });
-
-    $("runBtn")?.addEventListener("click", () => {
-      const url = $("urlInput")?.value.trim();
-      if (!url) {
-        $("errorBox").textContent = "Please enter a valid URL.";
-        $("errorBox").classList.remove("d-none");
-        return;
-      }
-      runAudit(url);
-    });
-
-    function updateStatus(msg) {
-      if (msg.status) setText("statusLine", `Status: ${msg.status}`);
-      if (typeof msg.crawl_progress === "number") {
-        $("progressBar").style.width = `${Math.min(100, Math.max(0, msg.crawl_progress))}%`;
-      }
-    }
-
-    function renderCompetitors(block) {
-      const ul = $("competitorList");
-      ul.innerHTML = "";
-      const names = Array.isArray(block?.names) ? block.names : [];
-      const items = Array.isArray(block?.items) ? block.items : [];
-      if (items.length > 0) {
-        items.slice(0, 3).forEach(it => {
-          const li = document.createElement("li");
-          li.textContent = `${it.name || "Unknown"} — ${it.score ?? "—"}`;
-          ul.appendChild(li);
-        });
-        $("competitorItems").textContent = pretty(items);
-      } else if (names.length > 0) {
-        names.slice(0, 3).forEach(n => {
-          const li = document.createElement("li");
-          li.textContent = n;
-          ul.appendChild(li);
+      compItemsEl.innerHTML = '';
+      const items = Array.isArray(comp.items) ? comp.items : [];
+      if (items.length) {
+        compItemsWrapEl.classList.remove('hidden');
+        items.forEach(it => {
+          const wrap = document.createElement('div');
+          wrap.className = 'flex items-center justify-between rounded bg-slate-100 px-3 py-2 text-sm';
+          const nm = document.createElement('span'); nm.textContent = it.name ?? '—';
+          const sc = document.createElement('span'); sc.className = 'mono font-semibold'; sc.textContent = (it.score ?? '—');
+          wrap.appendChild(nm); wrap.appendChild(sc);
+          compItemsEl.appendChild(wrap);
         });
       } else {
-        const li = document.createElement("li");
-        li.textContent = "No competitors detected.";
-        ul.appendChild(li);
+        compItemsWrapEl.classList.add('hidden');
+      }
+
+      // Charts
+      renderCharts(payload.chart_data);
+
+      // Dynamic blocks
+      const dynamic = payload.dynamic || {};
+      dynCardsEl.innerHTML = '';
+      (dynamic.cards || []).forEach(c => {
+        dynCardsEl.appendChild(cardEl(c.title ?? '—', c.value, c.unit));
+      });
+
+      kvPerformanceEl.innerHTML = '';
+      (dynamic.kv?.performance || []).forEach(({key, value}) => kvPerformanceEl.appendChild(kvLi(key, value)));
+
+      kvSEOEl.innerHTML = '';
+      (dynamic.kv?.seo || []).forEach(({key, value}) => kvSEOEl.appendChild(kvLi(key, value)));
+
+      kvLinksEl.innerHTML = '';
+      (dynamic.kv?.links || []).forEach(({key, value}) => kvLinksEl.appendChild(kvLi(key, value)));
+
+      kvCompetitorsEl.innerHTML = '';
+      (dynamic.kv?.competitors || []).forEach(({key, value}) => kvCompetitorsEl.appendChild(kvLi(key, value)));
+
+      // Plugins (cards + kv per plugin)
+      pluginsWrapEl.innerHTML = '';
+      const plugins = dynamic.plugins || {};
+      Object.keys(plugins).forEach(name => {
+        const sec = document.createElement('div');
+        sec.className = 'border border-slate-200 rounded p-3 bg-white';
+        const head = document.createElement('div');
+        head.className = 'flex items-center justify-between mb-2';
+        const h = document.createElement('h5');
+        h.className = 'font-semibold text-slate-700';
+        h.textContent = name;
+        const b = document.createElement('span');
+        b.className = 'badge';
+        b.textContent = 'plugin';
+        head.appendChild(h); head.appendChild(b);
+        sec.appendChild(head);
+
+        // cards
+        const cardsWrap = document.createElement('div');
+        cardsWrap.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2';
+        (plugins[name].cards || []).forEach(c => cardsWrap.appendChild(cardEl(c.title ?? '—', c.value, c.unit)));
+        sec.appendChild(cardsWrap);
+
+        // kv
+        const kvList = document.createElement('ul');
+        kvList.className = 'mt-2 space-y-1 text-sm';
+        (plugins[name].kv || []).forEach(({key, value}) => kvList.appendChild(kvLi(key, value)));
+        sec.appendChild(kvList);
+
+        pluginsWrapEl.appendChild(sec);
+      });
+
+      // Raw JSON
+      rawJsonEl.textContent = JSON.stringify(payload, null, 2);
+      lastPayload = payload;
+    }
+
+    function handleStreamMessage(msg) {
+      // Status update
+      if (msg.status) {
+        setProgress(msg.crawl_progress ?? 0, msg.status);
+      }
+      // Final payload
+      if (msg.finished || msg.overall_score !== undefined || msg.grade !== undefined) {
+        setProgress(100, 'Finished');
+        setLive('Completed', false);
+        startBtn.disabled = false;
+        cancelBtn.disabled = true;
+        renderFinal(msg);
+      }
+      // Error
+      if (msg.error) {
+        setLive('Error', false);
+        startBtn.disabled = false;
+        cancelBtn.disabled = true;
+        rawJsonEl.textContent = JSON.stringify(msg, null, 2);
       }
     }
 
-    function renderFinalPayload(msg) {
-      setText("overallScore", msg.overall_score ?? "—");
-      setText("grade", msg.grade ?? "—");
-      setText("seoScore", deepGet(msg, "breakdown.seo") ?? deepGet(msg, "scores.seo") ?? "—");
-      setText("perfScore", deepGet(msg, "breakdown.performance.score") ?? deepGet(msg, "scores.performance") ?? "—");
-
-      // Links
-      const links = deepGet(msg, "breakdown.links", {});
-      const il = parseInt(links.internal_links_count ?? 0, 10);
-      const el = parseInt(links.external_links_count ?? 0, 10);
-      const wl = parseInt(links.warning_links_count ?? 0, 10);
-      const bl = parseInt(links.broken_internal_links ?? 0, 10);
-      setText("linksSummary", `Internal: ${il} | External: ${el} | Warnings: ${wl} | Broken: ${bl}`);
-      $("linksRaw").textContent = pretty(links);
-
-      // Performance
-      setText("perfSummary", `LCP (ms): ${deepGet(msg, "breakdown.performance.lcp_ms", "—")} | Score: ${deepGet(msg, "breakdown.performance.score", "—")}`);
-      $("perfExtras").textContent = pretty(deepGet(msg, "breakdown.performance.extras", {}));
-
-      // Charts
-      const bar = deepGet(msg, "chart_data.bar");
-      const dough = deepGet(msg, "chart_data.doughnut");
-      if (bar) renderBarChart(bar);
-      if (dough) renderDoughnutChart(dough);
-
-      // Competitors
-      const compBlock = deepGet(msg, "breakdown.competitors", { names: [], items: [] });
-      renderCompetitors(compBlock);
+    // --------------- Transports ---------------
+    function startSSE(url) {
+      const target = '/api/audit?url=' + encodeURIComponent(url);
+      es = new EventSource(target);
+      es.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          handleStreamMessage(data);
+        } catch (e) {
+          console.warn('Bad SSE message', e);
+        }
+      };
+      es.onerror = () => {
+        // Fallback to POST if SSE fails early
+        if (progressPct.textContent === '0%') {
+          console.warn('SSE failed. Falling back to POST.');
+          es && es.close();
+          startPOST(url);
+        } else {
+          setLive('SSE Error', false);
+        }
+      };
     }
 
-    function runAudit(url) {
-      resetUI();
-      $("statusLine").textContent = "Status: Connecting…";
-      $("progressBar").style.width = "5%";
-      $("errorBox").classList.add("d-none");
-
-      if (socket?.readyState === WebSocket.OPEN) socket.close();
-
-      socket = new WebSocket(makeWsUrl("/ws"));
-
-      socket.addEventListener("open", () => {
-        $("statusLine").textContent = "Status: Connected. Starting audit…";
-        socket.send(JSON.stringify({ url }));
-      });
-
-      socket.addEventListener("message", ev => {
-        let msg;
-        try { msg = JSON.parse(ev.data); } catch { console.error("Invalid JSON:", ev.data); return; }
-
-        console.log("WS message:", msg); // For debugging
-
-        if (msg.status || typeof msg.crawl_progress === "number") {
-          updateStatus(msg);
-        }
-
-        if (msg.error) {
-          $("errorBox").textContent = msg.error;
-          $("errorBox").classList.remove("d-none");
-        }
-
-        if (msg.finished && !msg.error) {
-          updateStatus({ status: "✅ Completed", crawl_progress: 100 });
-          renderFinalPayload(msg);
-        }
-      });
-
-      socket.addEventListener("close", () => {
-        $("statusLine").textContent += " (connection closed)";
-        console.log("WebSocket closed");
-      });
-
-      socket.addEventListener("error", ev => {
-        console.error("WebSocket error:", ev);
-        $("errorBox").textContent = "Connection failed – check console (F12) or server logs";
-        $("errorBox").classList.remove("d-none");
-      });
+    async function startPOST(url) {
+      try {
+        abortController = new AbortController();
+        setProgress(10, 'Submitting (POST)...');
+        const res = await fetch('/api/audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+          signal: abortController.signal
+        });
+        const data = await res.json();
+        handleStreamMessage(data);
+      } catch (e) {
+        handleStreamMessage({ error: String(e), finished: true });
+      }
     }
+
+    function startWS(url) {
+      ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ url }));
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          handleStreamMessage(data);
+        } catch (e) {}
+      };
+      ws.onerror = () => {
+        setLive('WS Error', false);
+      };
+      ws.onclose = () => {
+        // ignore
+      };
+    }
+
+    function cancelActive() {
+      try { es && es.close(); } catch(e) {}
+      try { ws && ws.close(); } catch(e) {}
+      try { abortController && abortController.abort(); } catch(e) {}
+      es = null; ws = null; abortController = null;
+      setLive('Canceled', false);
+      startBtn.disabled = false;
+      cancelBtn.disabled = true;
+    }
+
+    // --------------- Actions ---------------
+    startBtn.addEventListener('click', () => {
+      const u = ensureUrl(urlInput.value);
+      if (!u) {
+        alert('Enter a valid URL');
+        return;
+      }
+      clearResults();
+      setLive('Running…', true);
+      setProgress(0, 'Queued');
+      startBtn.disabled = true;
+      cancelBtn.disabled = false;
+
+      const mode = transportSelect.value;
+      if (mode === 'post') {
+        startPOST(u);
+      } else if (mode === 'ws') {
+        startWS(u);
+      } else {
+        startSSE(u);
+      }
+    });
+
+    cancelBtn.addEventListener('click', cancelActive);
+
+    copyJsonBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(rawJsonEl.textContent || '');
+        copyJsonBtn.textContent = 'Copied';
+        setTimeout(() => copyJsonBtn.textContent = 'Copy', 1200);
+      } catch (e) {
+        alert('Copy failed');
+      }
+    });
+
+    downloadJsonBtn.addEventListener('click', () => {
+      const blob = new Blob([rawJsonEl.textContent || '{}'], { type: 'application/json' });
+      const a = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = 'audit-result.json';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 0);
+    });
+
+    // Pre-fill sample for convenience (you can remove this)
+    urlInput.value = 'https://www.haier.com.pk';
   </script>
 </body>
 </html>
