@@ -1,123 +1,164 @@
-import os
-from typing import Dict, Any
+# main.py
+import asyncio
+import json
+import logging
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+# Import the flexible runner you updated
 from app.audit.runner import WebsiteAuditRunner
 
-app = FastAPI(title="FF Tech Audit Engine v4.3")
+# -----------------------------------------------------------------------------
+# App Initialization
+# -----------------------------------------------------------------------------
+app = FastAPI(title="Audit Service", version="1.0.0")
 
-# ---------- Robust, file-relative paths (unchanged externally) ----------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")  # <— index.html here
-STATIC_DIR = os.path.join(BASE_DIR, "static")        # <— optional (css/js/img)
+# CORS – liberal defaults; tighten for production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # consider restricting to your frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Only mount /static if folder exists (keeps behavior intact)
-if os.path.isdir(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Logging
+logger = logging.getLogger("audit")
+logging.basicConfig(level=logging.INFO)
 
 
-# ---------- Health / debug (unchanged route and response keys) ----------
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+async def _stream_to_websocket(ws: WebSocket, message: Dict[str, Any]) -> None:
+    """Send JSON-safe message to WebSocket with robust error handling."""
+    try:
+        await ws.send_text(json.dumps(message, ensure_ascii=False, default=str))
+    except Exception as e:
+        # Fail silently to avoid crashing the runner; the WebSocket may have closed
+        logger.warning("WebSocket send failed: %s", e)
+
+
+def _normalize_url(url: Optional[str]) -> str:
+    if not url or not isinstance(url, str):
+        raise HTTPException(status_code=422, detail="`url` is required and must be a string.")
+    return url if url.startswith("http") else f"https://{url}"
+
+
+# -----------------------------------------------------------------------------
+# WebSocket: live streaming endpoint
+# -----------------------------------------------------------------------------
+@app.websocket("/ws/audit")
+async def ws_audit(ws: WebSocket):
+    """
+    WebSocket endpoint that streams progress messages AND the final audit payload.
+    Client must send a JSON message: {"url": "<domain or url>"}
+    """
+    await ws.accept()
+    try:
+        init_msg = await ws.receive_text()
+        try:
+            payload = json.loads(init_msg)
+        except Exception:
+            await _stream_to_websocket(ws, {"error": "Invalid JSON. Send: {\"url\": \"example.com\"}"})
+            await ws.close()
+            return
+
+        url = _normalize_url(payload.get("url"))
+        runner = WebsiteAuditRunner(url)
+
+        # Callback used by the runner to stream incremental updates
+        async def ws_callback(msg: Dict[str, Any]):
+            await _stream_to_websocket(ws, msg)
+
+        await runner.run_audit(ws_callback)
+
+        # Ensure we close gracefully after the run
+        await ws.close(code=1000)
+
+    except WebSocketDisconnect:
+        logger.info("Client disconnected WebSocket.")
+    except Exception as e:
+        logger.exception("WebSocket error: %s", e)
+        try:
+            await _stream_to_websocket(ws, {"error": f"Server error: {str(e)}", "finished": True})
+            await ws.close(code=1011)
+        except Exception:
+            pass
+
+
+# -----------------------------------------------------------------------------
+# HTTP: one-shot audit (final JSON only)
+# -----------------------------------------------------------------------------
+@app.post("/audit")
+async def http_audit(request: Request):
+    """
+    HTTP endpoint that runs the audit and returns ONLY the final payload.
+    Body JSON: {"url": "www.example.com"}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+
+    url = _normalize_url(body.get("url"))
+    runner = WebsiteAuditRunner(url)
+
+    # Capture the final message emitted by the runner
+    final_payload: Dict[str, Any] = {}
+
+    # We still need to supply a callback; for HTTP we ignore progress events
+    async def http_callback(msg: Dict[str, Any]):
+        # Save the last payload containing finished=True or error
+        nonlocal final_payload
+        if msg.get("finished") or msg.get("error"):
+            final_payload = msg
+
+    await runner.run_audit(http_callback)
+
+    if not final_payload:
+        # Safety fallback – this should not happen, but prevents empty responses
+        raise HTTPException(status_code=500, detail="No payload produced by the audit.")
+
+    # In case of error from runner, return 500 with the message
+    if "error" in final_payload:
+        return JSONResponse(status_code=500, content=final_payload)
+
+    return JSONResponse(status_code=200, content=final_payload)
+
+
+# -----------------------------------------------------------------------------
+# Health & Root
+# -----------------------------------------------------------------------------
 @app.get("/health")
-async def health_check():
-    index_path = os.path.join(TEMPLATES_DIR, "index.html")
+async def health():
+    return {"status": "ok"}
+
+@app.get("/")
+async def root():
     return {
-        "status": "online",
-        "engine": "FF Tech v4.3",
-        "templates_root": TEMPLATES_DIR,
-        "index_exists": os.path.isfile(index_path),
-        "static_root": STATIC_DIR,
-        "static_exists": os.path.isdir(STATIC_DIR),
+        "service": "Audit Service",
+        "version": "1.0.0",
+        "endpoints": {
+            "http": "POST /audit  (body: {\"url\": \"www.example.com\"})",
+            "websocket": "WS /ws/audit  (send: {\"url\": \"www.example.com\"})",
+            "health": "GET /health",
+        },
     }
 
 
-# ---------- WebSocket route (kept EXACT path and query contract) ----------
-@app.websocket("/ws/audit-progress")
-async def ws_audit_progress(websocket: WebSocket):
-    await websocket.accept()
-
-    # Extract the URL from query parameters: /ws/audit-progress?url=...
-    url = websocket.query_params.get("url")
-
-    if not url:
-        await _safe_ws_send(websocket, {"error": "No URL provided", "finished": True})
-        await _safe_ws_close(websocket)
-        return
-
-    try:
-        # The callback is unchanged — it forwards each runner message directly
-        async def callback(progress_data: Dict[str, Any]):
-            # NOTE: This preserves your existing streaming protocol and payload shape.
-            await _safe_ws_send(websocket, progress_data)
-
-        # Run the audit (the new runner adapts to future analyzer changes automatically)
-        audit_runner = WebsiteAuditRunner(url)
-        await audit_runner.run_audit(callback)
-
-    except WebSocketDisconnect:
-        # Non-fatal: user closed the socket
-        print(f"ℹ️ User disconnected: {url}")
-
-    except Exception as e:
-        # Preserve your error envelope
-        print(f"❌ Engine Error: {str(e)}")
-        await _safe_ws_send(websocket, {"error": f"Internal Engine Error: {str(e)}", "finished": True})
-
-    finally:
-        await _safe_ws_close(websocket)
-
-
-# ---------- Serve the SPA at "/" (same behavior) ----------
-@app.get("/")
-async def serve_index():
-    index_path = os.path.join(TEMPLATES_DIR, "index.html")
-    if os.path.isfile(index_path):
-        return FileResponse(index_path)
-    raise HTTPException(status_code=404, detail="index.html not found in app/templates")
-
-
-# ---------- SPA fallback for client-side routes (same paths preserved) ----------
-@app.get("/{full_path:path}")
-async def spa_fallback(full_path: str, request: Request):
-    # Keep API/WS/system routes as hard 404s (unchanged logic)
-    if full_path.startswith(("ws/", "api/", "openapi.json", "docs", "redoc", "health", "static/")):
-        raise HTTPException(status_code=404, detail="Not found")
-
-    # Serve a real static asset if requested
-    requested_static = os.path.join(STATIC_DIR, full_path)
-    if os.path.isfile(requested_static):
-        return FileResponse(requested_static)
-
-    # Otherwise return SPA index
-    index_path = os.path.join(TEMPLATES_DIR, "index.html")
-    if os.path.isfile(index_path):
-        return FileResponse(index_path)
-
-    raise HTTPException(status_code=404, detail="index.html not found in app/templates")
-
-
-# ---------- Internal WS helpers (do not change external contract) ----------
-async def _safe_ws_send(websocket: WebSocket, data: Dict[str, Any]):
-    """
-    Sends JSON over WS safely. If the client disconnects mid-send,
-    we swallow the exception to avoid breaking the server loop.
-    """
-    try:
-        await websocket.send_json(data)
-    except RuntimeError:
-        # Socket closed while sending — ignore gracefully
-        pass
-    except Exception as e:
-        # Log but do not alter the outward contract
-        print(f"WS send error: {e}")
-
-async def _safe_ws_close(websocket: WebSocket):
-    """
-    Closes the WS if still open; errors are ignored to keep behavior stable.
-    """
-    try:
-        await websocket.close()
-    except Exception:
-        pass
-``
+# -----------------------------------------------------------------------------
+# Local Dev Entrypoint (optional)
+# -----------------------------------------------------------------------------
+if __name__ == "__main__":
+    # This block is optional; keep if you run `python main.py` in dev.
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True
+    )
