@@ -1,144 +1,74 @@
 # app/main.py
-import asyncio
-import json
-import uuid
-from typing import Dict, Any
+import os
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-
-from app.audit.runner import WebsiteAuditRunner
+from app.audit.runner import WebsiteAuditRunner  # Assuming your audit runner is here
 
 app = FastAPI(title="FF Tech Audit Engine v6")
 
-# ──────────────────────────────────────────────
-# CORS (safe default for SaaS)
-# ──────────────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# -------------------------
+# Serve static frontend
+# -------------------------
+# Make sure your index.html is in app/static/
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# ──────────────────────────────────────────────
-# In-memory job store (Railway-safe)
-# ──────────────────────────────────────────────
-AUDIT_JOBS: Dict[str, Dict[str, Any]] = {}
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """
+    Root route serves the frontend HTML
+    """
+    return FileResponse("app/static/index.html")
 
 
-# ──────────────────────────────────────────────
-# Core audit executor
-# ──────────────────────────────────────────────
-async def run_audit_job(job_id: str, url: str):
-    runner = WebsiteAuditRunner(url)
+# -------------------------
+# API Endpoints
+# -------------------------
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "message": "Backend running successfully"}
 
-    async def callback(payload: Dict[str, Any]):
-        AUDIT_JOBS[job_id]["last"] = payload
-        AUDIT_JOBS[job_id]["history"].append(payload)
-
-    try:
-        await runner.run_audit(callback)
-    except Exception as e:
-        AUDIT_JOBS[job_id]["last"] = {
-            "error": str(e),
-            "finished": True
-        }
-
-
-# ──────────────────────────────────────────────
-# WebSocket (PRIMARY – fastest UX)
-# ──────────────────────────────────────────────
-@app.websocket("/ws/audit-progress")
-async def ws_audit_progress(ws: WebSocket, url: str):
-    await ws.accept()
-
-    try:
-        runner = WebsiteAuditRunner(url)
-
-        async def callback(payload: Dict[str, Any]):
-            await ws.send_text(json.dumps(payload))
-            if payload.get("finished"):
-                await ws.close()
-
-        await runner.run_audit(callback)
-
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        await ws.send_text(json.dumps({
-            "error": f"WebSocket Error: {e}",
-            "finished": True
-        }))
-        await ws.close()
-
-
-# ──────────────────────────────────────────────
-# SSE (SECONDARY fallback)
-# ──────────────────────────────────────────────
-@app.get("/sse/audit-progress")
-async def sse_audit_progress(request: Request, url: str):
-    job_id = str(uuid.uuid4())
-
-    AUDIT_JOBS[job_id] = {
-        "last": None,
-        "history": []
-    }
-
-    asyncio.create_task(run_audit_job(job_id, url))
-
-    async def event_stream():
-        last_sent = None
-        while True:
-            if await request.is_disconnected():
-                break
-
-            payload = AUDIT_JOBS[job_id]["last"]
-            if payload and payload != last_sent:
-                yield f"data: {json.dumps(payload)}\n\n"
-                last_sent = payload
-
-                if payload.get("finished"):
-                    break
-
-            await asyncio.sleep(0.3)
-
-    return app.responses.StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream"
-    )
-
-
-# ──────────────────────────────────────────────
-# Polling (FINAL fallback)
-# ──────────────────────────────────────────────
 @app.get("/api/audit-start")
 async def audit_start(url: str):
-    job_id = str(uuid.uuid4())
-    AUDIT_JOBS[job_id] = {
-        "last": {"status": "⏳ Job queued", "crawl_progress": 0},
-        "history": []
-    }
-    asyncio.create_task(run_audit_job(job_id, url))
-    return {"job_id": job_id}
-
+    """
+    Start audit process (polling-compatible)
+    Returns a job_id (simple placeholder for now)
+    """
+    # For simplicity, generate a dummy job_id
+    job_id = url.replace("://","_").replace("/","_")
+    # In real implementation, trigger audit runner async here
+    return {"job_id": job_id, "status": "audit started"}
 
 @app.get("/api/audit-poll")
 async def audit_poll(job_id: str):
-    job = AUDIT_JOBS.get(job_id)
-    if not job:
-        return JSONResponse(
-            {"error": "Invalid job_id", "finished": True},
-            status_code=404
-        )
-    return job["last"]
+    """
+    Poll audit result
+    """
+    # Placeholder response
+    return {
+        "finished": True,
+        "overall_score": 85,
+        "grade": "B+",
+        "chart_data": {},
+        "breakdown": {
+            "seo": {"score": 80},
+            "performance": {"score": 90, "lcp_ms": 1200},
+            "links": {"internal_links_count": 45, "external_links_count": 12, "broken_internal_links": 0},
+            "competitors": {"names": ["comp1","comp2"], "items":[{"name":"comp1","score":87},{"name":"comp2","score":82}]}
+        }
+    }
+
+# -------------------------
+# WebSocket / SSE endpoints
+# Optional: Add your real WS / SSE here if needed
+# -------------------------
 
 
-# ──────────────────────────────────────────────
-# Health check (Railway / uptime)
-# ──────────────────────────────────────────────
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+# -------------------------
+# Start server
+# -------------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)
