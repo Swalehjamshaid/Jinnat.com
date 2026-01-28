@@ -258,7 +258,7 @@ def _kv_to_cards(kv: List[Tuple[str, Any]], top_n: int = 8) -> List[Dict[str, An
             return "ms"
         if any(t in k for t in ("kb", "kib")):
             return "KB"
-        if any(t in k for t in ("mb", "mib", "megabytes", "page_size")):
+        if any(t in k for t in ("mb", "mib", "megabytes", "page_size", "bytes")):
             return "MB"
         if any(t in k for t in ("cls", "ratio", "score", "grade")):
             return None
@@ -274,6 +274,124 @@ def _kv_to_cards(kv: List[Tuple[str, Any]], top_n: int = 8) -> List[Dict[str, An
     for k, v in ordered[:top_n]:
         cards.append({"title": k, "value": v, "unit": unit_for(k, v)})
     return cards
+
+
+# ============================================================
+# HTML-only analyzers (no extra network)
+# ============================================================
+
+def _analyze_html_only(url: str, html: str, soup: BeautifulSoup) -> Dict[str, Any]:
+    """
+    Compute a rich set of metrics strictly from the HTML document.
+    No external requests are made here.
+    """
+    # Basic sizes
+    html_bytes = len(html.encode("utf-8"))
+    text_content = soup.get_text(separator=" ", strip=True) if soup else ""
+    word_count = len([w for w in text_content.split() if w])
+
+    # Title / Meta
+    title = (soup.title.string or "").strip() if (soup and soup.title and soup.title.string) else ""
+    title_len = len(title)
+    meta_desc_tag = soup.find("meta", attrs={"name": "description"}) if soup else None
+    meta_desc = (meta_desc_tag.get("content") or "").strip() if meta_desc_tag else ""
+    meta_desc_len = len(meta_desc)
+
+    # Canonical / Robots / Language / Hreflang
+    canonical = soup.find("link", rel=lambda v: v and "canonical" in str(v).lower()) if soup else None
+    robots_meta = soup.find("meta", attrs={"name": "robots"}) if soup else None
+    lang_html = soup.html.get("lang") if (soup and soup.html) else None
+    hreflangs = soup.find_all("link", rel=lambda v: v and "alternate" in str(v).lower()) if soup else []
+
+    # Open Graph / Twitter
+    og_tags = soup.find_all("meta", property=lambda v: isinstance(v, str) and v.lower().startswith("og:")) if soup else []
+    tw_tags = soup.find_all("meta", attrs={"name": lambda v: isinstance(v, str) and v.lower().startswith("twitter:")}) if soup else []
+
+    # Headers
+    h1s = soup.find_all("h1") if soup else []
+    h2s = soup.find_all("h2") if soup else []
+
+    # Images
+    imgs = soup.find_all("img") if soup else []
+    img_alt_missing = sum(1 for i in imgs if not i.get("alt"))
+
+    # Scripts & Styles
+    scripts = soup.find_all("script") if soup else []
+    styles = soup.find_all("style") if soup else []
+    links_css = soup.find_all("link", rel=lambda v: v and "stylesheet" in str(v).lower()) if soup else []
+
+    inline_js_bytes = sum(len((s.string or "").encode("utf-8")) for s in scripts if not s.get("src"))
+    inline_css_bytes = sum(len((s.string or "").encode("utf-8")) for s in styles)
+
+    external_js_count = sum(1 for s in scripts if s.get("src"))
+    external_css_count = len(links_css)
+
+    # Links (simple counts, links module still covers canonical counters)
+    a_tags = soup.find_all("a") if soup else []
+    internal_guess = 0
+    external_guess = 0
+    for a in a_tags:
+        href = (a.get("href") or "").strip()
+        if not href or href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
+            continue
+        if href.startswith("/") or url.split("//")[-1].split("/")[0] in href:
+            internal_guess += 1
+        else:
+            external_guess += 1
+
+    # DOM complexity
+    dom_nodes = len(soup.find_all(True)) if soup else 0
+
+    # Simple HTTPS flag
+    uses_https = url.lower().startswith("https://")
+
+    # Compose result
+    return {
+        "html_bytes": html_bytes,
+        "text_word_count": word_count,
+        "dom_nodes": dom_nodes,
+
+        "title": title,
+        "title_length": title_len,
+        "meta_description_length": meta_desc_len,
+        "meta_description_present": bool(meta_desc_len > 0),
+
+        "canonical_present": bool(canonical is not None),
+        "robots_meta": (robots_meta.get("content") or "").lower() if robots_meta else "",
+        "lang": (lang_html or "").lower(),
+        "hreflang_count": len(hreflangs),
+
+        "og_tag_count": len(og_tags),
+        "twitter_tag_count": len(tw_tags),
+
+        "h1_count": len(h1s),
+        "h2_count": len(h2s),
+
+        "image_count": len(imgs),
+        "image_alt_missing": img_alt_missing,
+
+        "script_count": len(scripts),
+        "style_tag_count": len(styles),
+        "external_js_count": external_js_count,
+        "external_css_count": external_css_count,
+
+        "inline_js_bytes": inline_js_bytes,
+        "inline_css_bytes": inline_css_bytes,
+
+        "estimated_internal_links": internal_guess,
+        "estimated_external_links": external_guess,
+
+        "uses_https": uses_https,
+
+        # Size breakdown we can compute strictly from HTML
+        "download_size_breakdown": {
+            "html_bytes": html_bytes,
+            "inline_js_bytes": inline_js_bytes,
+            "inline_css_bytes": inline_css_bytes,
+            # Note: external assets sizes unknown (no extra requests by design)
+            "external_assets_bytes_estimated": 0
+        }
+    }
 
 
 # ============================================================
@@ -318,6 +436,7 @@ class WebsiteAuditRunner:
     - Normalizes outputs to a stable payload for HTML
     - Adds 'dynamic' sections (cards + kv) so HTML can render ANY new data
     - Optionally discovers and runs extra plugins
+    - ✅ Adds HTML-only metrics without changing any input/output contract
     """
     def __init__(self, url: str):
         self.url = url if url.startswith("http") else f"https://{url}"
@@ -342,6 +461,11 @@ class WebsiteAuditRunner:
             lcp_ms = int((time.time() - start) * 1000)
 
             shared_args = {"url": self.url, "html": html, "soup": soup, "lcp_ms": lcp_ms}
+
+            # -------------------------------------------------
+            # HTML-only local insights (new, but used only in extras/dynamic)
+            # -------------------------------------------------
+            html_insights = _analyze_html_only(self.url, html, soup)
 
             # -------------------------------------------------
             # 2) Prepare analyzer callables (with fallbacks)
@@ -422,10 +546,36 @@ class WebsiteAuditRunner:
             await callback({"status": "📊 Normalizing results...", "crawl_progress": 60})
 
             perf_score = _extract_score(perf_raw, default=0, diag=diag)
-            perf_extras = perf_raw if isinstance(perf_raw, dict) else {"raw": perf_raw}
+            # Merge HTML insights into performance extras (without changing required keys)
+            perf_extras = {}
+            if isinstance(perf_raw, dict):
+                perf_extras.update(perf_raw)
+            else:
+                perf_extras["raw"] = perf_raw
+            perf_extras["html_insights"] = html_insights  # << HTML-only metrics
 
             seo_score = _extract_score(seo_raw, default=0, diag=diag)
-            seo_extras = seo_raw if isinstance(seo_raw, dict) else {"raw": seo_raw}
+            # Preserve original raw SEO structure and add signals we computed purely from HTML
+            seo_extras = {}
+            if isinstance(seo_raw, dict):
+                seo_extras.update(seo_raw)
+            else:
+                seo_extras["raw"] = seo_raw
+            seo_extras.setdefault("html_signals", {})
+            seo_extras["html_signals"].update({
+                "title_length": html_insights.get("title_length"),
+                "meta_description_length": html_insights.get("meta_description_length"),
+                "meta_description_present": html_insights.get("meta_description_present"),
+                "h1_count": html_insights.get("h1_count"),
+                "h2_count": html_insights.get("h2_count"),
+                "canonical_present": html_insights.get("canonical_present"),
+                "og_tag_count": html_insights.get("og_tag_count"),
+                "twitter_tag_count": html_insights.get("twitter_tag_count"),
+                "hreflang_count": html_insights.get("hreflang_count"),
+                "lang": html_insights.get("lang"),
+                "image_count": html_insights.get("image_count"),
+                "image_alt_missing": html_insights.get("image_alt_missing"),
+            })
 
             links_data = _normalize_links(links_raw)
 
@@ -508,6 +658,16 @@ class WebsiteAuditRunner:
             dynamic["kv"]["links"] = [{"key": k, "value": v} for k, v in links_kv]
             dynamic["kv"]["competitors"] = [{"key": k, "value": v} for k, v in comp_kv]
 
+            # Cards — surface the most important HTML-only numbers up front
+            dynamic["cards"].extend([
+                {"title": "performance.html_insights.html_bytes", "value": html_insights["html_bytes"], "unit": "MB"},
+                {"title": "performance.html_insights.inline_js_bytes", "value": html_insights["inline_js_bytes"], "unit": "MB"},
+                {"title": "performance.html_insights.inline_css_bytes", "value": html_insights["inline_css_bytes"], "unit": "MB"},
+                {"title": "performance.html_insights.dom_nodes", "value": html_insights["dom_nodes"], "unit": None},
+                {"title": "seo.html_signals.title_length", "value": html_insights["title_length"], "unit": None},
+                {"title": "seo.html_signals.meta_description_length", "value": html_insights["meta_description_length"], "unit": None},
+            ])
+            # existing slices
             dynamic["cards"].extend(_kv_to_cards(perf_kv, top_n=6))
             dynamic["cards"].extend(_kv_to_cards(seo_kv, top_n=4))
             dynamic["cards"].extend(_kv_to_cards(links_kv, top_n=4))
@@ -547,7 +707,7 @@ class WebsiteAuditRunner:
                     "bar": bar_data,
                     "doughnut": doughnut_data
                 },
-                # NEW: generic, forward-compatible blocks for your HTML to render
+                # Generic, forward-compatible blocks for your HTML to render
                 "dynamic": dynamic,
                 "finished": True
             }
