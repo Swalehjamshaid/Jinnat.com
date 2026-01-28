@@ -20,10 +20,10 @@
 body { background: var(--bg); color: var(--text); font-family: "Inter", sans-serif; margin:0; }
 h1,h4,h5,h6 { color: var(--primary); }
 .card { background: var(--card); border-radius: 1rem; border:1px solid var(--border); box-shadow:0 8px 25px rgba(0,0,0,0.5);}
-.kpi { font-weight: 700; font-size: 1.5rem; margin-top: 0.25rem; }
+.kpi { font-weight: 700; font-size: 1.75rem; margin-top: 0.25rem; }
 .kpi-label { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.03em; }
 .badge-grade { font-size:1.2rem; padding:0.45rem 1rem; border-radius:0.75rem;}
-.progress { height:12px; background:#1e293b; border-radius:6px; overflow:hidden; transition: width 1s ease-in-out; }
+.progress { height:12px; background:#1e293b; border-radius:6px; overflow:hidden;}
 .score-ring { width:220px; height:220px; margin:0 auto; position:relative;}
 .score-ring svg { transform: rotate(-90deg); }
 .circle-bg { stroke: rgba(255,255,255,0.15); fill:none; stroke-width:18; }
@@ -83,8 +83,14 @@ pre.code-block { background: rgba(15,23,42,0.7); border:1px solid var(--border);
       <div id="grade" class="badge-grade bg-primary text-white">—</div>
     </section>
 
-    <!-- Collapsible Sections -->
-    <section id="categoriesSection"></section>
+    <!-- KPI Cards -->
+    <section class="row g-4" id="kpiSection"></section>
+
+    <!-- Dynamic Cards -->
+    <section>
+      <h5 class="section-header">Detailed Metrics</h5>
+      <div class="row g-4" id="dynamicCards"></div>
+    </section>
 
     <!-- Charts -->
     <section>
@@ -101,57 +107,25 @@ pre.code-block { background: rgba(15,23,42,0.7); border:1px solid var(--border);
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const create=(tag,className='',html='')=>{const el=document.createElement(tag);if(className)el.className=className;if(html)el.innerHTML=html;return el;};
 const setText=(id,val)=>{$(id)&&( $(id).textContent = val ?? "—");};
 const pretty=obj=>JSON.stringify(obj,null,2);
+
 function toggleJSON(){ $("auditJson").classList.toggle("d-none"); }
+
 function resetUI(){
   setText("statusLine","Status: Idle");
   $("progressBar").style.width="0%";
-  $("categoriesSection")?.replaceChildren();
-  $("chartsSection")?.replaceChildren();
+  $("kpiSection")?.empty();
+  $("dynamicCards")?.empty();
+  $("chartsSection")?.empty();
   $("auditJson").textContent="";
   $("resultsArea").classList.add("d-none");
   $("errorBox").classList.add("d-none");
 }
 
-// Render Category Section
-function renderCategory(title,obj){
-  const section=create("div","mb-4");
-  const collapseId=`collapse-${title.replace(/\s+/g,'')}`;
-  section.innerHTML=`
-    <div class="d-flex justify-content-between align-items-center">
-      <h5 class="section-header toggle-btn mb-2" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">${title}</h5>
-    </div>
-    <div class="collapse show" id="${collapseId}">
-      <div class="row g-3"></div>
-    </div>`;
-  const row=section.querySelector("div.row");
-  Object.entries(obj).forEach(([key,val])=>{
-    const col=create("div","col-md-3");
-    const card=create("div","card p-3 card-glass text-center");
-    const displayVal = (typeof val==='object' && val.score!==undefined)?val.score:val;
-    const tooltip=`<span class="text-muted" data-bs-toggle="tooltip" title='${JSON.stringify(val)}'>ℹ️</span>`;
-    card.innerHTML=`
-      <div class="kpi-label">${key.toUpperCase()} ${tooltip}</div>
-      <div class="kpi">${displayVal ?? '—'}</div>
-      <div class="progress mt-2"><div class="progress-bar" role="progressbar" style="width:0%"></div></div>`;
-    col.appendChild(card);
-    row.append(col);
-  });
-  $("categoriesSection").append(section);
-  // Animate progress bars
-  row.querySelectorAll(".progress-bar").forEach((bar,i)=>{
-    setTimeout(()=>{ bar.style.width = Object.values(obj)[i]; bar.style.transition='width 1.2s ease-in-out'; },100);
-  });
-  // Enable tooltips
-  bootstrap.Tooltip.getOrCreateInstance(section.querySelectorAll('[data-bs-toggle="tooltip"]'));
-}
-
-// Render Chart
 function renderChart(container,title,data,type="bar"){
   const card=create("div","card p-4 mb-4 card-glass");
   card.innerHTML=`<h6 class="text-muted fw-semibold mb-3">${title}</h6>`;
@@ -169,29 +143,47 @@ function renderChart(container,title,data,type="bar"){
   });
 }
 
-// Render All
 function renderAll(msg){
   $("resultsArea").classList.remove("d-none");
+
+  // KPIs
+  const kpiSection=$("kpiSection"); kpiSection.empty();
+  const kpis = msg.breakdown || {};
+  for(const [key,val] of Object.entries(kpis)){
+    const col=create("div","col-md-3");
+    const card=create("div","card p-4 text-center card-glass");
+    const displayVal = (typeof val==='object' && val.score!==undefined)?val.score:val;
+    card.innerHTML=`<div class="kpi-label">${key.toUpperCase()}</div><div class="kpi">${displayVal ?? '—'}</div>`;
+    col.appendChild(card);
+    kpiSection.append(col);
+  }
 
   // Overall Score
   setText("ovScore", msg.overall_score ?? '—');
   setText("grade", msg.grade ?? '—');
   setText("auditUrl", msg.url ?? '—');
+
+  // Score ring
   const score = Number(msg.overall_score) || 0;
   const circle=$("scoreCircle");
   const circumference = 691;
   circle.style.strokeDashoffset = circumference * (1 - score/100);
   circle.style.stroke = score>=85 ? 'var(--success)':score>=70?'var(--warning)':score>=55?'orange':'var(--danger)';
 
-  // Collapsible categories
-  $("categoriesSection").replaceChildren();
-  const breakdown=msg.breakdown||{};
-  ["seo","performance","links","competitors"].forEach(cat=>{
-    if(breakdown[cat]) renderCategory(cat.charAt(0).toUpperCase()+cat.slice(1),breakdown[cat]);
-  });
+  // Dynamic Cards
+  const dyn=$("dynamicCards"); dyn.empty();
+  if(msg.dynamic?.cards){
+    msg.dynamic.cards.forEach(c=>{
+      const col=create("div","col-md-3");
+      const card=create("div","card p-3 text-center card-glass");
+      card.innerHTML=`<div class="text-muted small mb-1">${c.title}</div><div class="kpi">${c.value}${c.unit??''}</div>`;
+      col.appendChild(card);
+      dyn.append(col);
+    });
+  }
 
   // Charts
-  const chartsSection=$("chartsSection"); chartsSection.replaceChildren();
+  const chartsSection=$("chartsSection"); chartsSection.empty();
   if(msg.chart_data) Object.entries(msg.chart_data).forEach(([key,data])=>{
     renderChart(chartsSection,key.charAt(0).toUpperCase()+key.slice(1),data,key==="doughnut"?"doughnut":"bar");
   });
@@ -211,6 +203,7 @@ function runAudit(url){
   resetUI();
   setText("statusLine","Status: Connecting...");
   $("progressBar").style.width="5%";
+
   if(socket?.readyState===WebSocket.OPEN) socket.close();
   socket=new WebSocket(makeWsUrl("/ws"));
   socket.addEventListener("open",()=>{ 
@@ -240,7 +233,6 @@ $("resetBtn").addEventListener("click",()=>{ if(socket?.readyState===WebSocket.O
 const params = new URLSearchParams(window.location.search);
 const auditUrl = params.get('url');
 if(auditUrl){ $("urlInput").value = decodeURIComponent(auditUrl); runAudit(auditUrl); }
-
 </script>
 
 </body>
