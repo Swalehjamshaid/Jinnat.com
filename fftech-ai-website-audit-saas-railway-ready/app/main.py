@@ -4,17 +4,21 @@ import json
 import asyncio
 from pathlib import Path
 from typing import Any, Dict, AsyncGenerator
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, JSONResponse
-
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 from app.audit.runner import WebsiteAuditRunner
 
-
+# -----------------------------------------------------------------------------
+# Paths – updated to point to app/templates/index.html
+# -----------------------------------------------------------------------------
 APP_DIR = Path(__file__).resolve().parent
-STATIC_DIR = APP_DIR / "static"
-INDEX_PATH = STATIC_DIR / "index.html"
+TEMPLATES_DIR = APP_DIR / "templates"
+INDEX_PATH = TEMPLATES_DIR / "index.html"
+
+# Initialize Jinja2 templates
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # -----------------------------------------------------------------------------
 # FastAPI app with permissive CORS (tune for production)
@@ -41,15 +45,12 @@ def _ok_url(url: str | None) -> str:
 async def _runner_to_queue(url: str, queue: asyncio.Queue):
     """Run the audit and push callback messages into an asyncio.Queue."""
     runner = WebsiteAuditRunner(url)
-
     async def cb(msg: Dict[str, Any]):
-        # Ensure serializable dict
         try:
             json.dumps(msg)
             await queue.put(msg)
         except Exception:
             await queue.put({"error": "Non-serializable message encountered", "finished": True})
-
     await runner.run_audit(cb)
 
 async def _sse_stream(queue: asyncio.Queue) -> AsyncGenerator[bytes, None]:
@@ -59,7 +60,6 @@ async def _sse_stream(queue: asyncio.Queue) -> AsyncGenerator[bytes, None]:
     """
     HEARTBEAT_EVERY = 10  # seconds
     last_sent = asyncio.get_event_loop().time()
-
     while True:
         try:
             msg = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_EVERY)
@@ -69,7 +69,6 @@ async def _sse_stream(queue: asyncio.Queue) -> AsyncGenerator[bytes, None]:
             if msg.get("finished") or msg.get("error"):
                 break
         except asyncio.TimeoutError:
-            # Heartbeat
             now = asyncio.get_event_loop().time()
             if now - last_sent >= HEARTBEAT_EVERY:
                 yield b": heartbeat\n\n"
@@ -79,13 +78,26 @@ async def _sse_stream(queue: asyncio.Queue) -> AsyncGenerator[bytes, None]:
 # Routes
 # -----------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-async def index():
+async def index(request: Request):
+    """
+    Serves app/templates/index.html at root URL.
+    Shows friendly error if file is missing.
+    """
     if INDEX_PATH.exists():
-        return FileResponse(INDEX_PATH)
-    # Fallback minimal HTML if file missing
+        return templates.TemplateResponse("index.html", {"request": request})
+    
+    # Fallback if index.html is not found
     return HTMLResponse(
-        "<h3>Index not found. Please place your index.html at app/static/index.html</h3>",
-        status_code=200,
+        content="""
+        <h1 style="color: #ef4444; text-align: center; margin-top: 100px;">
+            Index file not found
+        </h1>
+        <p style="text-align: center; font-family: monospace;">
+            Please make sure index.html exists at:<br>
+            <strong>app/templates/index.html</strong>
+        </p>
+        """,
+        status_code=200
     )
 
 @app.get("/healthz")
@@ -100,7 +112,6 @@ async def audit_sse(url: str | None = None):
     """
     target = _ok_url(url)
     q: asyncio.Queue = asyncio.Queue()
-    # Start runner
     asyncio.create_task(_runner_to_queue(target, q))
     return StreamingResponse(_sse_stream(q), media_type="text/event-stream")
 
@@ -113,7 +124,6 @@ async def audit_once(request: Request):
     """
     body = await request.json()
     target = _ok_url(body.get("url"))
-
     final_payload: Dict[str, Any] = {}
     done = asyncio.Event()
 
@@ -125,11 +135,13 @@ async def audit_once(request: Request):
 
     runner = WebsiteAuditRunner(target)
     task = asyncio.create_task(runner.run_audit(cb))
+
     try:
         await asyncio.wait_for(done.wait(), timeout=float(os.getenv("AUDIT_TIMEOUT", "120")))
     except asyncio.TimeoutError:
         task.cancel()
         raise HTTPException(status_code=504, detail="Audit timed out.")
+
     return JSONResponse(final_payload or {"error": "No payload"})
 
 @app.websocket("/ws")
@@ -149,11 +161,9 @@ async def ws_endpoint(ws: WebSocket):
             await ws.send_text(json.dumps({"error": "Send a JSON like {\"url\": \"https://example.com\"}"}))
             await ws.close()
             return
-
         url = _ok_url(data.get("url"))
         async def cb(msg: Dict[str, Any]):
             await ws.send_text(json.dumps(msg, ensure_ascii=False))
-
         runner = WebsiteAuditRunner(url)
         await runner.run_audit(cb)
         await ws.close()
