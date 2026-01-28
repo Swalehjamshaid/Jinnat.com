@@ -2,6 +2,8 @@
 import os
 import asyncio
 import logging
+from pathlib import Path
+
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,55 +16,56 @@ logger = logging.getLogger("main")
 app = FastAPI(title="FF Tech Website Audit Engine")
 
 # --------------------------------------------------
-# Static Frontend
+# Resolve BASE directory safely (Docker/Railway safe)
 # --------------------------------------------------
-# Folder structure:
-# app/
-# ├─ main.py
-# ├─ static/
-# │   └─ index.html
-# └─ audit/
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+INDEX_FILE = STATIC_DIR / "index.html"
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# --------------------------------------------------
+# Mount static files ONLY if folder exists
+# --------------------------------------------------
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+else:
+    logger.warning("Static directory not found:", STATIC_DIR)
 
-
+# --------------------------------------------------
+# Home Route
+# --------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    """Serve frontend UI"""
-    return FileResponse("app/static/index.html")
-
+    if INDEX_FILE.exists():
+        return FileResponse(INDEX_FILE)
+    return HTMLResponse(
+        content="""
+        <h2>Frontend not found</h2>
+        <p>index.html is missing.</p>
+        <p>Expected path:</p>
+        <pre>app/static/index.html</pre>
+        """,
+        status_code=500
+    )
 
 # --------------------------------------------------
-# Health Check (important for containers)
+# Health Check
 # --------------------------------------------------
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "audit-engine"}
-
+    return {"status": "ok"}
 
 # --------------------------------------------------
-# Run Website Audit (REAL)
+# Run Audit (REAL)
 # --------------------------------------------------
 @app.get("/api/audit")
-async def run_audit(
-    url: str = Query(..., description="Website URL to audit")
-):
-    """
-    Runs the real website audit and returns full result
-    """
+async def run_audit(url: str = Query(...)):
     try:
-        logger.info(f"Starting audit for {url}")
-
         runner = WebsiteAuditRunner(url)
 
-        # If runner is async
         if asyncio.iscoroutinefunction(runner.run):
             result = await runner.run()
         else:
-            # Sync fallback
             result = await asyncio.to_thread(runner.run)
-
-        logger.info("Audit completed")
 
         return JSONResponse(content=result)
 
@@ -73,17 +76,10 @@ async def run_audit(
             content={"error": str(e)}
         )
 
-
 # --------------------------------------------------
-# App Entrypoint
+# Entrypoint
 # --------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=True
-    )
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
