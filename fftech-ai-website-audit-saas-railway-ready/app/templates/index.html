@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FF Tech Audit Engine v4.4 (Auto‑Adaptive)</title>
+  <title>FF Tech Audit Engine v5.0 (Auto‑Adaptive)</title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -70,6 +70,8 @@
     }
     .json-view { font-size: .85rem; color: #d1d5db; }
     details summary { cursor: pointer; }
+    .kv-table td { padding: .2rem .4rem; border-bottom: 1px dashed rgba(255,215,0,.18); }
+    .theme-toggle { cursor:pointer; }
   </style>
 </head>
 <body>
@@ -85,9 +87,12 @@
 
 <div class="container py-5">
   <div class="d-flex flex-wrap align-items-end justify-content-between mb-4">
-    <h1 class="fw-bold text-warning m-0">
-      FF Tech Audit Engine <span class="fw-light fs-4">v4.4</span>
-    </h1>
+    <div class="d-flex align-items-center gap-3">
+      <h1 class="fw-bold text-warning m-0">FF Tech Audit Engine <span class="fw-light fs-4">v5.0</span></h1>
+      <span id="themeToggle" class="theme-toggle text-warning" title="Toggle theme">
+        <i class="bi bi-sun"></i>
+      </span>
+    </div>
     <div class="d-flex gap-2 mt-3 mt-md-0">
       <button id="btnDownload" class="btn btn-outline-warning">
         <i class="bi bi-file-earmark-pdf"></i> Export PDF
@@ -124,7 +129,7 @@
 
           <!-- DYNAMIC METRICS GRID -->
           <div id="metricsGrid" class="row g-3 mb-4 text-center">
-            <!-- Cards auto-injected here based on payload -->
+            <!-- Cards auto-injected here -->
           </div>
 
           <!-- CHARTS (auto) -->
@@ -141,19 +146,20 @@
                 <div class="d-flex justify-content-between mb-1"><span>External Links:</span><span id="extCount">—</span></div>
                 <div class="d-flex justify-content-between mb-1"><span>Warning Links:</span><span id="warnCount">—</span></div>
                 <div class="d-flex justify-content-between"><span>Broken Links:</span><span id="brkCount" class="text-danger">—</span></div>
+                <div id="linksKvWrap" class="mt-3"></div>
               </div>
             </div>
             <div class="col-md-6">
               <div class="p-3 bg-dark rounded border border-secondary small h-100">
                 <h6 class="text-warning mb-3"><i class="bi bi-people"></i> Top Competitors</h6>
+                <div id="compNamesWrap" class="mb-2"></div>
                 <div class="table-responsive">
                   <table class="table table-dark table-sm align-middle mb-0" id="compTable">
-                    <thead>
-                      <tr><th>Name</th><th class="text-end">Score</th></tr>
-                    </thead>
+                    <thead><tr><th>Name</th><th class="text-end">Score</th></tr></thead>
                     <tbody></tbody>
                   </table>
                 </div>
+                <div id="compLegend" class="text-muted small mt-2"></div>
               </div>
             </div>
           </div>
@@ -176,7 +182,7 @@
     <div class="col-lg-4">
       <div class="card-glass h-100">
         <h6 class="text-warning mb-3">Live Audit Log</h6>
-        <div id="auditLog" class="small text-secondary mt-3">> Engine ready. Enter URL and click RUN AUDIT</div>
+        <div id="auditLog" class="small text-secondary mt-3">&gt; Engine ready. Enter URL and click RUN AUDIT</div>
       </div>
     </div>
   </div>
@@ -184,17 +190,34 @@
 
 <script>
 /* ===========================
-   Utilities (schema-less)
+   Utilities (schema-less core)
    =========================== */
 let chartInstances = [];
+let lastPayload = null;
+
 const q = (sel) => document.querySelector(sel);
 const el = (tag, cls, html) => { const x = document.createElement(tag); if (cls) x.className = cls; if (html!=null) x.innerHTML = html; return x; };
 const asInt = (v, d=0) => { const n = Number(v); return Number.isFinite(n) ? Math.round(n) : d; };
-const getFirstScore = (obj) => {
+const clamp = (n, a, b) => Math.min(Math.max(n, a), b);
+const titleize = (s) => (s||'').replaceAll('_',' ').replace(/\b\w/g, m => m.toUpperCase());
+
+function deepMerge(target, source) {
+  if (!source || typeof source !== 'object') return target;
+  Object.keys(source).forEach(k => {
+    const sv = source[k];
+    const tv = target[k];
+    if (Array.isArray(sv)) target[k] = sv.slice();
+    else if (sv && typeof sv === 'object') target[k] = deepMerge(tv && typeof tv==='object' ? tv : {}, sv);
+    else target[k] = sv;
+  });
+  return target;
+}
+
+function getFirstScore(obj) {
   if (obj == null) return null;
   if (typeof obj === 'number') return asInt(obj);
   if (typeof obj === 'object') {
-    for (const k of ['score','value','overall','total']) {
+    for (const k of ['score','value','overall','total','points']) {
       if (obj[k] != null) return asInt(obj[k]);
     }
     if (Array.isArray(obj)) {
@@ -205,7 +228,27 @@ const getFirstScore = (obj) => {
     }
   }
   return null;
-};
+}
+
+function collectNumericMetrics(obj, prefix='', out=[]) {
+  if (!obj || typeof obj !== 'object') return out;
+  if (Array.isArray(obj)) {
+    obj.forEach((it, i) => collectNumericMetrics(it, `${prefix}[${i}]`, out));
+    return out;
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (typeof v === 'number') out.push({label:key, value:v});
+    else if (typeof v === 'object' && v) {
+      const s = getFirstScore(v);
+      if (s != null) out.push({label:key, value:s});
+      // continue exploring to find more numbers
+      collectNumericMetrics(v, key, out);
+    }
+  }
+  return out;
+}
+
 function log(msg, isError=false) {
   const logEl = q("#auditLog");
   const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -214,11 +257,11 @@ function log(msg, isError=false) {
   logEl.appendChild(entry);
   logEl.scrollTop = logEl.scrollHeight;
 }
+
 /* JSON Viewer */
 function renderJSON(target, obj) {
-  try {
-    target.textContent = JSON.stringify(obj, null, 2);
-  } catch { target.textContent = String(obj); }
+  try { target.textContent = JSON.stringify(obj, null, 2); }
+  catch { target.textContent = String(obj); }
 }
 
 /* Destroy charts safely */
@@ -227,9 +270,21 @@ function clearCharts() {
   chartInstances = [];
 }
 
-/* Heuristic chart type by key/name */
-function guessChartType(key) {
+/* Color helpers */
+const palette = [
+  "rgba(255, 215, 0, 0.8)", "rgba(59, 130, 246, 0.8)", "rgba(16, 185, 129, 0.8)",
+  "rgba(147, 51, 234, 0.8)", "rgba(244, 63, 94, 0.8)", "rgba(234, 179, 8, 0.8)"
+];
+const paletteBorder = [
+  "rgba(255, 215, 0, 1)", "rgba(59, 130, 246, 1)", "rgba(16, 185, 129, 1)",
+  "rgba(147, 51, 234, 1)", "rgba(244, 63, 94, 1)", "rgba(234, 179, 8, 1)"
+];
+function colorAt(i){ return {bg: palette[i % palette.length], bd: paletteBorder[i % paletteBorder.length]}; }
+
+/* Guess chart type by key/name */
+function guessChartType(key, dataObj) {
   const k = (key||'').toLowerCase();
+  if (dataObj && typeof dataObj.type === 'string') return dataObj.type;
   if (k.includes('doughnut')) return 'doughnut';
   if (k.includes('radar')) return 'radar';
   if (k.includes('line')) return 'line';
@@ -241,25 +296,41 @@ function guessChartType(key) {
 /* ===========================
    Renderers
    =========================== */
-function renderCompetitors(section, competitors) {
-  // Badges (names)
+function renderCompetitors(competitors) {
   const badgeWrap = q('#competitorBadges');
   badgeWrap.innerHTML = '';
-  (competitors?.names ?? []).forEach(n => {
+
+  // Names badge row (primary)
+  const names = Array.isArray(competitors?.names) ? competitors.names : [];
+  names.forEach(n => {
     const b = el('span', 'badge badge-soft me-1 mb-1', `<i class="bi bi-trophy me-1"></i>${n}`);
     b.style.padding = '0.45rem 0.6rem';
     badgeWrap.appendChild(b);
   });
 
-  // Table (items)
+  // Names wrap above table for any string array fallback
+  const compNamesWrap = q('#compNamesWrap');
+  compNamesWrap.innerHTML = '';
+  if (names.length) compNamesWrap.appendChild(el('div','small text-muted', 'Detected Competitors: ' + names.join(', ')));
+
+  // Table (items with scores) + fallbacks
   const tbody = q('#compTable tbody');
   tbody.innerHTML = '';
-  const items = competitors?.items ?? [];
-  if (Array.isArray(items) && items.length) {
-    items.slice(0, 3).forEach(it => {
+  const items = Array.isArray(competitors?.items) ? competitors.items : [];
+  if (items.length) {
+    items.slice(0, 6).forEach((it, i) => {
       const tr = el('tr');
-      tr.appendChild(el('td', null, String(it.name ?? '—')));
-      tr.appendChild(el('td', 'text-end', String(getFirstScore(it) ?? '—')));
+      tr.appendChild(el('td', null, String(it.name ?? `Item ${i+1}`)));
+      const score = getFirstScore(it);
+      tr.appendChild(el('td', 'text-end', score != null ? String(score) : '—'));
+      tbody.appendChild(tr);
+    });
+  } else if (Array.isArray(competitors)) {
+    // pure array fallback e.g., ["LG","Samsung",...]
+    competitors.slice(0, 6).forEach((v, i) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', null, typeof v === 'string' ? v : `Item ${i+1}`));
+      tr.appendChild(el('td', 'text-end', typeof v === 'number' ? String(v) : '—'));
       tbody.appendChild(tr);
     });
   } else {
@@ -268,45 +339,47 @@ function renderCompetitors(section, competitors) {
     tr.appendChild(el('td', 'text-end text-muted', '—'));
     tbody.appendChild(tr);
   }
+
+  // Legend/footer showing legacy score if present
+  const legacy = competitors?.top_competitor_score ?? null;
+  q('#compLegend').textContent = (legacy != null) ? `Legacy top competitor score: ${legacy}` : '';
 }
 
 function renderMetricsGrid(breakdown) {
-  // Build metric cards from any numeric values we can find
   const grid = q('#metricsGrid');
   grid.innerHTML = '';
-
-  const flatMetrics = []; // {label, value}
-  const pushMetric = (label, value) => {
-    if (value == null) return;
-    const n = Number(value);
-    if (Number.isFinite(n)) flatMetrics.push({label, value: Math.round(n)});
-  };
-
-  // Pass 1: direct numeric fields
-  Object.entries(breakdown || {}).forEach(([k, v]) => {
-    if (typeof v === 'number') pushMetric(k, v);
-    else if (typeof v === 'object' && v != null) {
-      const s = getFirstScore(v);
-      if (s != null) pushMetric(k, s);
-      // Performance: also show lcp_ms if present
-      if (k.toLowerCase() === 'performance' && v.lcp_ms != null) pushMetric('lcp_ms', v.lcp_ms);
-    }
-  });
-
-  // Deduplicate by label
+  const metrics = collectNumericMetrics(breakdown || {});
+  // Prefer human-friendly top-level keys
+  // rank by occurrence & recentness, then limit
   const seen = new Set();
-  const unique = flatMetrics.filter(m => (seen.has(m.label) ? false : seen.add(m.label)));
+  const unique = metrics.filter(m => (seen.has(m.label) ? false : seen.add(m.label)));
+  const top = unique
+    .filter(m => !/extras|items|names|links|chart|json|payload/i.test(m.label))
+    .slice(0, 12); // show up to 12 metric cards
 
-  // Render at least 4 cards with placeholders if needed
-  const toRender = unique.length ? unique : [{label:'seo',value:0},{label:'performance',value:0},{label:'competitors',value:0},{label:'ai',value:95}];
-  toRender.slice(0, 8).forEach(m => {
-    const col = el('div', 'col-6 col-md-3');
-    const box = el('div', 'metric-box');
-    box.appendChild(el('div', 'metric-label', m.label.replaceAll('_',' ').toUpperCase()));
-    box.appendChild(el('div', 'metric-value', String(m.value)));
-    col.appendChild(box);
-    grid.appendChild(col);
+  (top.length ? top : [{label:'SEO',value:0},{label:'Performance',value:0},{label:'Competitors',value:0},{label:'AI',value:95}])
+    .forEach(m => {
+      const col = el('div', 'col-6 col-md-3');
+      const box = el('div', 'metric-box');
+      box.appendChild(el('div', 'metric-label', titleize(m.label.split('.').pop())));
+      box.appendChild(el('div', 'metric-value', String(asInt(m.value))));
+      col.appendChild(box);
+      grid.appendChild(col);
+    });
+}
+
+function kvTable(obj) {
+  const tbl = el('table', 'table table-dark table-sm kv-table mb-0');
+  const tb = el('tbody');
+  Object.entries(obj || {}).forEach(([k,v]) => {
+    if (['internal_links_count','external_links_count','warning_links_count','broken_internal_links'].includes(k)) return;
+    const tr = el('tr');
+    tr.appendChild(el('td', 'text-muted', titleize(k)));
+    tr.appendChild(el('td', 'text-end', typeof v === 'object' ? `<code>${JSON.stringify(v)}</code>` : String(v)));
+    tb.appendChild(tr);
   });
+  tbl.appendChild(tb);
+  return tbl;
 }
 
 function renderLinks(links) {
@@ -314,39 +387,53 @@ function renderLinks(links) {
   q('#extCount').textContent  = links?.external_links_count ?? '0';
   q('#warnCount').textContent = links?.warning_links_count ?? '0';
   q('#brkCount').textContent  = links?.broken_internal_links ?? '0';
+
+  const wrap = q('#linksKvWrap');
+  wrap.innerHTML = '';
+  const others = Object.assign({}, links);
+  delete others.internal_links_count; delete others.external_links_count;
+  delete others.warning_links_count; delete others.broken_internal_links;
+  if (Object.keys(others).length) wrap.appendChild(kvTable(others));
 }
 
-function renderAutoSections(payload) {
-  const host = q('#autoSections');
-  host.innerHTML = '';
-  const breakdown = payload?.breakdown || {};
+function normalizeToChartData(key, src) {
+  // Already Chart.js shape?
+  if (src && typeof src === 'object' && Array.isArray(src.datasets)) return src;
 
-  // Render any objects (except links/performance/competitors already handled) as expandable sections
-  Object.entries(breakdown).forEach(([key, val]) => {
-    if (['links','performance','competitors'].includes(key)) return;
-    if (val && typeof val === 'object') {
-      const card = el('div', 'card-glass mb-3');
-      card.appendChild(el('h6', 'text-warning', key.toUpperCase()));
-      const pre = el('pre', 'json-view bg-dark p-3 rounded border border-secondary', '');
-      pre.style.maxHeight = '280px';
-      pre.style.overflow = 'auto';
-      renderJSON(pre, val);
-      card.appendChild(pre);
-      host.appendChild(card);
-    }
-  });
-
-  // Global extras if any
-  if (payload?.extras) {
-    const card = el('div', 'card-glass mb-3');
-    card.appendChild(el('h6', 'text-warning', 'EXTRAS'));
-    const pre = el('pre', 'json-view bg-dark p-3 rounded border border-secondary', '');
-    pre.style.maxHeight = '280px';
-    pre.style.overflow = 'auto';
-    renderJSON(pre, payload.extras);
-    card.appendChild(pre);
-    host.appendChild(card);
+  // Object map => pie-like
+  if (src && typeof src === 'object' && !Array.isArray(src)) {
+    const labels = Object.keys(src);
+    const data = labels.map(k => asInt(src[k], 0));
+    const colors = labels.map((_,i)=>colorAt(i));
+    return {
+      labels,
+      datasets: [{ label: titleize(key), data, backgroundColor: colors.map(c=>c.bg), borderColor: colors.map(c=>c.bd), borderWidth:1 }]
+    };
   }
+
+  // Array of numbers => index labels
+  if (Array.isArray(src) && src.every(x => typeof x === 'number')) {
+    const labels = src.map((_,i)=> String(i+1));
+    const colors = labels.map((_,i)=>colorAt(i));
+    return {
+      labels,
+      datasets: [{ label: titleize(key), data: src, backgroundColor: colors.map(c=>c.bg), borderColor: colors.map(c=>c.bd), borderWidth:1 }]
+    };
+  }
+
+  // Array of objects with {label, value}
+  if (Array.isArray(src) && src.every(x => typeof x === 'object')) {
+    const labels = src.map(x => String(x.label ?? x.name ?? 'Item'));
+    const data   = src.map(x => asInt(x.value ?? getFirstScore(x) ?? 0));
+    const colors = labels.map((_,i)=>colorAt(i));
+    return {
+      labels,
+      datasets: [{ label: titleize(key), data, backgroundColor: colors.map(c=>c.bg), borderColor: colors.map(c=>c.bd), borderWidth:1 }]
+    };
+  }
+
+  // Fallback
+  return null;
 }
 
 function renderCharts(chart_data) {
@@ -356,31 +443,31 @@ function renderCharts(chart_data) {
 
   if (!chart_data || typeof chart_data !== 'object') return;
 
-  Object.entries(chart_data).forEach(([key, dataObj]) => {
-    // Must have datasets to render
-    if (!dataObj || typeof dataObj !== 'object' || !Array.isArray(dataObj.datasets)) return;
+  Object.entries(chart_data).forEach(([key, dataObj], idx) => {
+    const normalized = normalizeToChartData(key, dataObj) || dataObj;
+    if (!normalized || typeof normalized !== 'object' || !Array.isArray(normalized.datasets)) return;
+
     const col = el('div', 'col-md-6');
     const card = el('div', 'chart-card');
-    const title = el('div', 'text-warning small mb-2', `<i class="bi bi-graph-up"></i> ${key}`);
+    const title = el('div', 'text-warning small mb-2', `<i class="bi bi-graph-up"></i> ${titleize(key)}`);
     const canvas = el('canvas');
     card.appendChild(title);
     card.appendChild(canvas);
     col.appendChild(card);
     wrap.appendChild(col);
 
-    const type = dataObj.type || guessChartType(key);
+    const type = guessChartType(key, dataObj);
     try {
       const inst = new Chart(canvas.getContext('2d'), {
         type,
-        data: dataObj,
+        data: normalized,
         options: Object.assign(
           { responsive:true, plugins:{legend:{display:true}}, scales: {} },
-          (type === 'bar' || type === 'line') ? { scales:{ y:{ beginAtZero:true, suggestedMax:100 } } } : {}
+          (type === 'bar' || type === 'line') ? { scales:{ y:{ beginAtZero:true } } } : {}
         )
       });
       chartInstances.push(inst);
     } catch (e) {
-      // If rendering fails, show raw chart data
       const err = el('div','text-danger small mt-2','Chart render failed, showing raw data');
       card.appendChild(err);
       const pre = el('pre','json-view bg-dark p-2 rounded border border-secondary mt-2');
@@ -390,21 +477,50 @@ function renderCharts(chart_data) {
   });
 }
 
+function renderAutoSections(payload) {
+  const host = q('#autoSections');
+  host.innerHTML = '';
+  const breakdown = payload?.breakdown || {};
+
+  Object.entries(breakdown).forEach(([key, val]) => {
+    if (['links','performance','competitors'].includes(key)) return;
+    if (val && typeof val === 'object') {
+      const card = el('div', 'card-glass mb-3');
+      card.appendChild(el('h6', 'text-warning', titleize(key)));
+      const pre = el('pre', 'json-view bg-dark p-3 rounded border border-secondary', '');
+      pre.style.maxHeight = '280px';
+      pre.style.overflow = 'auto';
+      renderJSON(pre, val);
+      card.appendChild(pre);
+      host.appendChild(card);
+    }
+  });
+
+  if (payload?.extras) {
+    const card = el('div', 'card-glass mb-3');
+    card.appendChild(el('h6', 'text-warning', 'Extras'));
+    const pre = el('pre', 'json-view bg-dark p-3 rounded border border-secondary', '');
+    pre.style.maxHeight = '280px';
+    pre.style.overflow = 'auto';
+    renderJSON(pre, payload.extras);
+    card.appendChild(pre);
+    host.appendChild(card);
+  }
+}
+
 function renderPayload(r) {
   // Header
-  q('#ovScore').textContent     = r.overall_score ?? '—';
+  q('#ovScore').textContent      = r.overall_score ?? '—';
   q('#gradeDisplay').textContent = `GRADE: ${r.grade ?? '—'}`;
 
-  // Metrics grid from breakdown (adaptive)
-  renderMetricsGrid(r.breakdown);
+  // Breakdown
+  const breakdown = r.breakdown || {};
 
-  // Competitors
-  renderCompetitors('competitors', r.breakdown?.competitors);
+  renderMetricsGrid(breakdown);
+  renderCompetitors(breakdown?.competitors || {});
+  renderLinks(breakdown?.links || {});
 
-  // Links
-  renderLinks(r.breakdown?.links || {});
-
-  // Charts (auto)
+  // Charts
   renderCharts(r.chart_data);
 
   // Raw JSON
@@ -412,78 +528,130 @@ function renderPayload(r) {
 }
 
 /* ===========================
-   WS + Controls
+   WS + Controls + Fallbacks
    =========================== */
 const statusEl   = q("#statusLabel");
 const loadingBar = q("#loadingBar");
 const overlay    = q("#loadingOverlay");
 const results    = q("#resultsPanel");
 
-q("#btnRun").onclick = () => {
-  let url = q("#urlInput").value.trim();
-  if (!url) return alert("Please enter a URL");
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-
+async function startOver(url) {
   overlay.classList.add("show");
   results.classList.add("d-none");
-  q("#auditLog").innerHTML = "> Starting new audit sequence...";
+  q("#auditLog").innerHTML = "&gt; Starting new audit sequence...";
   statusEl.textContent = "Connecting to FF Engine...";
   loadingBar.style.width = "5%";
 
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
+  let ws;
 
-  ws.onopen = () => { log("Connection established"); statusEl.textContent = "Engine initialized..."; };
+  try {
+    ws = new WebSocket(`${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
+  } catch {
+    log("WebSocket not supported, consider HTTP fallback.", true);
+  }
 
-  ws.onmessage = (e) => {
-    try {
-      const r = JSON.parse(e.data);
+  if (ws) {
+    ws.onopen = () => { log("Connection established"); statusEl.textContent = "Engine initialized..."; };
+    ws.onmessage = (e) => onMessage(e.data);
+    ws.onerror = () => onWsError(url);
+    ws.onclose = () => {};
+  } else {
+    onWsError(url);
+  }
+}
 
-      if (r.status) { statusEl.textContent = r.status; log(r.status); }
-      if (r.crawl_progress != null) loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
-      if (r.error) log(r.error, true);
+function onWsError(url) {
+  log("WS connection failed. You can wire an HTTP fallback here.", true);
+  overlay.classList.remove("show");
+  alert("Audit Engine Connection Failed. Ensure backend is running.");
+  // OPTIONAL: implement fetch-based start + poll here if you expose REST endpoints.
+  // Example:
+  // fetch(`/api/run-audit?url=${encodeURIComponent(url)}`).then(r=>r.json()).then(({job_id}) => poll(job_id));
+}
 
-      // If backend decides to stream partial chunks (forward-compatible)
-      if (r.partial) {
-        // Optionally show partial numbers in metrics area without breaking final render
-        log("Partial update received.");
-      }
+function onMessage(raw) {
+  try {
+    const r = JSON.parse(raw);
 
-      if (r.finished) {
-        overlay.classList.remove("show");
-        results.classList.remove("d-none");
-        renderPayload(r);
-        log("Audit complete. Data synchronized.");
-        try { ws.close(); } catch {}
-      }
-    } catch(err) { log("Data handling error: " + err.message, true); }
-  };
+    if (r.status) { statusEl.textContent = r.status; log(r.status); }
+    if (r.crawl_progress != null) loadingBar.style.width = clamp(r.crawl_progress, 0, 100) + "%";
+    if (r.error) log(r.error, true);
 
-  ws.onerror = () => {
-    log("Connection failure", true);
-    overlay.classList.remove("show");
-    alert("Audit Engine Connection Failed. Ensure backend is running.");
-  };
+    // Handle partial progressive updates (deep merge)
+    if (r.partial) {
+      lastPayload = deepMerge(lastPayload || {}, r);
+      results.classList.remove("d-none");
+      renderPayload(lastPayload);
+      return;
+    }
+
+    if (r.finished) {
+      overlay.classList.remove("show");
+      results.classList.remove("d-none");
+      lastPayload = r; // keep the final one
+      renderPayload(r);
+      log("Audit complete. Data synchronized.");
+    }
+  } catch(err) { log("Data handling error: " + err.message, true); }
+}
+
+/* Controls */
+q("#btnRun").onclick = () => {
+  let url = q("#urlInput").value.trim();
+  if (!url) return alert("Please enter a URL");
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  localStorage.setItem('ff_audit_last_url', url);
+  startOver(url);
 };
 
 q("#btnReset").onclick = () => {
   results.classList.add("d-none");
   q("#urlInput").value = "";
-  q("#auditLog").innerHTML = "> Results cleared. Ready.";
+  q("#auditLog").innerHTML = "&gt; Results cleared. Ready.";
   q("#urlInput").focus();
   clearCharts();
+  lastPayload = null;
 };
 
 q("#btnDownload").onclick = async () => {
   try {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    const canvas = await html2canvas(document.getElementById("printableArea"), {scale: 2});
+    const doc = new jsPDF('p', 'pt', 'a4');
+    const node = document.getElementById("printableArea");
+    const canvas = await html2canvas(node, {scale: 2});
     const imgData = canvas.toDataURL("image/png");
-    const pdfWidth = doc.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-    doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    doc.save(`audit-report-${new Date().getTime()}.pdf`);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const ratio = canvas.width / canvas.height;
+    const imgWidth = pageWidth;
+    const imgHeight = imgWidth / ratio;
+
+    let y = 0;
+    if (imgHeight <= pageHeight) {
+      doc.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+    } else {
+      // paginate tall content
+      let remaining = imgHeight;
+      let position = 0;
+      const canvasPage = document.createElement('canvas');
+      const ctx = canvasPage.getContext('2d');
+      const pageCanvasHeight = Math.floor(canvas.width * (pageHeight / pageWidth));
+      canvasPage.width = canvas.width;
+      canvasPage.height = pageCanvasHeight;
+
+      while (remaining > 0) {
+        ctx.clearRect(0, 0, canvasPage.width, canvasPage.height);
+        ctx.drawImage(canvas, 0, position, canvas.width, pageCanvasHeight, 0, 0, canvasPage.width, canvasPage.height);
+        const pageData = canvasPage.toDataURL('image/png');
+        doc.addImage(pageData, 'PNG', 0, 0, pageWidth, pageHeight);
+        remaining -= pageHeight;
+        position += pageCanvasHeight;
+        if (remaining > 0) doc.addPage();
+      }
+    }
+
+    doc.save(`audit-report-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`);
     log("Report exported to PDF.");
   } catch(err) { log("PDF error: " + err.message, true); }
 };
@@ -497,6 +665,30 @@ q("#btnCopyJSON").onclick = async () => {
     log("Clipboard error: " + e.message, true);
   }
 };
+
+/* Theme toggle */
+q('#themeToggle').onclick = () => {
+  const html = document.documentElement;
+  const cur = html.getAttribute('data-bs-theme') || 'dark';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-bs-theme', next);
+  localStorage.setItem('ff_theme', next);
+};
+
+/* Boot: restore URL/theme and autorun via ?url= */
+(function boot(){
+  const savedUrl = localStorage.getItem('ff_audit_last_url');
+  if (savedUrl) q('#urlInput').value = savedUrl;
+  const savedTheme = localStorage.getItem('ff_theme');
+  if (savedTheme) document.documentElement.setAttribute('data-bs-theme', savedTheme);
+
+  const params = new URLSearchParams(location.search);
+  const url = params.get('url');
+  if (url) {
+    q('#urlInput').value = url;
+    startOver(/^https?:\/\//i.test(url) ? url : ('https://' + url));
+  }
+})();
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
