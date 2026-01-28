@@ -25,19 +25,71 @@
       min-height: 100vh;
       font-family: system-ui, sans-serif;
     }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-    .kpi { font-weight: 800; font-size: 2.8rem; color: var(--primary); line-height: 1; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .kpi {
+      font-weight: 800;
+      font-size: 2.8rem;
+      color: var(--primary);
+      line-height: 1;
+    }
     .muted { color: var(--muted); }
-    .progress { height: 12px; background: #1e293b; border-radius: 6px; overflow: hidden; }
-    .badge-grade { font-size: 1.6rem; padding: 0.6rem 1.4rem; }
-    pre.code-block { background: #0f172a; border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; font-size: 0.9rem; max-height: 300px; overflow: auto; }
-    .error-box { background: rgba(239,68,68,0.15); border: 1px solid var(--danger); color: #fecaca; padding: 1.25rem; border-radius: 0.5rem; margin: 1.5rem 0; }
+    .progress {
+      height: 12px;
+      background: #1e293b;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .badge-grade {
+      font-size: 1.6rem;
+      padding: 0.6rem 1.4rem;
+    }
+    pre.code-block {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      font-size: 0.9rem;
+      max-height: 300px;
+      overflow: auto;
+    }
+    .error-box {
+      background: rgba(239,68,68,0.15);
+      border: 1px solid var(--danger);
+      color: #fecaca;
+      padding: 1.25rem;
+      border-radius: 0.5rem;
+      margin: 1.5rem 0;
+    }
     canvas { max-height: 280px; margin: 0 auto; display: block; }
-    .dynamic-card { background: #1e293b; border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; text-align: center; }
-    .dynamic-card .title { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.5rem; }
-    .dynamic-card .value { font-size: 1.8rem; font-weight: bold; color: var(--primary); }
-    .section-header { color: var(--primary); margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
-    #debugPanel { background: #0f172a; border: 1px solid #ef4444; color: #fecaca; padding: 1rem; border-radius: 0.5rem; max-height: 300px; overflow: auto; font-family: monospace; font-size: 0.85rem; }
+    .dynamic-card {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    .dynamic-card .title {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    .dynamic-card .value {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: var(--primary);
+    }
+    .section-header {
+      color: var(--primary);
+      margin: 2rem 0 1rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -69,13 +121,13 @@
     <!-- Error Display -->
     <div id="errorBox" class="error-box d-none"></div>
 
-    <!-- Debug Panel (shows live WS messages) -->
+    <!-- Debug Panel -->
     <div id="debugPanel" class="mb-4 d-none">
-      <strong>Debug Log (open browser console F12 for more):</strong><br>
-      <div id="debugLog"></div>
+      <strong>Debug Log (F12 Console for more):</strong><br>
+      <div id="debugLog" class="code-block"></div>
     </div>
 
-    <!-- Main Results Area -->
+    <!-- Results Area -->
     <div id="resultsArea" class="d-none">
       <!-- KPIs -->
       <section class="row g-4 mb-5" id="kpiSection"></section>
@@ -83,7 +135,7 @@
       <!-- Charts -->
       <section class="row g-4 mb-5" id="chartsSection"></section>
 
-      <!-- Breakdown & Dynamic Content -->
+      <!-- Breakdown & Dynamic -->
       <section id="breakdownSection"></section>
     </div>
 
@@ -115,7 +167,7 @@
       console.log(msg);
       const log = $("#debugLog");
       if (log) {
-        log.textContent += msg + "\n";
+        log.innerHTML += msg + '<br>';
         log.scrollTop = log.scrollHeight;
       }
     }
@@ -151,14 +203,14 @@
     function resetUI() {
       setText("statusLine", "Status: Idle");
       $("progressBar").style.width = "0%";
-      $("#kpiSection").empty();
-      $("#chartsSection").empty();
-      $("#breakdownSection").empty();
+      $("#kpiSection").innerHTML = "";
+      $("#chartsSection").innerHTML = "";
+      $("#breakdownSection").innerHTML = "";
       $("resultsArea").classList.add("d-none");
       $("errorBox").textContent = "";
       $("errorBox").classList.add("d-none");
       $("#debugPanel").classList.add("d-none");
-      $("#debugLog").textContent = "";
+      $("#debugLog").innerHTML = "";
     }
 
     // ──────────────────────────────────────────────
@@ -169,12 +221,12 @@
 
       // 1. KPIs – auto-detect
       const kpiSection = $("#kpiSection");
-      kpiSection.empty();
+      kpiSection.innerHTML = "";
       const possibleKpis = [
         { label: "Overall Score", path: "overall_score" },
         { label: "Grade", path: "grade", badge: true },
-        { label: "SEO Score", path: "scores.seo" },
-        { label: "Speed Score", path: "scores.performance" },
+        { label: "SEO Score", path: "breakdown.seo" },
+        { label: "Speed Score", path: "breakdown.performance.score" },
         { label: "Competitor Score", path: "breakdown.competitors.top_competitor_score" }
       ];
 
@@ -191,27 +243,27 @@
             }
           `;
           col.appendChild(card);
-          kpiSection.append(col);
+          kpiSection.appendChild(col);
         }
       });
 
-      // 2. Charts
+      // 2. Charts – any chart_data entry
       const chartsSection = $("#chartsSection");
-      chartsSection.empty();
+      chartsSection.innerHTML = "";
       if (msg.chart_data) {
         Object.entries(msg.chart_data).forEach(([key, data]) => {
           renderChart(chartsSection, key.charAt(0).toUpperCase() + key.slice(1), data);
         });
       }
 
-      // 3. Breakdown
+      // 3. Breakdown – recursive
       const breakdownSection = $("#breakdownSection");
-      breakdownSection.empty();
+      breakdownSection.innerHTML = "";
 
       if (msg.breakdown) {
         const h2 = create("h4", "section-header");
         h2.textContent = "Detailed Breakdown";
-        breakdownSection.append(h2);
+        breakdownSection.appendChild(h2);
 
         Object.entries(msg.breakdown).forEach(([sectionName, data]) => {
           const section = create("div", "card p-4 mb-4");
@@ -219,15 +271,15 @@
           const pre = create("pre", "code-block");
           pre.textContent = pretty(data);
           section.appendChild(pre);
-          breakdownSection.append(section);
+          breakdownSection.appendChild(section);
         });
       }
 
-      // 4. Dynamic
+      // 4. Dynamic – cards + kv + plugins
       if (msg.dynamic) {
         const h2 = create("h4", "section-header");
         h2.textContent = "Dynamic & Plugin Insights";
-        breakdownSection.append(h2);
+        breakdownSection.appendChild(h2);
 
         if (msg.dynamic.cards && Array.isArray(msg.dynamic.cards)) {
           const row = create("div", "row g-4 mb-4");
@@ -242,17 +294,17 @@
             `;
             row.appendChild(col);
           });
-          breakdownSection.append(row);
+          breakdownSection.appendChild(row);
         }
 
         if (msg.dynamic.kv && typeof msg.dynamic.kv === "object") {
           Object.entries(msg.dynamic.kv).forEach(([key, pairs]) => {
             const h6 = create("h6", "text-info mt-4 mb-2");
             h6.textContent = key.charAt(0).toUpperCase() + key.slice(1);
-            breakdownSection.append(h6);
+            breakdownSection.appendChild(h6);
             const pre = create("pre", "code-block");
             pre.textContent = pretty(pairs);
-            breakdownSection.append(pre);
+            breakdownSection.appendChild(pre);
           });
         }
 
@@ -260,7 +312,7 @@
           Object.entries(msg.dynamic.plugins).forEach(([name, pluginData]) => {
             const h6 = create("h6", "text-success mt-4 mb-2");
             h6.textContent = `Plugin: ${name}`;
-            breakdownSection.append(h6);
+            breakdownSection.appendChild(h6);
 
             if (pluginData.cards) {
               const row = create("div", "row g-3");
@@ -275,13 +327,13 @@
                 `;
                 row.appendChild(col);
               });
-              breakdownSection.append(row);
+              breakdownSection.appendChild(row);
             }
 
             if (pluginData.kv) {
               const pre = create("pre", "code-block mt-2");
               pre.textContent = pretty(pluginData.kv);
-              breakdownSection.append(pre);
+              breakdownSection.appendChild(pre);
             }
           });
         }
@@ -293,11 +345,11 @@
       const pre = create("pre", "code-block");
       pre.textContent = pretty(msg);
       rawSection.appendChild(pre);
-      breakdownSection.append(rawSection);
+      breakdownSection.appendChild(rawSection);
     }
 
     // ──────────────────────────────────────────────
-    // WebSocket – FIXED & Debugged
+    // WebSocket – matches main.py /ws
     // ──────────────────────────────────────────────
     function makeWsUrl(path) {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -330,7 +382,7 @@
 
     function runAudit(url) {
       resetUI();
-      $("statusLine").textContent = "Status: Connecting to WebSocket…";
+      $("statusLine").textContent = "Status: Connecting…";
       $("progressBar").style.width = "5%";
       $("errorBox").classList.add("d-none");
       $("#debugPanel").classList.remove("d-none");
@@ -342,12 +394,12 @@
       }
 
       const wsUrl = makeWsUrl("/ws");
-      logDebug(`Connecting to WebSocket: ${wsUrl}`);
+      logDebug(`Connecting to: ${wsUrl}`);
 
       socket = new WebSocket(wsUrl);
 
       socket.addEventListener("open", () => {
-        logDebug("WebSocket connected!");
+        logDebug("Connected successfully!");
         $("statusLine").textContent = "Status: Connected. Sending URL…";
         socket.send(JSON.stringify({ url }));
         logDebug("Sent: " + JSON.stringify({ url }));
@@ -358,7 +410,7 @@
         let msg;
         try {
           msg = JSON.parse(ev.data);
-          logDebug("Parsed message: " + JSON.stringify(msg));
+          logDebug("Parsed: " + JSON.stringify(msg));
         } catch (e) {
           logDebug("Parse error: " + e);
           return;
@@ -371,25 +423,25 @@
         if (msg.error) {
           $("errorBox").textContent = msg.error;
           $("errorBox").classList.remove("d-none");
-          logDebug("Error from server: " + msg.error);
+          logDebug("Server error: " + msg.error);
         }
 
         if (msg.finished && !msg.error) {
           updateStatus({ status: "✅ Completed", crawl_progress: 100 });
-          logDebug("Audit finished – rendering results");
+          logDebug("Audit finished – rendering...");
           renderAll(msg);
         }
       });
 
       socket.addEventListener("close", ev => {
-        logDebug(`WebSocket closed. Code: ${ev.code}, Reason: ${ev.reason || "none"}`);
-        $("statusLine").textContent += " (connection closed)";
+        logDebug(`Closed. Code: ${ev.code}, Reason: ${ev.reason || "none"}`);
+        $("statusLine").textContent += " (closed)";
       });
 
       socket.addEventListener("error", ev => {
-        logDebug("WebSocket error event fired");
-        console.error("WebSocket error:", ev);
-        $("errorBox").textContent = "Connection failed. Check console (F12) for details.";
+        logDebug("Error event fired");
+        console.error("WS error:", ev);
+        $("errorBox").textContent = "Connection failed. Check console for details.";
         $("errorBox").classList.remove("d-none");
       });
     }
