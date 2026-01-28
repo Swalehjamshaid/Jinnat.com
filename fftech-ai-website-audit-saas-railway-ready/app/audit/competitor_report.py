@@ -16,52 +16,13 @@ Features:
 
 from __future__ import annotations
 import hashlib
-import random
-from typing import Dict, List, Tuple
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-
-
-class GradeBand(Enum):
-    """Standard grade bands with descriptions."""
-    EXCELLENT = ("A", 85, 100, "Dominating the niche")
-    STRONG    = ("B", 75, 84,  "Very competitive")
-    AVERAGE   = ("C", 65, 74,  "Room to grow")
-    WEAK      = ("D", 0,  64,  "Needs serious improvement")
-
-
-@dataclass
-class CompetitorEntry:
-    """Single competitor record."""
-    name: str
-    score: int
-    delta: int = 0  # vs target
-    rank: int = 0
-
-
-@dataclass
-class CompetitorDetails:
-    """Full comparison result (read-only)."""
-    target_url: str
-    target_score: int
-    target_domain: str
-    competitors: List[CompetitorEntry]
-    summary: str
-    notes: str = "Deterministic offline benchmark — no external data used."
-    grade_band: GradeBand = field(default=GradeBand.AVERAGE)
-
-    @property
-    def leader(self) -> CompetitorEntry | None:
-        return max(self.competitors, key=lambda c: c.score, default=None)
-
-    def to_dict(self) -> dict:
-        return asdict(self)
+from typing import Dict, List, Optional
 
 
 # ────────────────────────────────────────────────
 # Module-level cache (read-only via getter)
 # ────────────────────────────────────────────────
-_LAST_DETAILS: CompetitorDetails | None = None
+_LAST_DETAILS: Optional[Dict] = None
 
 
 # ────────────────────────────────────────────────
@@ -87,14 +48,16 @@ _COMPETITOR_POOLS: Dict[str, List[str]] = {
 
 
 def _normalize_domain(url: str) -> str:
-    """Clean domain for comparison."""
+    """Clean domain/netloc for comparison."""
     s = (url or "").strip().lower()
     host = s.split("//")[-1].split("/")[0].split("?")[0]
-    return host.removeprefix("www.").rstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    return host.rstrip(".")
 
 
 def _seed_from(text: str) -> int:
-    """Deterministic 64-bit seed from string."""
+    """Deterministic 64-bit-ish seed from string."""
     return int(hashlib.sha256(text.encode()).hexdigest(), 16)
 
 
@@ -110,21 +73,24 @@ def _guess_industry_keys(domain: str) -> List[str]:
 
 def _pick_competitors(industry_keys: List[str], seed: int, top_n: int = 3) -> List[str]:
     """Deterministically select top competitors."""
-    pool = []
+    pool: List[str] = []
     for key in industry_keys:
         pool.extend(_COMPETITOR_POOLS.get(key, []))
 
     # Deduplicate while preserving order
     seen = set()
-    pool = [x for x in pool if x not in seen and not seen.add(x)]
+    uniq = []
+    for x in pool:
+        if x not in seen:
+            seen.add(x)
+            uniq.append(x)
 
-    if not pool:
-        pool = _COMPETITOR_POOLS["default"]
+    if not uniq:
+        uniq = _COMPETITOR_POOLS["default"]
 
-    # Rotate deterministically
-    idx = seed % len(pool)
-    rotated = pool[idx:] + pool[:idx]
-
+    # Deterministic rotation by seed
+    idx = seed % len(uniq)
+    rotated = uniq[idx:] + uniq[:idx]
     return rotated[:top_n]
 
 
@@ -134,7 +100,7 @@ def _simulate_brand_score(seed: int) -> int:
 
 
 def _simulate_content_score(domain: str) -> int:
-    """Content depth proxy (8–22)."""
+    """Content depth proxy (8–22) based on vowel count."""
     vowels = sum(1 for c in domain.lower() if c in "aeiou")
     return min(22, 8 + vowels * 2)
 
@@ -144,22 +110,18 @@ def _simulate_technical_score(seed: int) -> int:
     return 12 + ((seed >> 12) % 17)
 
 
-def _calculate_component_scores(domain: str, seed: int) -> Dict[str, float]:
+def _component_breakdown(domain: str, seed: int) -> Dict[str, float]:
     """Breakdown of simulated factors."""
     return {
-        "brand": float(_simulate_brand_score(seed)),
-        "content": float(_simulate_content_score(domain)),
-        "technical": float(_simulate_technical_score(seed)),
+        "brand": float(_simulate_brand_score(seed)),     # 40%
+        "content": float(_simulate_content_score(domain)),  # 30%
+        "technical": float(_simulate_technical_score(seed)),# 30%
     }
 
 
-def _weighted_competitor_score(components: Dict[str, float]) -> float:
+def _weighted_total(components: Dict[str, float]) -> float:
     """Balanced weighted total."""
-    return (
-        components["brand"] * 0.40 +
-        components["content"] * 0.30 +
-        components["technical"] * 0.30
-    )
+    return components["brand"] * 0.40 + components["content"] * 0.30 + components["technical"] * 0.30
 
 
 def _scale_to_ui_range(raw: float) -> int:
@@ -175,56 +137,65 @@ def get_top_competitor_score(url: str) -> int:
     """
     global _LAST_DETAILS
 
-    clean_url = _normalize_domain(url)
-    seed = _seed_from(clean_url)
+    clean = _normalize_domain(url)
+    seed = _seed_from(clean)
 
-    # Target (your site) components
-    target_components = _calculate_component_scores(clean_url, seed)
-    target_raw = _weighted_competitor_score(target_components)
-    target_score = _scale_to_ui_range(target_raw)
+    # Target (your site)
+    t_components = _component_breakdown(clean, seed)
+    t_raw = _weighted_total(t_components)
+    t_score = _scale_to_ui_range(t_raw)
 
-    # Pick 3 competitors
-    industry_keys = _guess_industry_keys(clean_url)
+    # Competitors
+    industry_keys = _guess_industry_keys(clean)
     comp_names = _pick_competitors(industry_keys, seed, top_n=3)
 
-    # Score each competitor
-    competitors = []
+    comps = []
     for name in comp_names:
-        c_seed = _seed_from(name + clean_url)  # unique per target
-        c_comps = _calculate_component_scores(name, c_seed)
-        c_raw = _weighted_competitor_score(c_comps)
+        c_seed = _seed_from(name + clean)
+        c_components = _component_breakdown(name, c_seed)
+        c_raw = _weighted_total(c_components)
         c_score = _scale_to_ui_range(c_raw)
-        competitors.append({
+        comps.append({
             "name": name,
             "score": c_score,
-            "delta": target_score - c_score,
-            "components": c_comps
+            "delta": t_score - c_score,
+            "components": c_components,
         })
 
-    # Sort competitors by score descending
-    sorted_comps = sorted(competitors, key=lambda x: x["score"], reverse=True)
+    # Rank DESC
+    comps = sorted(comps, key=lambda x: x["score"], reverse=True)
+    for i, c in enumerate(comps, start=1):
+        c["rank"] = i
 
-    # Build rich comparison object
+    leader = comps[0] if comps else None
+    names = [c["name"] for c in comps]
+
+    # Human summary
+    if leader:
+        gap = leader["score"] - t_score
+        if gap > 0:
+            summary = f"Leader {leader['name']} outperforms target by {gap} points; close the gap via brand and technical improvements."
+        elif gap < 0:
+            summary = f"Target outperforms competitors by {abs(gap)} points; maintain lead with content depth gains."
+        else:
+            summary = f"Target is neck-and-neck with {leader['name']}; small optimization will break the tie."
+    else:
+        summary = "No competitors identified."
+
     _LAST_DETAILS = {
-        "target": {
-            "url": clean_url,
-            "score": target_score,
-            "components": target_components
-        },
-        "competitors": sorted_comps,
-        "leader": sorted_comps[0] if sorted_comps else None,
+        "target": {"domain": clean, "score": t_score, "components": t_components},
+        "competitors": comps,
+        "leader": leader,
+        "names": names,
         "industry_keys": industry_keys,
-        "notes": "Offline deterministic benchmark — no external API calls."
+        "summary": summary,
+        "notes": "Offline deterministic benchmark — no external API calls.",
     }
-
-    return target_score
+    return t_score
 
 
 def get_last_competitor_details() -> Dict:
-    """
-    Returns the last computed comparison details.
-    Safe to call multiple times — returns copy.
-    """
+    """Returns the last computed comparison details (shallow copy)."""
     if _LAST_DETAILS is None:
         return {}
     return dict(_LAST_DETAILS)
