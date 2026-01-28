@@ -8,28 +8,27 @@ from typing import Any, Dict, Callable, Awaitable, Optional, List, Tuple
 import httpx
 from bs4 import BeautifulSoup
 
-# Import analyzer modules — add new ones here when created
+# Import analyzer modules — add new ones here when you create them
 from app.audit import seo as seo_mod
 from app.audit import links as links_mod
 from app.audit import performance as perf_mod
 from app.audit import competitor_report as comp_mod
-# Example future imports (uncomment when you add them):
+# Future analyzers go here — just import and add to ANALYZER_REGISTRY
 # from app.audit import accessibility as access_mod
 # from app.audit import mobile as mobile_mod
 # from app.audit import security as sec_mod
+# from app.audit import content_quality as content_mod
 
 from app.audit.grader import compute_grade
 from app.audit.record import save_audit_record
 
 # ============================================================
-# Core Flex Helpers (mostly unchanged)
+# Core Helpers — very tolerant
 # ============================================================
 
 def _env_flag(name: str, default: bool = False) -> bool:
     val = os.getenv(name)
-    if val is None:
-        return default
-    return str(val).strip().lower() in ("1", "true", "yes", "on")
+    return default if val is None else str(val).strip().lower() in ("1", "true", "yes", "on")
 
 
 AUDIT_DEBUG = _env_flag("AUDIT_DEBUG", False)
@@ -65,7 +64,7 @@ async def _maybe_call(func: Optional[Callable], diag: List[str], **pool) -> Any:
                 res = await res
             return res
         except Exception as e:
-            _log_debug(diag, f"Analyzer call failed: {e}")
+            _log_debug(diag, f"Call failed: {e}")
             return None
     except Exception as e:
         _log_debug(diag, f"Analyzer error: {e}")
@@ -78,13 +77,13 @@ def _extract_score(raw: Any, default: int = 0) -> int:
     if isinstance(raw, (int, float)):
         return int(round(float(raw)))
     if isinstance(raw, dict):
-        for k in ("score", "value", "total", "overall", "points", "percent", "rating"):
+        for k in ("score", "value", "total", "overall", "points", "percent", "rating", "result"):
             if k in raw:
                 try:
                     return int(round(float(raw[k])))
                 except:
                     pass
-        for parent in ("metrics", "data", "result", "summary", "scores", "details"):
+        for parent in ("metrics", "data", "result", "summary", "scores", "details", "analysis"):
             if parent in raw and isinstance(raw[parent], dict):
                 v = _extract_score(raw[parent], None)
                 if v is not None:
@@ -101,40 +100,9 @@ def _extract_score(raw: Any, default: int = 0) -> int:
     return default
 
 
-def _coerce_names(value: Any, limit: int = 6) -> List[str]:
-    out: List[str] = []
-
-    def _add(name):
-        if isinstance(name, str):
-            n = name.strip()
-            if n and n not in out:
-                out.append(n)
-
-    if isinstance(value, (list, tuple)):
-        for item in value:
-            if isinstance(item, str):
-                _add(item)
-            elif isinstance(item, dict):
-                for k in ("name", "brand", "title", "label", "domain", "site", "company", "url"):
-                    if k in item and isinstance(item[k], str):
-                        _add(item[k])
-                        break
-    elif isinstance(value, dict):
-        if "names" in value:
-            out.extend(_coerce_names(value["names"], limit))
-        for k in ("name", "brand", "title", "label", "domain"):
-            if k in value and isinstance(value[k], str):
-                _add(value[k])
-    elif isinstance(value, str):
-        _add(value)
-
-    return out[:limit]
-
-
 def _normalize_links(links_raw: Any) -> Dict[str, int]:
     """
-    IMPORTANT: This function signature and output shape MUST NOT CHANGE
-    to preserve compatibility with existing HTML frontend code.
+    IMPORTANT: Output shape MUST NOT CHANGE — preserves exact compatibility with HTML
     """
     base = {
         "internal_links_count": 0,
@@ -148,19 +116,19 @@ def _normalize_links(links_raw: Any) -> Dict[str, int]:
 
     def _update(d: dict):
         for k, v in d.items():
-            norm_k = k.lower()
+            norm_k = str(k).lower()
             if "internal" in norm_k and isinstance(v, (int, float)):
                 base["internal_links_count"] = int(v)
             elif "external" in norm_k and isinstance(v, (int, float)):
                 base["external_links_count"] = int(v)
-            elif any(w in norm_k for w in ("warn", "caution", "suspicious")):
+            elif any(w in norm_k for w in ("warn", "caution", "suspicious", "risk")):
                 base["warning_links_count"] = int(v) if isinstance(v, (int, float)) else base["warning_links_count"]
-            elif any(w in norm_k for w in ("broken", "error", "404", "fail")):
+            elif any(w in norm_k for w in ("broken", "error", "404", "fail", "dead")):
                 base["broken_internal_links"] = int(v) if isinstance(v, (int, float)) else base["broken_internal_links"]
 
     if isinstance(links_raw, dict):
         _update(links_raw)
-        base.update({k: int(v) for k, v in links_raw.items() if k in base and isinstance(v, (int, float))})
+        base.update({k: int(v) for k, v in links_raw.items() if k in base})
     elif isinstance(links_raw, (list, tuple)):
         for item in links_raw:
             if isinstance(item, dict):
@@ -170,7 +138,7 @@ def _normalize_links(links_raw: Any) -> Dict[str, int]:
 
 
 # ============================================================
-# Analyzer Registry – add new categories here
+# Analyzer Registry — single place to add new modules
 # ============================================================
 
 ANALYZER_REGISTRY = [
@@ -178,136 +146,143 @@ ANALYZER_REGISTRY = [
     ("performance", perf_mod),
     ("links", links_mod),
     ("competitors", comp_mod),
-    # Add new analyzer modules here when you create them:
+    # Add any new analyzer here — only one line needed
     # ("accessibility", access_mod),
-    # ("mobile", mobile_mod),
-    # ("security", sec_mod),
-    # ("content", content_mod),
+    # ("mobile_friendly", mobile_mod),
+    # ("security_headers", sec_mod),
+    # ("content_quality", content_mod),
 ]
 
 
 def discover_analyzer_functions(module) -> List[Tuple[str, Callable]]:
     """
-    Find likely analyzer functions in a module.
-    Prioritizes names containing: calculate, analyze, get, score, check, report, audit
+    Discover all functions/coroutines that look like analyzers.
+    Very tolerant — runs almost everything that is callable.
     """
-    funcs = []
+    candidates = []
     for name, obj in inspect.getmembers(module, lambda o: inspect.isfunction(o) or inspect.iscoroutinefunction(o)):
         lower = name.lower()
-        if any(keyword in lower for keyword in (
-            "calculate", "analyze", "get", "score", "check", "report", "audit", "evaluate", "measure"
+        # Prefer functions that sound like analyzers
+        if any(kw in lower for kw in (
+            "calculate", "analyze", "get", "score", "check", "report", "audit",
+            "evaluate", "measure", "extract", "detect", "compute"
         )):
-            funcs.append((name, obj))
-        elif "main" not in lower and "test" not in lower and "helper" not in lower:
-            funcs.append((name, obj))  # fallback
+            candidates.append((name, obj))
+        # Fallback: most callables are useful except helpers/tests
+        elif not any(ex in lower for ex in ("test", "helper", "util", "internal", "private", "main")):
+            candidates.append((name, obj))
 
-    # Sort: prefer more descriptive names first
-    funcs.sort(key=lambda x: (
-        0 if any(w in x[0].lower() for w in ("calculate", "analyze", "score")) else 1,
+    # Sort: analyzer-like names first
+    candidates.sort(key=lambda x: (
+        0 if any(w in x[0].lower() for w in ("calculate", "analyze", "score", "audit")) else 1,
         x[0]
     ))
 
-    return funcs[:8]  # reasonable limit
+    return candidates[:10]  # safety limit
 
 
 # ============================================================
-# Main Runner – now extremely flexible
+# Main Runner — maximum flexibility
 # ============================================================
 
 class WebsiteAuditRunner:
     def __init__(self, url: str):
-        self.url = url if url.startswith("http") else f"https://{url}"
+        self.url = url if url.startswith(("http://", "https://")) else f"https://{url}"
 
     async def run_audit(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
         diag: List[str] = []
         breakdown: Dict[str, Any] = {}
-        collected_charts: List[Dict] = []
-        extracted_scores: Dict[str, int] = {}
+        all_charts: List[Dict] = []
+        top_scores: Dict[str, int] = {}
 
         try:
-            await callback({"status": "🚀 Audit engine starting...", "crawl_progress": 3})
+            await callback({"status": "🚀 Starting audit...", "crawl_progress": 5})
 
-            # Fetch page once
-            start_time = time.time()
-            await callback({"status": "🌐 Fetching webpage...", "crawl_progress": 12})
-            async with httpx.AsyncClient(timeout=25, verify=False) as client:
-                response = await client.get(self.url, follow_redirects=True)
-                response.raise_for_status()
-                html_content = response.text
+            # Fetch page once — shared context for all analyzers
+            start = time.time()
+            await callback({"status": "🌐 Fetching HTML...", "crawl_progress": 15})
 
-            soup = BeautifulSoup(html_content, "html.parser")
-            fetch_duration_ms = int((time.time() - start_time) * 1000)
+            async with httpx.AsyncClient(timeout=30, verify=False) as client:
+                resp = await client.get(self.url, follow_redirects=True, headers={"User-Agent": "FF-Audit/1.0"})
+                resp.raise_for_status()
+                html = resp.text
 
-            common_context = {
+            soup = BeautifulSoup(html, "html.parser")
+            fetch_ms = int((time.time() - start) * 1000)
+
+            context = {
                 "url": self.url,
-                "html": html_content,
+                "html": html,
                 "soup": soup,
-                "fetch_time_ms": fetch_duration_ms,
-                "callback": callback,           # some analyzers might want to report progress
+                "fetch_ms": fetch_ms,
+                "callback": callback,  # allow analyzers to report sub-progress
             }
 
-            # Run all registered analyzer categories
-            progress_base = 20
-            progress_step = 60 / max(1, len(ANALYZER_REGISTRY))
+            # Execute all analyzer categories
+            progress = 20
+            step = 65 / max(1, len(ANALYZER_REGISTRY))
 
-            for idx, (category_name, module) in enumerate(ANALYZER_REGISTRY):
-                await callback({
-                    "status": f"Analyzing {category_name.title()}...",
-                    "crawl_progress": progress_base + int(idx * progress_step)
-                })
+            for category, module in ANALYZER_REGISTRY:
+                progress += int(step)
+                await callback({"status": f"🔍 {category.title()} analysis...", "crawl_progress": progress})
 
-                analyzers = discover_analyzer_functions(module)
-                category_data = {}
+                functions = discover_analyzer_functions(module)
+                category_result = {}
 
-                for func_name, func in analyzers:
-                    result = await _maybe_call(func, diag, **common_context)
-                    if result is not None:
-                        category_data[func_name] = result
+                for fname, func in functions:
+                    raw = await _maybe_call(func, diag, **context)
+                    if raw is not None:
+                        category_result[fname] = raw
 
-                        # Try to extract a numeric score
-                        score = _extract_score(result)
-                        if score != 0:
-                            category_data[f"{func_name}_score"] = score
-                            extracted_scores[category_name] = score
+                        score = _extract_score(raw)
+                        if score > 0:
+                            category_result[f"{fname}_score"] = score
+                            top_scores[category] = score
 
-                        # Collect charts if analyzer returned any
-                        if isinstance(result, dict):
-                            if "chart" in result:
-                                chart = result["chart"]
-                                if isinstance(chart, dict):
-                                    chart.setdefault("title", f"{category_name} - {func_name}")
-                                    collected_charts.append(chart)
-                            elif "charts" in result and isinstance(result["charts"], list):
-                                for ch in result["charts"]:
+                        # Collect charts from any analyzer
+                        if isinstance(raw, dict):
+                            if "chart" in raw and isinstance(raw["chart"], dict):
+                                chart = raw["chart"]
+                                chart.setdefault("title", f"{category} - {fname}")
+                                all_charts.append(chart)
+                            if "charts" in raw and isinstance(raw["charts"], (list, tuple)):
+                                for ch in raw["charts"]:
                                     if isinstance(ch, dict):
-                                        ch.setdefault("title", f"{category_name} chart")
-                                        collected_charts.append(ch)
+                                        ch.setdefault("title", f"{category} chart")
+                                        all_charts.append(ch)
 
-                if category_data:
-                    breakdown[category_name] = category_data
+                if category_result:
+                    breakdown[category] = category_result
 
-            # Special handling for links (keep exact output shape)
-            links_result = breakdown.get("links", {})
-            normalized_links = _normalize_links(links_result)
+            # Links — preserve exact shape
+            links_raw = breakdown.get("links", {})
+            links_normalized = _normalize_links(links_raw)
 
-            # Competitors special handling (keep names & score)
-            comp_data = breakdown.get("competitors", {})
-            competitor_names = _coerce_names(comp_data)
-            competitor_score = _extract_score(comp_data, 0)
+            # Competitors — use enhanced details if available
+            comp_raw = breakdown.get("competitors", {})
+            comp_names = _coerce_names(comp_raw)
+            comp_score = _extract_score(comp_raw, 0)
 
-            # Calculate final grade
-            seo_s = extracted_scores.get("seo", 0)
-            perf_s = extracted_scores.get("performance", 0)
-            overall_score, final_grade = compute_grade(seo_s, perf_s, competitor_score)
+            # Try to get clean 3 names from competitor_report enhanced output
+            if comp_mod and hasattr(comp_mod, "get_last_competitor_details"):
+                details = comp_mod.get_last_competitor_details()
+                if details and "competitors" in details:
+                    comp_names = details["competitors"].get("names", comp_names)
+                    comp_score = details["target"].get("score", comp_score)
 
-            # Default charts for compatibility with old HTML
+            # Final grade
+            seo_score = top_scores.get("seo", 0)
+            perf_score = top_scores.get("performance", 0)
+            overall, grade = compute_grade(seo_score, perf_score, comp_score)
+
+            # Fallback charts for old HTML compatibility
             fallback_charts = {
                 "bar": {
-                    "labels": ["SEO", "Performance", "Competitors"],
+                    "labels": ["SEO", "Speed", "Competitors"],
                     "datasets": [{
                         "label": "Scores",
-                        "data": [seo_s, perf_s, competitor_score],
-                        "backgroundColor": ["#FFD700aa", "#3B82F6aa", "#10B981aa"],
+                        "data": [seo_score, perf_score, comp_score],
+                        "backgroundColor": ["#FFD700", "#3B82F6", "#10B981"],
                         "borderColor": ["#FFD700", "#3B82F6", "#10B981"],
                         "borderWidth": 1
                     }]
@@ -316,58 +291,55 @@ class WebsiteAuditRunner:
                     "labels": ["Internal", "Warnings", "Broken"],
                     "datasets": [{
                         "data": [
-                            normalized_links["internal_links_count"],
-                            normalized_links["warning_links_count"],
-                            normalized_links["broken_internal_links"]
+                            links_normalized["internal_links_count"],
+                            links_normalized["warning_links_count"],
+                            links_normalized["broken_internal_links"]
                         ],
-                        "backgroundColor": ["#22C55Eaa", "#EAB308aa", "#EF4444aa"],
+                        "backgroundColor": ["#22C55E", "#EAB308", "#EF4444"],
                         "borderColor": ["#22C55E", "#EAB308", "#EF4444"],
                         "borderWidth": 1
                     }]
                 }
             }
 
-            # Final payload — flexible + backward compatible
+            # Final payload — extremely flexible shape
             payload = {
-                "overall_score": overall_score,
-                "grade": final_grade,
-                "scores": extracted_scores,               # top-level quick access
-                "breakdown": breakdown,                   # ALL raw analyzer results
-                "links": normalized_links,                # ← exact shape preserved
+                "overall_score": overall,
+                "grade": grade,
+                "scores": top_scores,                     # quick access to category scores
+                "breakdown": breakdown,                   # full raw results from every analyzer
+                "links": links_normalized,                # ← EXACT shape preserved
                 "competitors": {
-                    "names": competitor_names,
-                    "top_competitor_score": competitor_score,
-                    "raw_data": comp_data
+                    "names": comp_names[:3],              # top 3 names
+                    "top_competitor_score": comp_score,
+                    "raw": comp_raw
                 },
-                "chart_data": fallback_charts,            # old HTML expects dict
-                "charts": collected_charts,               # new flexible list format
-                "fetch_time_ms": fetch_duration_ms,
+                "chart_data": fallback_charts,            # old HTML compatibility
+                "charts": all_charts,                     # flexible list — any analyzer can contribute
+                "fetch_ms": fetch_ms,
                 "finished": True,
-                "audit_timestamp": time.time(),
+                "audit_time": time.time(),
             }
 
             if AUDIT_DEBUG:
-                payload["debug_info"] = {"execution_trace": diag}
+                payload["debug"] = {"trace": diag}
 
             await callback(payload)
 
-            # Save record (kept compatible)
+            # Save record — kept compatible
             save_audit_record(self.url, {
-                "seo": seo_s,
-                "performance": perf_s,
-                "competitor": competitor_score,
-                "links": normalized_links,
-                "overall": overall_score,
-                "grade": final_grade,
-                "fetch_time_ms": fetch_duration_ms,
-                "competitor_names": competitor_names
+                "seo": seo_score,
+                "performance": perf_score,
+                "competitor": comp_score,
+                "links": links_normalized,
+                "overall": overall,
+                "grade": grade,
+                "fetch_ms": fetch_ms,
+                "competitor_names": comp_names[:3]
             })
 
-        except Exception as exc:
-            error_payload = {
-                "error": f"Audit execution failed: {str(exc)}",
-                "finished": True
-            }
+        except Exception as e:
+            error = {"error": f"Runner failed: {str(e)}", "finished": True}
             if AUDIT_DEBUG:
-                error_payload["debug_info"] = {"trace": diag}
-            await callback(error_payload)
+                error["debug"] = {"trace": diag}
+            await callback(error)
