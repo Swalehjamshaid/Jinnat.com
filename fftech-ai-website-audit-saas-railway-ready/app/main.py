@@ -1,109 +1,65 @@
-# app/main.py
+# main.py  (place this file in the ROOT of your repository)
 import os
-import json
-import asyncio
-import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-
+from fastapi.responses import FileResponse
 from app.audit.runner import WebsiteAuditRunner
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("audit")
+app = FastAPI(title="FF Tech Audit Engine v4.3")
 
-app = FastAPI(title="SEO Audit – Flexible Runner")
+# ────────────────────────────────────────────────
+# Static files configuration – serve from repo root
+# ────────────────────────────────────────────────
+STATIC_DIR = "static"  # relative to repo root (= /app/static in container)
 
+# Create folder if missing (safety)
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR)
 
-# -------------------------------------------------
-# Static files (index.html)
-# -------------------------------------------------
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+# Mount static directory at root → serves index.html for /
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-
-@app.get("/", response_class=HTMLResponse)
-async def index():
-    """
-    Serve the fixed index.html
-    """
+# Optional explicit root route (debug + fallback)
+@app.get("/", include_in_schema=False)
+async def serve_root():
     index_path = os.path.join(STATIC_DIR, "index.html")
-    with open(index_path, "r", encoding="utf-8") as f:
-        return f.read()
+    if not os.path.exists(index_path):
+        return {"error": "index.html missing in /static folder"}
+    return FileResponse(index_path)
 
+# Debug endpoint – visit /debug-static after deploy
+@app.get("/debug-static")
+async def debug_static():
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    return {
+        "static_dir_exists": os.path.isdir(STATIC_DIR),
+        "index_file_exists": os.path.isfile(index_path),
+        "index_path_full": os.path.abspath(index_path),
+        "current_working_dir": os.getcwd(),
+        "note": "If index exists → visit / to see dashboard"
+    }
 
-# -------------------------------------------------
-# WebSocket: /ws/audit
-# -------------------------------------------------
-@app.websocket("/ws/audit")
-async def audit_ws(websocket: WebSocket):
+# ────────────────────────────────────────────────
+# WebSocket – live audit progress (unchanged)
+# ────────────────────────────────────────────────
+@app.websocket("/ws/audit-progress")
+async def ws_audit_progress(websocket: WebSocket):
     await websocket.accept()
-    logger.info("WebSocket connected")
+    url = websocket.query_params.get("url")
+    if not url:
+        await websocket.send_json({"error": "URL not provided", "finished": True})
+        await websocket.close()
+        return
 
     try:
-        # Wait for initial message { url: "..." }
-        raw = await websocket.receive_text()
-        payload = json.loads(raw)
-        url = payload.get("url")
+        async def callback(progress_data: dict):
+            await websocket.send_json(progress_data)
 
-        if not url:
-            await websocket.send_json({
-                "error": "No URL provided",
-                "finished": True
-            })
-            return
-
-        runner = WebsiteAuditRunner(url)
-
-        # Callback used by runner to stream updates
-        async def ws_callback(message: dict):
-            try:
-                await websocket.send_json(message)
-            except RuntimeError:
-                # socket already closed
-                pass
-
-        # Run audit
-        await runner.run_audit(ws_callback)
-
+        audit_runner = WebsiteAuditRunner(url)
+        await audit_runner.run_audit(callback)
     except WebSocketDisconnect:
-        logger.info("WebSocket disconnected by client")
-
+        print(f"WebSocket disconnected for {url}")
     except Exception as e:
-        logger.exception("WebSocket audit failed")
-        try:
-            await websocket.send_json({
-                "error": f"Server error: {e}",
-                "finished": True
-            })
-        except Exception:
-            pass
+        await websocket.send_json({"error": f"Server error: {str(e)}", "finished": True})
     finally:
-        try:
-            await websocket.close()
-        except Exception:
-            pass
-
-
-# -------------------------------------------------
-# Health (optional, but useful)
-# -------------------------------------------------
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-
-
-# -------------------------------------------------
-# Entrypoint
-# -------------------------------------------------
-if __name__ == "__main__":
-    import uvicorn
-
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=port,
-        log_level="info",
-    )
+        await websocket.close()
