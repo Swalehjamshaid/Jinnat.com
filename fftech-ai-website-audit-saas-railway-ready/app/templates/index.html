@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FF Tech Audit Engine v5.1 (Highly Adaptive)</title>
+  <title>FF Tech Audit Engine v6 (Ultra-Flexible)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -17,54 +17,15 @@
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       min-height: 100vh;
     }
-    .card-glass {
-      background: var(--panel);
-      border: 1px solid rgba(255, 215, 0, 0.16);
-      border-radius: 1.25rem;
-      padding: 1.4rem;
-      backdrop-filter: blur(10px);
-    }
-    .metric-box {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,215,0,0.10);
-      border-radius: 0.85rem;
-      padding: 0.9rem;
-      text-align: center;
-      height: 100%;
-    }
-    .metric-value {
-      font-size: 2.1rem;
-      font-weight: 800;
-      color: var(--gold);
-    }
-    .metric-label {
-      font-size: 0.85rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    #loadingOverlay {
-      position: fixed; inset: 0; background: rgba(10,14,23,0.97);
-      display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 9999;
-    }
+    .card-glass { background: var(--panel); border: 1px solid rgba(255, 215, 0, 0.16); border-radius: 1.25rem; padding: 1.4rem; backdrop-filter: blur(10px); }
+    .metric-box { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,215,0,0.10); border-radius: 0.85rem; padding: 0.9rem; text-align: center; height: 100%; }
+    .metric-value { font-size: 2.1rem; font-weight: 800; color: var(--gold); }
+    .metric-label { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    #loadingOverlay { position: fixed; inset: 0; background: rgba(10,14,23,0.97); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 9999; }
     #loadingOverlay.show { display: flex; }
-    #auditLog {
-      white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow-y: auto;
-      background: rgba(0,0,0,0.45); padding: 1rem; border-radius: 0.75rem; border: 1px solid #444;
-      font-size: 0.9rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
-    }
-    #autoCharts .chart-card {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,215,0,0.10);
-      border-radius: 0.85rem;
-      padding: 1rem;
-      height: 100%;
-    }
-    .badge-soft {
-      background: rgba(255,215,0,0.1);
-      color: var(--gold);
-      border: 1px solid rgba(255,215,0,0.2);
-    }
+    #auditLog { white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow-y: auto; background: rgba(0,0,0,0.45); padding: 1rem; border-radius: 0.75rem; border: 1px solid #444; font-size: 0.9rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; }
+    #autoCharts .chart-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,215,0,0.10); border-radius: 0.85rem; padding: 1rem; height: 100%; }
+    .badge-soft { background: rgba(255,215,0,0.1); color: var(--gold); border: 1px solid rgba(255,215,0,0.2); }
     .json-view { font-size: .85rem; color: #d1d5db; }
     details summary { cursor: pointer; font-weight: 600; color: var(--gold); }
     .kv-table td, .kv-table th { padding: .35rem .6rem; border-bottom: 1px dashed rgba(255,215,0,.18); }
@@ -84,12 +45,13 @@
 <div class="container py-5">
   <div class="d-flex flex-wrap align-items-end justify-content-between mb-4">
     <div class="d-flex align-items-center gap-3">
-      <h1 class="fw-bold text-warning m-0">FF Tech Audit Engine <span class="fw-light fs-4">v5.1</span></h1>
+      <h1 class="fw-bold text-warning m-0">FF Tech Audit Engine <span class="fw-light fs-4">v6</span></h1>
       <span id="themeToggle" class="theme-toggle text-warning" title="Toggle theme"><i class="bi bi-sun"></i></span>
     </div>
     <div class="d-flex gap-2 mt-3 mt-md-0">
       <button id="btnDownload" class="btn btn-outline-warning"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
       <button id="btnCopyJSON" class="btn btn-outline-info"><i class="bi bi-braces-asterisk"></i> Copy JSON</button>
+      <button id="btnCopySummary" class="btn btn-outline-success"><i class="bi bi-clipboard-check"></i> Copy Summary</button>
       <button id="btnReset" class="btn btn-outline-danger"><i class="bi bi-arrow-repeat"></i> Reset</button>
     </div>
   </div>
@@ -119,7 +81,7 @@
           <!-- CHARTS -->
           <div id="autoCharts" class="row g-4 mb-4"></div>
 
-          <!-- SPECIAL SECTIONS (links, competitors, etc.) -->
+          <!-- SPECIAL SECTIONS -->
           <div class="row g-4 mb-4">
             <div class="col-md-6">
               <div class="p-3 bg-dark rounded border border-secondary small h-100">
@@ -137,7 +99,7 @@
             </div>
           </div>
 
-          <!-- FULLY DYNAMIC SECTIONS -->
+          <!-- DYNAMIC SECTIONS -->
           <div id="dynamicSections" class="mt-4"></div>
 
           <!-- RAW + EXPLORER -->
@@ -167,34 +129,34 @@
 
 <script>
 // ──────────────────────────────────────────────
+// CONFIG: endpoints + transport strategy (WS → SSE → Poll)
+// ──────────────────────────────────────────────
+const BACKEND_ROUTES = {
+  ws:   (url) => `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`,
+  sse:  (url) => `${location.protocol}//${location.host}/sse/audit-progress?url=${encodeURIComponent(url)}`,
+  poll: {
+    start: (url) => `${location.protocol}//${location.host}/api/audit-start?url=${encodeURIComponent(url)}`, // returns {job_id}
+    step:  (jobId) => `${location.protocol}//${location.host}/api/audit-poll?job_id=${encodeURIComponent(jobId)}`
+  }
+};
+
+// ──────────────────────────────────────────────
 // Utilities
 // ──────────────────────────────────────────────
 let chartInstances = [];
 let lastPayload = null;
 
 const q = sel => document.querySelector(sel);
-const el = (tag, cls = '', html = null) => {
-  const x = document.createElement(tag);
-  if (cls) x.className = cls;
-  if (html != null) x.innerHTML = html;
-  return x;
-};
-
-const asInt = (v, def = 0) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.round(n) : def;
-};
-
-const titleize = str => (str || '')
-  .replace(/[_-]/g, ' ')
-  .replace(/\b\w/g, m => m.toUpperCase());
+const el = (tag, cls = '', html = null) => { const x = document.createElement(tag); if (cls) x.className = cls; if (html != null) x.innerHTML = html; return x; };
+const asInt = (v, def = 0) => { const n = Number(v); return Number.isFinite(n) ? Math.round(n) : def; };
+const titleize = str => (str || '').replace(/[_-]/g, ' ').replace(/\b\w/g, m => m.toUpperCase());
 
 function deepMerge(target, source) {
   if (!source || typeof source !== 'object') return target;
+  if (!target || typeof target !== 'object') target = Array.isArray(source) ? [] : {};
   Object.keys(source).forEach(k => {
     if (Array.isArray(source[k])) target[k] = [...(target[k] || []), ...source[k]];
-    else if (source[k] && typeof source[k] === 'object')
-      target[k] = deepMerge(target[k] && typeof target[k] === 'object' ? target[k] : {}, source[k]);
+    else if (source[k] && typeof source[k] === 'object') target[k] = deepMerge(target[k] && typeof target[k] === 'object' ? target[k] : {}, source[k]);
     else target[k] = source[k];
   });
   return target;
@@ -210,35 +172,20 @@ function log(msg, isError = false) {
 }
 
 // ──────────────────────────────────────────────
-// Recursive metric & structure discovery
+// Metric discovery (schema-agnostic)
 // ──────────────────────────────────────────────
 function collectAllNumbers(obj, path = '', out = [], seen = new Set()) {
   if (!obj || typeof obj !== 'object') return out;
-
-  if (Array.isArray(obj)) {
-    obj.forEach((v, i) => collectAllNumbers(v, `${path}[${i}]`, out, seen));
-    return out;
-  }
-
+  if (Array.isArray(obj)) { obj.forEach((v, i) => collectAllNumbers(v, `${path}[${i}]`, out, seen)); return out; }
   for (const [k, v] of Object.entries(obj)) {
     const fullKey = path ? `${path}.${k}` : k;
     const cleanLabel = titleize(k.split(/[_.\d]+/).filter(Boolean).join(' '));
-
     if (typeof v === 'number' && !Number.isNaN(v)) {
-      const sig = `${fullKey}:${v}`;
-      if (!seen.has(sig)) {
-        seen.add(sig);
-        out.push({ key: fullKey, label: cleanLabel || titleize(k), value: v, depth: path.split('.').length });
-      }
+      const sig = `${fullKey}:${v}`; if (!seen.has(sig)) { seen.add(sig); out.push({ key: fullKey, label: cleanLabel || titleize(k), value: v, depth: path.split('.').length }); }
     } else if (v && typeof v === 'object') {
-      // Try to extract score-like
       const score = v.score ?? v.value ?? v.total ?? v.points ?? v.overall ?? v.percent ?? null;
-      if (score != null && typeof score === 'number') {
-        const sig = `${fullKey}:score:${score}`;
-        if (!seen.has(sig)) {
-          seen.add(sig);
-          out.push({ key: fullKey, label: cleanLabel + ' Score', value: score, depth: path.split('.').length });
-        }
+      if (typeof score === 'number') {
+        const sig = `${fullKey}:score:${score}`; if (!seen.has(sig)) { seen.add(sig); out.push({ key: fullKey, label: cleanLabel + ' Score', value: score, depth: path.split('.').length }); }
       }
       collectAllNumbers(v, fullKey, out, seen);
     }
@@ -247,34 +194,46 @@ function collectAllNumbers(obj, path = '', out = [], seen = new Set()) {
 }
 
 // ──────────────────────────────────────────────
-// Rendering functions (more generic)
+// Renderers (generic & forward-compatible)
 // ──────────────────────────────────────────────
 function renderMetricsGrid(payload) {
-  const grid = q('#metricsGrid');
-  grid.innerHTML = '';
-
+  const grid = q('#metricsGrid'); grid.innerHTML = '';
   const all = collectAllNumbers(payload);
-  // Prefer shallower & higher values first, limit to ~12
   const top = all
     .filter(m => m.depth <= 3 && !/(url|link|competitor|chart|timestamp|date|id)/i.test(m.key))
     .sort((a,b) => b.value - a.value || a.depth - b.depth)
     .slice(0, 12);
 
-  if (!top.length) {
-    grid.innerHTML = '<div class="col-12 text-center text-muted">No prominent metrics detected</div>';
-    return;
-  }
+  if (!top.length) { grid.innerHTML = '<div class="col-12 text-center text-muted">No prominent metrics detected</div>'; return; }
 
   top.forEach(m => {
     const col = el('div', 'col-6 col-md-3');
     const box = el('div', 'metric-box');
-    box.innerHTML = `
-      <div class="metric-label">${m.label}</div>
-      <div class="metric-value">${asInt(m.value)}</div>
-    `;
-    col.appendChild(box);
-    grid.appendChild(col);
+    box.innerHTML = `<div class="metric-label">${m.label}</div><div class="metric-value">${asInt(m.value)}</div>`;
+    col.appendChild(box); grid.appendChild(col);
   });
+}
+
+function createSimpleTable(data, headers = null, excludeKeys = []) {
+  const table = el('table', 'table table-dark table-sm kv-table mb-0'); const thead = el('thead'); const tbody = el('tbody');
+  let keys = headers ? Object.keys(headers) : [];
+  if (!keys.length && data.length && typeof data[0] === 'object') keys = Object.keys(data[0]).filter(k => !excludeKeys.includes(k)).slice(0,6);
+
+  if (keys.length) {
+    const tr = el('tr');
+    keys.forEach(k => tr.appendChild(el('th', '', headers?.[k] || titleize(k))));
+    thead.appendChild(tr); table.appendChild(thead);
+  }
+
+  data.forEach(row => {
+    const tr = el('tr');
+    if (typeof row === 'object') {
+      keys.forEach(k => { const td = el('td', /score|value|count|ms|size|time|rank/i.test(k) ? 'text-end' : ''); td.textContent = row[k] ?? '—'; tr.appendChild(td); });
+    } else tr.appendChild(el('td', '', String(row)));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
 }
 
 function renderSpecialSections(payload) {
@@ -286,78 +245,28 @@ function renderSpecialSections(payload) {
     <div class="d-flex justify-content-between mb-1"><span>Warnings:</span><span>${links.warning_links_count ?? links.warnings ?? '—'}</span></div>
     <div class="d-flex justify-content-between"><span>Broken:</span><span class="text-danger">${links.broken_internal_links ?? links.broken ?? '—'}</span></div>
   `;
-  const detail = q('#linksDetail');
-  detail.innerHTML = '';
-  if (Object.keys(links).length > 4) detail.appendChild(createSimpleTable(links, excludeKeys=['internal_links_count','external_links_count','warning_links_count','broken_internal_links']));
+  const detail = q('#linksDetail'); detail.innerHTML = '';
+  const linkKeys = Object.keys(links);
+  if (linkKeys.length > 4) detail.appendChild(createSimpleTable([links], null, ['internal_links_count','external_links_count','warning_links_count','broken_internal_links']));
 
   // Competitors
   const comp = payload?.breakdown?.competitors || payload?.competitors || {};
   q('#competitorBadges').innerHTML = '';
-  (comp.names || []).slice(0,8).forEach(n => {
-    const b = el('span', 'badge badge-soft me-1 mb-1', `<i class="bi bi-trophy-fill me-1"></i>${n}`);
-    q('#competitorBadges').appendChild(b);
-  });
-
+  (comp.names || []).slice(0,8).forEach(n => q('#competitorBadges').appendChild(el('span', 'badge badge-soft me-1 mb-1', `<i class="bi bi-trophy-fill me-1"></i>${n}`)));
   q('#competitorsSummary').textContent = comp.description || comp.note || '';
 
-  const tableWrap = q('#competitorsTableWrap');
-  tableWrap.innerHTML = '';
+  const tableWrap = q('#competitorsTableWrap'); tableWrap.innerHTML = '';
   const items = comp.items || comp.list || (Array.isArray(comp) ? comp : []);
-  if (items.length) {
-    const tbl = createSimpleTable(items, { name:'Name', score:'Score', value:'Value' });
-    tableWrap.appendChild(tbl);
-  } else {
-    tableWrap.innerHTML = '<div class="text-muted small">No competitor data available</div>';
-  }
-}
-
-function createSimpleTable(data, headers = null) {
-  const table = el('table', 'table table-dark table-sm kv-table mb-0');
-  const thead = el('thead');
-  const tbody = el('tbody');
-
-  // Auto-detect headers or use provided
-  let keys = headers ? Object.keys(headers) : [];
-  if (!keys.length && data.length && typeof data[0] === 'object') {
-    keys = Object.keys(data[0]).slice(0,4);
-  }
-
-  if (keys.length) {
-    const tr = el('tr');
-    keys.forEach(k => {
-      const th = el('th', '', headers?.[k] || titleize(k));
-      tr.appendChild(th);
-    });
-    thead.appendChild(tr);
-    table.appendChild(thead);
-  }
-
-  data.forEach(row => {
-    const tr = el('tr');
-    if (typeof row === 'object') {
-      keys.forEach(k => {
-        const td = el('td', k.toLowerCase().includes('score') ? 'text-end' : '');
-        td.textContent = row[k] ?? '—';
-        tr.appendChild(td);
-      });
-    } else {
-      tr.appendChild(el('td', 'colspan=' + (keys.length || 1), String(row)));
-    }
-    tbody.appendChild(tr);
-  });
-
-  table.appendChild(tbody);
-  return table;
+  if (Array.isArray(items) && items.length) tableWrap.appendChild(createSimpleTable(items, { name:'Name', score:'Score', value:'Value' }));
+  else tableWrap.innerHTML = '<div class="text-muted small">No competitor data available</div>';
 }
 
 function renderDynamicSections(payload) {
-  const container = q('#dynamicSections');
-  container.innerHTML = '';
-
+  const container = q('#dynamicSections'); container.innerHTML = '';
   const sections = payload?.breakdown || payload || {};
 
   Object.entries(sections).forEach(([key, value]) => {
-    if (['overall_score','grade','chart_data'].includes(key)) return; // already shown
+    if (['overall_score','grade','chart_data','charts','links','competitors','performance','seo'].includes(key)) return; // we render them elsewhere
 
     const section = el('div', 'card-glass mb-4');
     section.appendChild(el('h5', 'text-warning mb-3', titleize(key)));
@@ -372,107 +281,77 @@ function renderDynamicSections(payload) {
           section.appendChild(createSimpleTable(value));
         }
       } else {
-        section.appendChild(createSimpleTable([value])); // single object as row
+        section.appendChild(createSimpleTable([value]));
       }
     } else {
       section.appendChild(el('p', 'text-light', String(value)));
     }
-
     container.appendChild(section);
   });
-}
 
-function renderCharts(chartData) {
-  chartInstances.forEach(c => c?.destroy());
-  chartInstances = [];
-
-  const wrap = q('#autoCharts');
-  wrap.innerHTML = '';
-
-  if (!chartData || typeof chartData !== 'object') return;
-
-  Object.entries(chartData).forEach(([key, raw]) => {
-    const normalized = normalizeToChartData(key, raw);
-    if (!normalized?.datasets) return;
-
-    const col = el('div', 'col-md-6');
-    const card = el('div', 'chart-card');
-    card.appendChild(el('div', 'text-warning small mb-2', `<i class="bi bi-graph-up"></i> ${titleize(key)}`));
-
-    const canvas = el('canvas');
-    card.appendChild(canvas);
-    col.appendChild(card);
-    wrap.appendChild(col);
-
-    try {
-      const inst = new Chart(canvas.getContext('2d'), {
-        type: guessChartType(key, raw),
-        data: normalized,
-        options: {
-          responsive: true,
-          plugins: { legend: { display: true, position: 'top' } },
-          scales: (['bar','line'].includes(guessChartType(key, raw))) ? { y: { beginAtZero: true } } : {}
-        }
-      });
-      chartInstances.push(inst);
-    } catch (e) {
-      card.innerHTML += `<div class="text-danger small mt-2">Chart failed: ${e.message}</div>`;
-      const pre = el('pre', 'json-view bg-dark p-2 rounded mt-2');
-      pre.textContent = JSON.stringify(raw, null, 2);
-      card.appendChild(pre);
-    }
-  });
+  // Show canonical sections if present (performance + seo raw)
+  const perf = payload?.breakdown?.performance;
+  if (perf) {
+    const s = el('div', 'card-glass mb-4');
+    s.appendChild(el('h5', 'text-warning mb-3', 'Performance Details'));
+    s.appendChild(createSimpleTable([perf.extras || perf], null, []));
+    container.appendChild(s);
+  }
+  const seoRaw = payload?.extras?.seo_raw;
+  if (seoRaw && Object.keys(seoRaw).length) {
+    const s = el('div', 'card-glass mb-4');
+    s.appendChild(el('h5', 'text-warning mb-3', 'SEO Details'));
+    s.appendChild(createSimpleTable([seoRaw], null, []));
+    container.appendChild(s);
+  }
 }
 
 function normalizeToChartData(key, src) {
-  if (src?.datasets) return src; // already Chart.js format
+  if (src?.datasets) return src; // already in Chart.js format
 
-  // Common patterns backend might send
   if (typeof src === 'object' && !Array.isArray(src)) {
     const labels = Object.keys(src);
     const data = labels.map(k => asInt(src[k]));
     return makeDataset(titleize(key), labels, data);
   }
-
   if (Array.isArray(src)) {
-    if (src.every(x => typeof x === 'number')) {
-      return makeDataset(titleize(key), src.map((_,i)=>i+1), src);
-    }
+    if (src.every(x => typeof x === 'number')) return makeDataset(titleize(key), src.map((_,i)=>i+1), src);
     if (src.every(x => x && typeof x === 'object' && ('label' in x || 'name' in x))) {
       const labels = src.map(x => x.label ?? x.name ?? 'Item');
       const data = src.map(x => asInt(x.value ?? x.score ?? getFirstScore(x) ?? 0));
       return makeDataset(titleize(key), labels, data);
     }
   }
-
   return null;
 }
+function getFirstScore(o){ for(const k of Object.keys(o||{})){ if(/score|value|points|total|percent/i.test(k)) return o[k]; } return null; }
 
 function makeDataset(label, labels, data) {
   const colors = labels.map((_,i) => colorAt(i));
-  return {
-    labels,
-    datasets: [{
-      label,
-      data,
-      backgroundColor: colors.map(c => c.bg),
-      borderColor: colors.map(c => c.bd),
-      borderWidth: 1
-    }]
-  };
+  return { labels, datasets: [{ label, data, backgroundColor: colors.map(c => c.bg), borderColor: colors.map(c => c.bd), borderWidth: 1 }] };
 }
-
 const palette = ["#ffd700aa","#3b82f6aa","#10b981aa","#9333eaaa","#f43f5eaa","#eab308aa"];
 const paletteBorder = ["#ffd700","#3b82f6","#10b981","#9333ea","#f43f5e","#eab308"];
 function colorAt(i) { return { bg: palette[i % palette.length], bd: paletteBorder[i % paletteBorder.length] }; }
-
-function guessChartType(key) {
-  const k = key.toLowerCase();
-  if (k.includes('doughnut') || k.includes('pie')) return 'doughnut';
-  if (k.includes('radar')) return 'radar';
-  if (k.includes('line')) return 'line';
-  if (k.includes('bar') || k.includes('score')) return 'bar';
-  return 'pie'; // safe default
+function guessChartType(key, raw) { const k = String(key).toLowerCase(); if (k.includes('doughnut') || k.includes('pie')) return 'doughnut'; if (k.includes('radar')) return 'radar'; if (k.includes('line')) return 'line'; if (k.includes('bar') || k.includes('score')) return 'bar'; return 'pie'; }
+function clearCharts() { chartInstances.forEach(c => c?.destroy()); chartInstances = []; }
+function renderCharts(chartData) {
+  clearCharts(); const wrap = q('#autoCharts'); wrap.innerHTML = '';
+  if (!chartData || typeof chartData !== 'object') return;
+  Object.entries(chartData).forEach(([key, raw]) => {
+    const normalized = normalizeToChartData(key, raw); if (!normalized?.datasets) return;
+    const col = el('div', 'col-md-6'); const card = el('div', 'chart-card');
+    card.appendChild(el('div', 'text-warning small mb-2', `<i class="bi bi-graph-up"></i> ${titleize(key)}`));
+    const canvas = el('canvas'); card.appendChild(canvas); col.appendChild(card); wrap.appendChild(col);
+    try {
+      const type = guessChartType(key, raw);
+      const inst = new Chart(canvas.getContext('2d'), { type, data: normalized, options: { responsive: true, plugins: { legend: { display: true, position: 'top' } }, scales: (['bar','line'].includes(type)) ? { y: { beginAtZero: true } } : {} } });
+      chartInstances.push(inst);
+    } catch (e) {
+      card.innerHTML += `<div class="text-danger small mt-2">Chart failed: ${e.message}</div>`;
+      const pre = el('pre', 'json-view bg-dark p-2 rounded mt-2'); pre.textContent = JSON.stringify(raw, null, 2); card.appendChild(pre);
+    }
+  });
 }
 
 function renderExplorer(payload, container) {
@@ -480,37 +359,20 @@ function renderExplorer(payload, container) {
   function buildNode(obj, name = '') {
     if (obj == null) return el('span', 'text-muted', 'null');
     if (typeof obj !== 'object') return document.createTextNode(String(obj));
-
-    const details = el('details');
-    details.open = name.length < 20; // shallow open
-    const summary = el('summary', '', name ? titleize(name) : 'Root');
-    details.appendChild(summary);
-
-    if (Array.isArray(obj)) {
-      obj.forEach((v,i) => {
-        const li = el('div');
-        li.appendChild(buildNode(v, `[${i}]`));
-        details.appendChild(li);
-      });
-    } else {
-      Object.entries(obj).forEach(([k,v]) => {
-        const div = el('div', 'ms-4');
-        div.appendChild(buildNode(v, k));
-        details.appendChild(div);
-      });
-    }
+    const details = el('details'); details.open = name.length < 20;
+    details.appendChild(el('summary', '', name ? titleize(name) : 'Root'));
+    if (Array.isArray(obj)) obj.forEach((v,i) => details.appendChild(buildNode(v, `[${i}]`)));
+    else Object.entries(obj).forEach(([k,v]) => { const div = el('div', 'ms-4'); div.appendChild(buildNode(v, k)); details.appendChild(div); });
     return details;
   }
   container.appendChild(buildNode(payload));
 }
 
-// ──────────────────────────────────────────────
-// Main render
-// ──────────────────────────────────────────────
+function renderJSON(elm, obj) { try { elm.textContent = JSON.stringify(obj, null, 2); } catch { elm.textContent = String(obj); } }
+
 function renderPayload(payload) {
   q('#ovScore').textContent = payload.overall_score ?? payload.score ?? payload.total ?? '—';
   q('#gradeDisplay').textContent = `GRADE: ${payload.grade ?? '—'}`;
-
   renderMetricsGrid(payload);
   renderSpecialSections(payload);
   renderCharts(payload.chart_data || payload.charts || {});
@@ -519,13 +381,8 @@ function renderPayload(payload) {
   renderExplorer(payload, q('#payloadExplorer'));
 }
 
-function renderJSON(el, obj) {
-  try { el.textContent = JSON.stringify(obj, null, 2); }
-  catch { el.textContent = String(obj); }
-}
-
 // ──────────────────────────────────────────────
-// WS + Controls
+// Transport layer: WS → SSE → Poll
 // ──────────────────────────────────────────────
 const overlay = q("#loadingOverlay");
 const results = q("#resultsPanel");
@@ -539,42 +396,99 @@ async function startAudit(url) {
   statusEl.textContent = "Connecting...";
   loadingBar.style.width = "5%";
 
-  const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${wsProto}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
-
-  let ws;
-  try { ws = new WebSocket(wsUrl); } catch (e) { log("WebSocket init failed: " + e, true); }
-
-  if (ws) {
-    ws.onopen = () => { log("WS connected"); statusEl.textContent = "Engine running..."; };
-    ws.onmessage = e => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.status) { statusEl.textContent = data.status; log(data.status); }
-        if (data.crawl_progress != null) loadingBar.style.width = Math.min(data.crawl_progress, 100) + "%";
-        if (data.error) log(data.error, true);
-
-        if (data.partial) {
-          lastPayload = deepMerge(lastPayload || {}, data.partial);
-          results.classList.remove("d-none");
-          renderPayload(lastPayload);
-        }
-        if (data.finished) {
-          overlay.classList.remove("show");
-          lastPayload = data;
-          renderPayload(data);
-          log("Audit finished.");
-        }
-      } catch (err) { log("Parse error: " + err.message, true); }
-    };
-    ws.onerror = () => { log("WS error – check backend", true); overlay.classList.remove("show"); };
-  } else {
+  // Try WebSocket → SSE → Polling
+  try {
+    await connectWS(url);
+    return;
+  } catch (e) {
+    log("WS unavailable, trying SSE...", true);
+  }
+  try {
+    await connectSSE(url);
+    return;
+  } catch (e) {
+    log("SSE unavailable, falling back to polling...", true);
+  }
+  try {
+    await connectPoll(url);
+    return;
+  } catch (e) {
     overlay.classList.remove("show");
-    alert("WebSocket unavailable. Is the backend running?");
+    log("All transports failed. Check backend.", true);
+    alert("All transports failed. Is the backend running?");
   }
 }
 
+function handleMessage(data) {
+  try {
+    if (data.status) { statusEl.textContent = data.status; log(data.status); }
+    if (data.crawl_progress != null) loadingBar.style.width = Math.min(data.crawl_progress, 100) + "%";
+    if (data.error) log(data.error, true);
+
+    if (data.partial) {
+      lastPayload = deepMerge(lastPayload || {}, data.partial);
+      results.classList.remove("d-none");
+      renderPayload(lastPayload);
+    }
+    if (data.finished) {
+      overlay.classList.remove("show");
+      lastPayload = data;
+      results.classList.remove("d-none");
+      renderPayload(data);
+      log("Audit finished.");
+    }
+  } catch (err) { log("Parse error: " + err.message, true); }
+}
+
+function connectWS(url) {
+  return new Promise((resolve, reject) => {
+    const wsUrl = BACKEND_ROUTES.ws(url);
+    let opened = false;
+    let ws;
+    try { ws = new WebSocket(wsUrl); } catch (e) { return reject(e); }
+
+    ws.onopen = () => { opened = true; log("WS connected"); statusEl.textContent = "Engine running..."; resolve(); };
+    ws.onmessage = e => { try { handleMessage(JSON.parse(e.data)); } catch (err) { log("WS JSON parse error: " + err.message, true); } };
+    ws.onerror = () => { if (!opened) reject(new Error("WS error")); else log("WS error", true); };
+    ws.onclose = () => { if (!opened) reject(new Error("WS closed")); else log("WS closed"); };
+  });
+}
+
+function connectSSE(url) {
+  return new Promise((resolve, reject) => {
+    const sseUrl = BACKEND_ROUTES.sse(url);
+    let opened = false;
+    const es = new EventSource(sseUrl);
+    es.onopen = () => { opened = true; log("SSE connected"); statusEl.textContent = "Engine running..."; resolve(); };
+    es.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch (err) { log("SSE JSON parse error: " + err.message, true); } };
+    es.onerror = () => { if (!opened) { es.close(); reject(new Error("SSE error")); } else { log("SSE error", true); } };
+  });
+}
+
+async function connectPoll(url) {
+  // 1) Start job
+  const startRes = await fetch(BACKEND_ROUTES.poll.start(url));
+  if (!startRes.ok) throw new Error("Start failed");
+  const { job_id } = await startRes.json();
+  if (!job_id) throw new Error("No job_id from backend");
+
+  log(`Polling started: job_id=${job_id}`);
+  let finished = false; let attempt = 0;
+  while (!finished && attempt < 240) { // up to ~8 minutes if step sleeps 2s
+    const res = await fetch(BACKEND_ROUTES.poll.step(job_id), { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Poll failed: ${res.status}`);
+    const data = await res.json();
+    handleMessage(data);
+    finished = !!data.finished;
+    attempt++;
+    await new Promise(r => setTimeout(r, data.interval_ms ?? 2000));
+  }
+  if (!finished) throw new Error("Polling timed out");
+}
+
+// ──────────────────────────────────────────────
 // Controls
+// ──────────────────────────────────────────────
 q("#btnRun").onclick = () => {
   let url = q("#urlInput").value.trim();
   if (!url) return alert("Enter a URL");
@@ -587,8 +501,7 @@ q("#btnReset").onclick = () => {
   results.classList.add("d-none");
   q("#urlInput").value = "";
   q("#auditLog").innerHTML = "> Ready for new audit.";
-  clearCharts();
-  lastPayload = null;
+  clearCharts(); lastPayload = null;
 };
 
 q("#btnDownload").onclick = async () => {
@@ -598,30 +511,36 @@ q("#btnDownload").onclick = async () => {
   const imgData = canvas.toDataURL("image/png");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const ratio = canvas.width / canvas.height;
-  let heightLeft = canvas.height * (pageWidth / canvas.width);
+  const height = canvas.height * (pageWidth / canvas.width);
   let position = 0;
-
-  doc.addImage(imgData, 'PNG', 0, position, pageWidth, heightLeft);
-  heightLeft -= pageHeight;
-
+  doc.addImage(imgData, 'PNG', 0, position, pageWidth, height);
+  let heightLeft = height - pageHeight;
   while (heightLeft > 0) {
-    position = heightLeft - canvas.height;
+    position = heightLeft - height;
     doc.addPage();
-    doc.addImage(imgData, 'PNG', 0, position, pageWidth, canvas.height);
+    doc.addImage(imgData, 'PNG', 0, position, pageWidth, height);
     heightLeft -= pageHeight;
   }
-
   doc.save(`audit-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`);
   log("PDF exported.");
 };
 
 q("#btnCopyJSON").onclick = async () => {
   const text = q('#jsonRaw').textContent;
-  if (text && text !== '—') {
-    await navigator.clipboard.writeText(text);
-    log("JSON copied.");
-  }
+  if (text && text !== '—') { await navigator.clipboard.writeText(text); log("JSON copied."); }
+};
+
+q("#btnCopySummary").onclick = async () => {
+  if (!lastPayload) return;
+  const s = lastPayload;
+  const lines = [];
+  lines.push(`URL: ${localStorage.getItem('last_audit_url') || ''}`);
+  lines.push(`Overall: ${s.overall_score ?? '—'} | Grade: ${s.grade ?? '—'}`);
+  lines.push(`SEO: ${s.breakdown?.seo ?? '—'} | Performance: ${s.breakdown?.performance?.score ?? '—'} (LCP: ${s.breakdown?.performance?.lcp_ms ?? '—'} ms)`);
+  const names = (s.breakdown?.competitors?.names || []).slice(0,3).join(', ');
+  lines.push(`Competitors: ${names || '—'}`);
+  await navigator.clipboard.writeText(lines.join('\n'));
+  log("Summary copied.");
 };
 
 q('#themeToggle').onclick = () => {
@@ -633,19 +552,13 @@ q('#themeToggle').onclick = () => {
 
 // Boot
 (function init() {
-  const saved = localStorage.getItem('last_audit_url');
-  if (saved) q('#urlInput').value = saved;
-  const theme = localStorage.getItem('theme');
-  if (theme) document.documentElement.setAttribute('data-bs-theme', theme);
-
-  const params = new URLSearchParams(location.search);
-  const u = params.get('url');
-  if (u) {
-    q('#urlInput').value = u;
-    startAudit(/^https?:\/\//i.test(u) ? u : 'https://' + u);
-  }
+  const saved = localStorage.getItem('last_audit_url'); if (saved) q('#urlInput').value = saved;
+  const theme = localStorage.getItem('theme'); if (theme) document.documentElement.setAttribute('data-bs-theme', theme);
+  const params = new URLSearchParams(location.search); const u = params.get('url');
+  if (u) { q('#urlInput').value = u; startAudit(/^https?:\/\//i.test(u) ? u : 'https://' + u); }
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
+``
