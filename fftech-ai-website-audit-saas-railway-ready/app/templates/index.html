@@ -70,13 +70,6 @@
       border-radius: 0.5rem;
       border-left: 5px solid var(--primary);
     }
-    .dynamic-card {
-      background: #1e293b;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      margin-bottom: 1rem;
-    }
   </style>
 </head>
 <body>
@@ -149,18 +142,18 @@
       </div>
     </section>
 
-    <!-- Core Details -->
+    <!-- Details: Links & Performance -->
     <section class="row g-4 mb-5">
       <div class="col-md-6">
         <div class="card p-4">
-          <h6 class="muted fw-semibold mb-3">Links Overview</h6>
+          <h6 class="muted mb-3">Links Overview</h6>
           <div id="linksSummary" class="small mb-2">Internal: — | External: — | Warnings: — | Broken: —</div>
           <pre id="linksRaw" class="small-mono"></pre>
         </div>
       </div>
       <div class="col-md-6">
         <div class="card p-4">
-          <h6 class="muted fw-semibold mb-3">Performance</h6>
+          <h6 class="muted mb-3">Performance</h6>
           <div id="perfSummary" class="small mb-2">LCP (ms): — | Score: —</div>
           <pre id="perfExtras" class="small-mono"></pre>
         </div>
@@ -175,12 +168,6 @@
       </div>
       <ul id="competitorList" class="competitors mb-3"></ul>
       <pre id="competitorItems" class="small-mono"></pre>
-    </section>
-
-    <!-- Dynamic / Plugin Results -->
-    <section id="dynamicSection" class="mb-5 d-none">
-      <h5 class="text-warning mb-4">Additional Insights</h5>
-      <div id="dynamicCards" class="row g-4"></div>
     </section>
 
     <!-- Error -->
@@ -262,13 +249,12 @@
       $("competitorList").innerHTML = "";
       $("competitorItems").textContent = "";
       $("errorBox").textContent = "";
-      $("dynamicSection").classList.add("d-none");
-      $("#dynamicCards").empty();
+      $("errorBox").classList.add("d-none");
       destroyCharts();
     }
 
     // ──────────────────────────────────────────────
-    // WebSocket – matches main.py /ws
+    // WebSocket – FIXED to match main.py /ws
     // ──────────────────────────────────────────────
     function makeWsUrl(path) {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -324,41 +310,6 @@
       }
     }
 
-    function renderDynamicSection(dynamic) {
-      const section = $("dynamicSection");
-      const container = $("#dynamicCards");
-      container.empty();
-      if (!dynamic || (!dynamic.cards?.length && !dynamic.kv)) {
-        section.classList.add("d-none");
-        return;
-      }
-      section.classList.remove("d-none");
-
-      // Render generic cards
-      if (dynamic.cards && Array.isArray(dynamic.cards)) {
-        dynamic.cards.forEach(card => {
-          const col = document.createElement("div");
-          col.className = "col-md-3";
-          col.innerHTML = `
-            <div class="dynamic-card text-center">
-              <div class="muted small fw-semibold mb-1">${card.title || "Metric"}</div>
-              <div class="kpi">${card.value ?? "—"}</div>
-              ${card.unit ? `<small class="muted">${card.unit}</small>` : ""}
-            </div>
-          `;
-          container.append(col);
-        });
-      }
-
-      // Render KV pairs if any (fallback)
-      if (dynamic.kv && Object.keys(dynamic.kv).length) {
-        const pre = document.createElement("pre");
-        pre.className = "small-mono mt-3";
-        pre.textContent = pretty(dynamic.kv);
-        container.append(pre);
-      }
-    }
-
     function renderFinalPayload(msg) {
       setText("overallScore", msg.overall_score ?? "—");
       setText("grade", msg.grade ?? "—");
@@ -387,9 +338,6 @@
       // Competitors
       const compBlock = deepGet(msg, "breakdown.competitors", { names: [], items: [] });
       renderCompetitors(compBlock);
-
-      // Dynamic / future-proof section
-      if (msg.dynamic) renderDynamicSection(msg.dynamic);
     }
 
     function runAudit(url) {
@@ -409,7 +357,9 @@
 
       socket.addEventListener("message", ev => {
         let msg;
-        try { msg = JSON.parse(ev.data); } catch { return; }
+        try { msg = JSON.parse(ev.data); } catch { console.error("Invalid JSON:", ev.data); return; }
+
+        console.log("WS message:", msg); // For debugging
 
         if (msg.status || typeof msg.crawl_progress === "number") {
           updateStatus(msg);
@@ -428,10 +378,12 @@
 
       socket.addEventListener("close", () => {
         $("statusLine").textContent += " (connection closed)";
+        console.log("WebSocket closed");
       });
 
-      socket.addEventListener("error", () => {
-        $("errorBox").textContent = "WebSocket connection failed – check server status";
+      socket.addEventListener("error", ev => {
+        console.error("WebSocket error:", ev);
+        $("errorBox").textContent = "Connection failed – check console (F12) or server logs";
         $("errorBox").classList.remove("d-none");
       });
     }
