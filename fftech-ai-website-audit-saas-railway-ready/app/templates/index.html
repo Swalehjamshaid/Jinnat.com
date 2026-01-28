@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FF Tech Audit Engine v4.3</title>
+  <title>FF Tech Audit Engine v4.4 (Auto‑Adaptive)</title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
+    :root { --gold:#ffd700; --muted:#9ca3af; --panel:rgba(17,24,39,0.92); }
     body {
       background: radial-gradient(circle at top right, #1e293b, #0a0e17);
       color: #e5e7eb;
@@ -21,57 +21,60 @@
       min-height: 100vh;
     }
     .card-glass {
-      background: rgba(17, 24, 39, 0.92);
+      background: var(--panel);
       border: 1px solid rgba(255, 215, 0, 0.16);
       border-radius: 1.25rem;
-      padding: 1.8rem;
+      padding: 1.4rem;
       backdrop-filter: blur(10px);
     }
     .metric-box {
       background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,215,0,0.10);
       border-radius: 0.85rem;
-      padding: 1.2rem;
+      padding: 0.9rem;
       text-align: center;
+      height: 100%;
     }
     .metric-value {
-      font-size: 2.4rem;
+      font-size: 2.1rem;
       font-weight: 800;
-      color: #ffd700;
+      color: var(--gold);
     }
     .metric-label {
       font-size: 0.85rem;
-      color: #9ca3af;
+      color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
     #loadingOverlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(10,14,23,0.97);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      z-index: 9999;
+      position: fixed; inset: 0; background: rgba(10,14,23,0.97);
+      display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 9999;
     }
     #loadingOverlay.show { display: flex; }
     #auditLog {
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 420px;
-      overflow-y: auto;
-      background: rgba(0,0,0,0.45);
-      padding: 1rem;
-      border-radius: 0.75rem;
-      border: 1px solid #444;
-      font-size: 0.9rem;
-      font-family: 'Courier New', Courier, monospace;
+      white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow-y: auto;
+      background: rgba(0,0,0,0.45); padding: 1rem; border-radius: 0.75rem; border: 1px solid #444;
+      font-size: 0.9rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
     }
+    #autoCharts .chart-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,215,0,0.10);
+      border-radius: 0.85rem;
+      padding: 1rem;
+      height: 100%;
+    }
+    .badge-soft {
+      background: rgba(255,215,0,0.1);
+      color: var(--gold);
+      border: 1px solid rgba(255,215,0,0.2);
+    }
+    .json-view { font-size: .85rem; color: #d1d5db; }
+    details summary { cursor: pointer; }
   </style>
 </head>
 <body>
 
+<!-- LOADING -->
 <div id="loadingOverlay">
   <div class="spinner-border text-warning mb-4" style="width:3.5rem;height:3.5rem;"></div>
   <h4 id="statusLabel" class="mb-3">Initializing Audit Engine...</h4>
@@ -81,13 +84,27 @@
 </div>
 
 <div class="container py-5">
-  <h1 class="text-center fw-bold mb-5 text-warning">
-    FF Tech Audit Engine <span class="fw-light fs-4">v4.3</span>
-  </h1>
+  <div class="d-flex flex-wrap align-items-end justify-content-between mb-4">
+    <h1 class="fw-bold text-warning m-0">
+      FF Tech Audit Engine <span class="fw-light fs-4">v4.4</span>
+    </h1>
+    <div class="d-flex gap-2 mt-3 mt-md-0">
+      <button id="btnDownload" class="btn btn-outline-warning">
+        <i class="bi bi-file-earmark-pdf"></i> Export PDF
+      </button>
+      <button id="btnCopyJSON" class="btn btn-outline-info">
+        <i class="bi bi-braces-asterisk"></i> Copy JSON
+      </button>
+      <button id="btnReset" class="btn btn-outline-danger">
+        <i class="bi bi-arrow-repeat"></i> Reset
+      </button>
+    </div>
+  </div>
 
   <div class="row g-4">
     <div class="col-lg-8">
       <div class="card-glass" id="printableArea">
+        <!-- URL INPUT -->
         <div class="input-group input-group-lg mb-4">
           <span class="input-group-text bg-dark text-warning border-secondary">
             <i class="bi bi-globe"></i>
@@ -97,44 +114,65 @@
           <button id="btnRun" class="btn btn-warning fw-bold px-5">RUN AUDIT</button>
         </div>
 
+        <!-- SUMMARY HEADER -->
         <div id="resultsPanel" class="d-none">
           <div class="text-center mb-4">
             <h1 id="ovScore" class="display-2 fw-black text-warning">—</h1>
             <h4 id="gradeDisplay" class="text-muted">GRADE: —</h4>
-            <div class="mt-3">
-              <button id="btnDownload" class="btn btn-outline-warning me-2">
-                <i class="bi bi-file-earmark-pdf"></i> Export PDF
-              </button>
-              <button id="btnReset" class="btn btn-outline-danger">
-                <i class="bi bi-arrow-repeat"></i> Reset
-              </button>
-            </div>
+            <div id="competitorBadges" class="mt-3"></div>
           </div>
 
-          <div class="row g-3 mb-4 text-center">
-            <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">SEO</div><div id="seoScore" class="metric-value">—</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">LCP (ms)</div><div id="lcpScore" class="metric-value">—</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">Competitor</div><div id="compScore" class="metric-value">—</div></div></div>
-            <div class="col-6 col-md-3"><div class="metric-box"><div class="metric-label">AI Trust</div><div class="metric-value">95</div></div></div>
+          <!-- DYNAMIC METRICS GRID -->
+          <div id="metricsGrid" class="row g-3 mb-4 text-center">
+            <!-- Cards auto-injected here based on payload -->
           </div>
 
+          <!-- CHARTS (auto) -->
+          <div id="autoCharts" class="row g-4 mb-4">
+            <!-- Chart canvases auto-injected here -->
+          </div>
+
+          <!-- LINKS & TABLES -->
           <div class="row g-4">
-            <div class="col-md-7">
-              <canvas id="barChart" height="200"></canvas>
-            </div>
-            <div class="col-md-5">
-              <canvas id="doughnutChart" height="200"></canvas>
-              <div class="mt-3 p-3 bg-dark rounded border border-secondary small">
+            <div class="col-md-6">
+              <div class="p-3 bg-dark rounded border border-secondary small h-100">
+                <h6 class="text-warning mb-3"><i class="bi bi-link-45deg"></i> Links Overview</h6>
                 <div class="d-flex justify-content-between mb-1"><span>Internal Links:</span><span id="intCount">—</span></div>
                 <div class="d-flex justify-content-between mb-1"><span>External Links:</span><span id="extCount">—</span></div>
+                <div class="d-flex justify-content-between mb-1"><span>Warning Links:</span><span id="warnCount">—</span></div>
                 <div class="d-flex justify-content-between"><span>Broken Links:</span><span id="brkCount" class="text-danger">—</span></div>
               </div>
             </div>
+            <div class="col-md-6">
+              <div class="p-3 bg-dark rounded border border-secondary small h-100">
+                <h6 class="text-warning mb-3"><i class="bi bi-people"></i> Top Competitors</h6>
+                <div class="table-responsive">
+                  <table class="table table-dark table-sm align-middle mb-0" id="compTable">
+                    <thead>
+                      <tr><th>Name</th><th class="text-end">Score</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AUTO SECTIONS (render any new structures from backend) -->
+          <div id="autoSections" class="mt-4"></div>
+
+          <!-- RAW JSON VIEW -->
+          <div class="mt-4">
+            <details open>
+              <summary class="text-warning h6">Payload (raw JSON)</summary>
+              <pre id="jsonRaw" class="json-view bg-dark p-3 rounded border border-secondary mt-2" style="max-height:360px;overflow:auto;">—</pre>
+            </details>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- LIVE LOG -->
     <div class="col-lg-4">
       <div class="card-glass h-100">
         <h6 class="text-warning mb-3">Live Audit Log</h6>
@@ -145,103 +183,298 @@
 </div>
 
 <script>
-let barChart, doughnutChart;
-const logEl      = document.getElementById("auditLog");
-const statusEl   = document.getElementById("statusLabel");
-const loadingBar = document.getElementById("loadingBar");
-const overlay    = document.getElementById("loadingOverlay");
-const results    = document.getElementById("resultsPanel");
-
-function log(msg, isError = false) {
+/* ===========================
+   Utilities (schema-less)
+   =========================== */
+let chartInstances = [];
+const q = (sel) => document.querySelector(sel);
+const el = (tag, cls, html) => { const x = document.createElement(tag); if (cls) x.className = cls; if (html!=null) x.innerHTML = html; return x; };
+const asInt = (v, d=0) => { const n = Number(v); return Number.isFinite(n) ? Math.round(n) : d; };
+const getFirstScore = (obj) => {
+  if (obj == null) return null;
+  if (typeof obj === 'number') return asInt(obj);
+  if (typeof obj === 'object') {
+    for (const k of ['score','value','overall','total']) {
+      if (obj[k] != null) return asInt(obj[k]);
+    }
+    if (Array.isArray(obj)) {
+      for (const it of obj) {
+        const v = getFirstScore(it);
+        if (v != null) return v;
+      }
+    }
+  }
+  return null;
+};
+function log(msg, isError=false) {
+  const logEl = q("#auditLog");
   const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-  const entry = document.createElement("div");
+  const entry = el("div", null, `[${time}] ${msg}`);
   entry.style.color = isError ? "#ef4444" : "#9ca3af";
-  entry.textContent = `[${time}] ${msg}`;
   logEl.appendChild(entry);
   logEl.scrollTop = logEl.scrollHeight;
 }
+/* JSON Viewer */
+function renderJSON(target, obj) {
+  try {
+    target.textContent = JSON.stringify(obj, null, 2);
+  } catch { target.textContent = String(obj); }
+}
 
-document.getElementById("btnRun").onclick = () => {
-  let url = document.getElementById("urlInput").value.trim();
+/* Destroy charts safely */
+function clearCharts() {
+  chartInstances.forEach(c => { try { c.destroy(); } catch{} });
+  chartInstances = [];
+}
+
+/* Heuristic chart type by key/name */
+function guessChartType(key) {
+  const k = (key||'').toLowerCase();
+  if (k.includes('doughnut')) return 'doughnut';
+  if (k.includes('radar')) return 'radar';
+  if (k.includes('line')) return 'line';
+  if (k.includes('pie')) return 'pie';
+  if (k.includes('bar')) return 'bar';
+  return 'bar';
+}
+
+/* ===========================
+   Renderers
+   =========================== */
+function renderCompetitors(section, competitors) {
+  // Badges (names)
+  const badgeWrap = q('#competitorBadges');
+  badgeWrap.innerHTML = '';
+  (competitors?.names ?? []).forEach(n => {
+    const b = el('span', 'badge badge-soft me-1 mb-1', `<i class="bi bi-trophy me-1"></i>${n}`);
+    b.style.padding = '0.45rem 0.6rem';
+    badgeWrap.appendChild(b);
+  });
+
+  // Table (items)
+  const tbody = q('#compTable tbody');
+  tbody.innerHTML = '';
+  const items = competitors?.items ?? [];
+  if (Array.isArray(items) && items.length) {
+    items.slice(0, 3).forEach(it => {
+      const tr = el('tr');
+      tr.appendChild(el('td', null, String(it.name ?? '—')));
+      tr.appendChild(el('td', 'text-end', String(getFirstScore(it) ?? '—')));
+      tbody.appendChild(tr);
+    });
+  } else {
+    const tr = el('tr');
+    tr.appendChild(el('td', 'text-muted', '—'));
+    tr.appendChild(el('td', 'text-end text-muted', '—'));
+    tbody.appendChild(tr);
+  }
+}
+
+function renderMetricsGrid(breakdown) {
+  // Build metric cards from any numeric values we can find
+  const grid = q('#metricsGrid');
+  grid.innerHTML = '';
+
+  const flatMetrics = []; // {label, value}
+  const pushMetric = (label, value) => {
+    if (value == null) return;
+    const n = Number(value);
+    if (Number.isFinite(n)) flatMetrics.push({label, value: Math.round(n)});
+  };
+
+  // Pass 1: direct numeric fields
+  Object.entries(breakdown || {}).forEach(([k, v]) => {
+    if (typeof v === 'number') pushMetric(k, v);
+    else if (typeof v === 'object' && v != null) {
+      const s = getFirstScore(v);
+      if (s != null) pushMetric(k, s);
+      // Performance: also show lcp_ms if present
+      if (k.toLowerCase() === 'performance' && v.lcp_ms != null) pushMetric('lcp_ms', v.lcp_ms);
+    }
+  });
+
+  // Deduplicate by label
+  const seen = new Set();
+  const unique = flatMetrics.filter(m => (seen.has(m.label) ? false : seen.add(m.label)));
+
+  // Render at least 4 cards with placeholders if needed
+  const toRender = unique.length ? unique : [{label:'seo',value:0},{label:'performance',value:0},{label:'competitors',value:0},{label:'ai',value:95}];
+  toRender.slice(0, 8).forEach(m => {
+    const col = el('div', 'col-6 col-md-3');
+    const box = el('div', 'metric-box');
+    box.appendChild(el('div', 'metric-label', m.label.replaceAll('_',' ').toUpperCase()));
+    box.appendChild(el('div', 'metric-value', String(m.value)));
+    col.appendChild(box);
+    grid.appendChild(col);
+  });
+}
+
+function renderLinks(links) {
+  q('#intCount').textContent  = links?.internal_links_count ?? '0';
+  q('#extCount').textContent  = links?.external_links_count ?? '0';
+  q('#warnCount').textContent = links?.warning_links_count ?? '0';
+  q('#brkCount').textContent  = links?.broken_internal_links ?? '0';
+}
+
+function renderAutoSections(payload) {
+  const host = q('#autoSections');
+  host.innerHTML = '';
+  const breakdown = payload?.breakdown || {};
+
+  // Render any objects (except links/performance/competitors already handled) as expandable sections
+  Object.entries(breakdown).forEach(([key, val]) => {
+    if (['links','performance','competitors'].includes(key)) return;
+    if (val && typeof val === 'object') {
+      const card = el('div', 'card-glass mb-3');
+      card.appendChild(el('h6', 'text-warning', key.toUpperCase()));
+      const pre = el('pre', 'json-view bg-dark p-3 rounded border border-secondary', '');
+      pre.style.maxHeight = '280px';
+      pre.style.overflow = 'auto';
+      renderJSON(pre, val);
+      card.appendChild(pre);
+      host.appendChild(card);
+    }
+  });
+
+  // Global extras if any
+  if (payload?.extras) {
+    const card = el('div', 'card-glass mb-3');
+    card.appendChild(el('h6', 'text-warning', 'EXTRAS'));
+    const pre = el('pre', 'json-view bg-dark p-3 rounded border border-secondary', '');
+    pre.style.maxHeight = '280px';
+    pre.style.overflow = 'auto';
+    renderJSON(pre, payload.extras);
+    card.appendChild(pre);
+    host.appendChild(card);
+  }
+}
+
+function renderCharts(chart_data) {
+  clearCharts();
+  const wrap = q('#autoCharts');
+  wrap.innerHTML = '';
+
+  if (!chart_data || typeof chart_data !== 'object') return;
+
+  Object.entries(chart_data).forEach(([key, dataObj]) => {
+    // Must have datasets to render
+    if (!dataObj || typeof dataObj !== 'object' || !Array.isArray(dataObj.datasets)) return;
+    const col = el('div', 'col-md-6');
+    const card = el('div', 'chart-card');
+    const title = el('div', 'text-warning small mb-2', `<i class="bi bi-graph-up"></i> ${key}`);
+    const canvas = el('canvas');
+    card.appendChild(title);
+    card.appendChild(canvas);
+    col.appendChild(card);
+    wrap.appendChild(col);
+
+    const type = dataObj.type || guessChartType(key);
+    try {
+      const inst = new Chart(canvas.getContext('2d'), {
+        type,
+        data: dataObj,
+        options: Object.assign(
+          { responsive:true, plugins:{legend:{display:true}}, scales: {} },
+          (type === 'bar' || type === 'line') ? { scales:{ y:{ beginAtZero:true, suggestedMax:100 } } } : {}
+        )
+      });
+      chartInstances.push(inst);
+    } catch (e) {
+      // If rendering fails, show raw chart data
+      const err = el('div','text-danger small mt-2','Chart render failed, showing raw data');
+      card.appendChild(err);
+      const pre = el('pre','json-view bg-dark p-2 rounded border border-secondary mt-2');
+      renderJSON(pre, dataObj);
+      card.appendChild(pre);
+    }
+  });
+}
+
+function renderPayload(r) {
+  // Header
+  q('#ovScore').textContent     = r.overall_score ?? '—';
+  q('#gradeDisplay').textContent = `GRADE: ${r.grade ?? '—'}`;
+
+  // Metrics grid from breakdown (adaptive)
+  renderMetricsGrid(r.breakdown);
+
+  // Competitors
+  renderCompetitors('competitors', r.breakdown?.competitors);
+
+  // Links
+  renderLinks(r.breakdown?.links || {});
+
+  // Charts (auto)
+  renderCharts(r.chart_data);
+
+  // Raw JSON
+  renderJSON(q('#jsonRaw'), r);
+}
+
+/* ===========================
+   WS + Controls
+   =========================== */
+const statusEl   = q("#statusLabel");
+const loadingBar = q("#loadingBar");
+const overlay    = q("#loadingOverlay");
+const results    = q("#resultsPanel");
+
+q("#btnRun").onclick = () => {
+  let url = q("#urlInput").value.trim();
   if (!url) return alert("Please enter a URL");
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  
+
   overlay.classList.add("show");
   results.classList.add("d-none");
-  logEl.innerHTML = "<div>> Starting new audit sequence...</div>";
+  q("#auditLog").innerHTML = "> Starting new audit sequence...";
   statusEl.textContent = "Connecting to FF Engine...";
   loadingBar.style.width = "5%";
 
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-  // FIXED: Connects to the specific path defined in main.py
   const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
 
   ws.onopen = () => { log("Connection established"); statusEl.textContent = "Engine initialized..."; };
-  
+
   ws.onmessage = (e) => {
     try {
       const r = JSON.parse(e.data);
+
       if (r.status) { statusEl.textContent = r.status; log(r.status); }
-      if (r.crawl_progress) loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
+      if (r.crawl_progress != null) loadingBar.style.width = Math.min(r.crawl_progress, 100) + "%";
       if (r.error) log(r.error, true);
-      
+
+      // If backend decides to stream partial chunks (forward-compatible)
+      if (r.partial) {
+        // Optionally show partial numbers in metrics area without breaking final render
+        log("Partial update received.");
+      }
+
       if (r.finished) {
         overlay.classList.remove("show");
         results.classList.remove("d-none");
-
-        // Map data to UI
-        document.getElementById("ovScore").textContent     = r.overall_score ?? "—";
-        document.getElementById("gradeDisplay").textContent = `GRADE: ${r.grade ?? "—"}`;
-        document.getElementById("seoScore").textContent    = r.breakdown?.seo ?? "—";
-        document.getElementById("lcpScore").textContent    = r.breakdown?.performance?.lcp_ms ?? "—";
-        document.getElementById("compScore").textContent   = r.breakdown?.competitors?.top_competitor_score ?? "—";
-        
-        // Link Metrics
-        const links = r.breakdown?.links || {};
-        document.getElementById("intCount").textContent    = links.internal_links_count ?? "0";
-        document.getElementById("extCount").textContent    = links.external_links_count ?? "0";
-        document.getElementById("brkCount").textContent    = links.broken_internal_links ?? "0";
-
-        // Update Charts
-        barChart?.destroy();
-        doughnutChart?.destroy();
-
-        if (r.chart_data?.bar) {
-          barChart = new Chart(document.getElementById("barChart"), { 
-            type: "bar", 
-            data: r.chart_data.bar, 
-            options: { scales: { y: { max: 100, beginAtZero: true } }, responsive: true } 
-          });
-        }
-        if (r.chart_data?.doughnut) {
-          doughnutChart = new Chart(document.getElementById("doughnutChart"), { 
-            type: "doughnut", 
-            data: r.chart_data.doughnut, 
-            options: { responsive: true } 
-          });
-        }
-
+        renderPayload(r);
         log("Audit complete. Data synchronized.");
-        ws.close();
+        try { ws.close(); } catch {}
       }
-    } catch(err) { log("Data handling error: "+err.message, true); }
+    } catch(err) { log("Data handling error: " + err.message, true); }
   };
 
-  ws.onerror = () => { 
-    log("Connection failure", true); 
-    overlay.classList.remove("show"); 
-    alert("Audit Engine Connection Failed. Ensure backend is running."); 
+  ws.onerror = () => {
+    log("Connection failure", true);
+    overlay.classList.remove("show");
+    alert("Audit Engine Connection Failed. Ensure backend is running.");
   };
 };
 
-document.getElementById("btnReset").onclick = () => {
+q("#btnReset").onclick = () => {
   results.classList.add("d-none");
-  document.getElementById("urlInput").value = "";
-  logEl.innerHTML = "<div>> Results cleared. Ready.</div>";
-  document.getElementById("urlInput").focus();
+  q("#urlInput").value = "";
+  q("#auditLog").innerHTML = "> Results cleared. Ready.";
+  q("#urlInput").focus();
+  clearCharts();
 };
 
-document.getElementById("btnDownload").onclick = async () => {
+q("#btnDownload").onclick = async () => {
   try {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
@@ -252,7 +485,17 @@ document.getElementById("btnDownload").onclick = async () => {
     doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
     doc.save(`audit-report-${new Date().getTime()}.pdf`);
     log("Report exported to PDF.");
-  } catch(err) { log("PDF error: "+err.message, true); }
+  } catch(err) { log("PDF error: " + err.message, true); }
+};
+
+q("#btnCopyJSON").onclick = async () => {
+  try {
+    const text = q('#jsonRaw').textContent || '';
+    await navigator.clipboard.writeText(text);
+    log("Payload JSON copied to clipboard.");
+  } catch (e) {
+    log("Clipboard error: " + e.message, true);
+  }
 };
 </script>
 
