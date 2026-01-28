@@ -3,15 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FF Tech Audit Engine v5.0 (Auto‑Adaptive)</title>
-
+  <title>FF Tech Audit Engine v5.1 (Highly Adaptive)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
   <style>
     :root { --gold:#ffd700; --muted:#9ca3af; --panel:rgba(17,24,39,0.92); }
     body {
@@ -69,13 +66,12 @@
       border: 1px solid rgba(255,215,0,0.2);
     }
     .json-view { font-size: .85rem; color: #d1d5db; }
-    details summary { cursor: pointer; }
-    .kv-table td { padding: .2rem .4rem; border-bottom: 1px dashed rgba(255,215,0,.18); }
+    details summary { cursor: pointer; font-weight: 600; color: var(--gold); }
+    .kv-table td, .kv-table th { padding: .35rem .6rem; border-bottom: 1px dashed rgba(255,215,0,.18); }
     .theme-toggle { cursor:pointer; }
   </style>
 </head>
 <body>
-
 <!-- LOADING -->
 <div id="loadingOverlay">
   <div class="spinner-border text-warning mb-4" style="width:3.5rem;height:3.5rem;"></div>
@@ -88,21 +84,13 @@
 <div class="container py-5">
   <div class="d-flex flex-wrap align-items-end justify-content-between mb-4">
     <div class="d-flex align-items-center gap-3">
-      <h1 class="fw-bold text-warning m-0">FF Tech Audit Engine <span class="fw-light fs-4">v5.0</span></h1>
-      <span id="themeToggle" class="theme-toggle text-warning" title="Toggle theme">
-        <i class="bi bi-sun"></i>
-      </span>
+      <h1 class="fw-bold text-warning m-0">FF Tech Audit Engine <span class="fw-light fs-4">v5.1</span></h1>
+      <span id="themeToggle" class="theme-toggle text-warning" title="Toggle theme"><i class="bi bi-sun"></i></span>
     </div>
     <div class="d-flex gap-2 mt-3 mt-md-0">
-      <button id="btnDownload" class="btn btn-outline-warning">
-        <i class="bi bi-file-earmark-pdf"></i> Export PDF
-      </button>
-      <button id="btnCopyJSON" class="btn btn-outline-info">
-        <i class="bi bi-braces-asterisk"></i> Copy JSON
-      </button>
-      <button id="btnReset" class="btn btn-outline-danger">
-        <i class="bi bi-arrow-repeat"></i> Reset
-      </button>
+      <button id="btnDownload" class="btn btn-outline-warning"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
+      <button id="btnCopyJSON" class="btn btn-outline-info"><i class="bi bi-braces-asterisk"></i> Copy JSON</button>
+      <button id="btnReset" class="btn btn-outline-danger"><i class="bi bi-arrow-repeat"></i> Reset</button>
     </div>
   </div>
 
@@ -111,15 +99,13 @@
       <div class="card-glass" id="printableArea">
         <!-- URL INPUT -->
         <div class="input-group input-group-lg mb-4">
-          <span class="input-group-text bg-dark text-warning border-secondary">
-            <i class="bi bi-globe"></i>
-          </span>
+          <span class="input-group-text bg-dark text-warning border-secondary"><i class="bi bi-globe"></i></span>
           <input id="urlInput" class="form-control bg-dark text-white border-secondary"
                  placeholder="example.com or https://www.example.com" autofocus>
           <button id="btnRun" class="btn btn-warning fw-bold px-5">RUN AUDIT</button>
         </div>
 
-        <!-- SUMMARY HEADER -->
+        <!-- RESULTS -->
         <div id="resultsPanel" class="d-none">
           <div class="text-center mb-4">
             <h1 id="ovScore" class="display-2 fw-black text-warning">—</h1>
@@ -127,58 +113,49 @@
             <div id="competitorBadges" class="mt-3"></div>
           </div>
 
-          <!-- DYNAMIC METRICS GRID -->
-          <div id="metricsGrid" class="row g-3 mb-4 text-center">
-            <!-- Cards auto-injected here -->
-          </div>
+          <!-- DYNAMIC METRICS -->
+          <div id="metricsGrid" class="row g-3 mb-4 text-center"></div>
 
-          <!-- CHARTS (auto) -->
-          <div id="autoCharts" class="row g-4 mb-4">
-            <!-- Chart canvases auto-injected here -->
-          </div>
+          <!-- CHARTS -->
+          <div id="autoCharts" class="row g-4 mb-4"></div>
 
-          <!-- LINKS & TABLES -->
-          <div class="row g-4">
+          <!-- SPECIAL SECTIONS (links, competitors, etc.) -->
+          <div class="row g-4 mb-4">
             <div class="col-md-6">
               <div class="p-3 bg-dark rounded border border-secondary small h-100">
                 <h6 class="text-warning mb-3"><i class="bi bi-link-45deg"></i> Links Overview</h6>
-                <div class="d-flex justify-content-between mb-1"><span>Internal Links:</span><span id="intCount">—</span></div>
-                <div class="d-flex justify-content-between mb-1"><span>External Links:</span><span id="extCount">—</span></div>
-                <div class="d-flex justify-content-between mb-1"><span>Warning Links:</span><span id="warnCount">—</span></div>
-                <div class="d-flex justify-content-between"><span>Broken Links:</span><span id="brkCount" class="text-danger">—</span></div>
-                <div id="linksKvWrap" class="mt-3"></div>
+                <div id="linksSummary"></div>
+                <div id="linksDetail" class="mt-3"></div>
               </div>
             </div>
             <div class="col-md-6">
               <div class="p-3 bg-dark rounded border border-secondary small h-100">
-                <h6 class="text-warning mb-3"><i class="bi bi-people"></i> Top Competitors</h6>
-                <div id="compNamesWrap" class="mb-2"></div>
-                <div class="table-responsive">
-                  <table class="table table-dark table-sm align-middle mb-0" id="compTable">
-                    <thead><tr><th>Name</th><th class="text-end">Score</th></tr></thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
-                <div id="compLegend" class="text-muted small mt-2"></div>
+                <h6 class="text-warning mb-3"><i class="bi bi-people"></i> Competitors</h6>
+                <div id="competitorsSummary" class="mb-2"></div>
+                <div id="competitorsTableWrap" class="table-responsive"></div>
               </div>
             </div>
           </div>
 
-          <!-- AUTO SECTIONS (render any new structures from backend) -->
-          <div id="autoSections" class="mt-4"></div>
+          <!-- FULLY DYNAMIC SECTIONS -->
+          <div id="dynamicSections" class="mt-4"></div>
 
-          <!-- RAW JSON VIEW -->
+          <!-- RAW + EXPLORER -->
           <div class="mt-4">
             <details open>
-              <summary class="text-warning h6">Payload (raw JSON)</summary>
+              <summary class="h6">Raw JSON Payload</summary>
               <pre id="jsonRaw" class="json-view bg-dark p-3 rounded border border-secondary mt-2" style="max-height:360px;overflow:auto;">—</pre>
+            </details>
+            <details class="mt-3">
+              <summary class="h6">Interactive Payload Explorer</summary>
+              <div id="payloadExplorer" class="bg-dark p-3 rounded border border-secondary mt-2" style="max-height:400px;overflow:auto;"></div>
             </details>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- LIVE LOG -->
+    <!-- LOG -->
     <div class="col-lg-4">
       <div class="card-glass h-100">
         <h6 class="text-warning mb-3">Live Audit Log</h6>
@@ -189,508 +166,486 @@
 </div>
 
 <script>
-/* ===========================
-   Utilities (schema-less core)
-   =========================== */
+// ──────────────────────────────────────────────
+// Utilities
+// ──────────────────────────────────────────────
 let chartInstances = [];
 let lastPayload = null;
 
-const q = (sel) => document.querySelector(sel);
-const el = (tag, cls, html) => { const x = document.createElement(tag); if (cls) x.className = cls; if (html!=null) x.innerHTML = html; return x; };
-const asInt = (v, d=0) => { const n = Number(v); return Number.isFinite(n) ? Math.round(n) : d; };
-const clamp = (n, a, b) => Math.min(Math.max(n, a), b);
-const titleize = (s) => (s||'').replaceAll('_',' ').replace(/\b\w/g, m => m.toUpperCase());
+const q = sel => document.querySelector(sel);
+const el = (tag, cls = '', html = null) => {
+  const x = document.createElement(tag);
+  if (cls) x.className = cls;
+  if (html != null) x.innerHTML = html;
+  return x;
+};
+
+const asInt = (v, def = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n) : def;
+};
+
+const titleize = str => (str || '')
+  .replace(/[_-]/g, ' ')
+  .replace(/\b\w/g, m => m.toUpperCase());
 
 function deepMerge(target, source) {
   if (!source || typeof source !== 'object') return target;
   Object.keys(source).forEach(k => {
-    const sv = source[k];
-    const tv = target[k];
-    if (Array.isArray(sv)) target[k] = sv.slice();
-    else if (sv && typeof sv === 'object') target[k] = deepMerge(tv && typeof tv==='object' ? tv : {}, sv);
-    else target[k] = sv;
+    if (Array.isArray(source[k])) target[k] = [...(target[k] || []), ...source[k]];
+    else if (source[k] && typeof source[k] === 'object')
+      target[k] = deepMerge(target[k] && typeof target[k] === 'object' ? target[k] : {}, source[k]);
+    else target[k] = source[k];
   });
   return target;
 }
 
-function getFirstScore(obj) {
-  if (obj == null) return null;
-  if (typeof obj === 'number') return asInt(obj);
-  if (typeof obj === 'object') {
-    for (const k of ['score','value','overall','total','points']) {
-      if (obj[k] != null) return asInt(obj[k]);
-    }
-    if (Array.isArray(obj)) {
-      for (const it of obj) {
-        const v = getFirstScore(it);
-        if (v != null) return v;
-      }
-    }
-  }
-  return null;
-}
-
-function collectNumericMetrics(obj, prefix='', out=[]) {
-  if (!obj || typeof obj !== 'object') return out;
-  if (Array.isArray(obj)) {
-    obj.forEach((it, i) => collectNumericMetrics(it, `${prefix}[${i}]`, out));
-    return out;
-  }
-  for (const [k, v] of Object.entries(obj)) {
-    const key = prefix ? `${prefix}.${k}` : k;
-    if (typeof v === 'number') out.push({label:key, value:v});
-    else if (typeof v === 'object' && v) {
-      const s = getFirstScore(v);
-      if (s != null) out.push({label:key, value:s});
-      // continue exploring to find more numbers
-      collectNumericMetrics(v, key, out);
-    }
-  }
-  return out;
-}
-
-function log(msg, isError=false) {
+function log(msg, isError = false) {
   const logEl = q("#auditLog");
   const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-  const entry = el("div", null, `[${time}] ${msg}`);
+  const entry = el("div", "", `[${time}] ${msg}`);
   entry.style.color = isError ? "#ef4444" : "#9ca3af";
   logEl.appendChild(entry);
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-/* JSON Viewer */
-function renderJSON(target, obj) {
-  try { target.textContent = JSON.stringify(obj, null, 2); }
-  catch { target.textContent = String(obj); }
-}
+// ──────────────────────────────────────────────
+// Recursive metric & structure discovery
+// ──────────────────────────────────────────────
+function collectAllNumbers(obj, path = '', out = [], seen = new Set()) {
+  if (!obj || typeof obj !== 'object') return out;
 
-/* Destroy charts safely */
-function clearCharts() {
-  chartInstances.forEach(c => { try { c.destroy(); } catch{} });
-  chartInstances = [];
-}
-
-/* Color helpers */
-const palette = [
-  "rgba(255, 215, 0, 0.8)", "rgba(59, 130, 246, 0.8)", "rgba(16, 185, 129, 0.8)",
-  "rgba(147, 51, 234, 0.8)", "rgba(244, 63, 94, 0.8)", "rgba(234, 179, 8, 0.8)"
-];
-const paletteBorder = [
-  "rgba(255, 215, 0, 1)", "rgba(59, 130, 246, 1)", "rgba(16, 185, 129, 1)",
-  "rgba(147, 51, 234, 1)", "rgba(244, 63, 94, 1)", "rgba(234, 179, 8, 1)"
-];
-function colorAt(i){ return {bg: palette[i % palette.length], bd: paletteBorder[i % paletteBorder.length]}; }
-
-/* Guess chart type by key/name */
-function guessChartType(key, dataObj) {
-  const k = (key||'').toLowerCase();
-  if (dataObj && typeof dataObj.type === 'string') return dataObj.type;
-  if (k.includes('doughnut')) return 'doughnut';
-  if (k.includes('radar')) return 'radar';
-  if (k.includes('line')) return 'line';
-  if (k.includes('pie')) return 'pie';
-  if (k.includes('bar')) return 'bar';
-  return 'bar';
-}
-
-/* ===========================
-   Renderers
-   =========================== */
-function renderCompetitors(competitors) {
-  const badgeWrap = q('#competitorBadges');
-  badgeWrap.innerHTML = '';
-
-  // Names badge row (primary)
-  const names = Array.isArray(competitors?.names) ? competitors.names : [];
-  names.forEach(n => {
-    const b = el('span', 'badge badge-soft me-1 mb-1', `<i class="bi bi-trophy me-1"></i>${n}`);
-    b.style.padding = '0.45rem 0.6rem';
-    badgeWrap.appendChild(b);
-  });
-
-  // Names wrap above table for any string array fallback
-  const compNamesWrap = q('#compNamesWrap');
-  compNamesWrap.innerHTML = '';
-  if (names.length) compNamesWrap.appendChild(el('div','small text-muted', 'Detected Competitors: ' + names.join(', ')));
-
-  // Table (items with scores) + fallbacks
-  const tbody = q('#compTable tbody');
-  tbody.innerHTML = '';
-  const items = Array.isArray(competitors?.items) ? competitors.items : [];
-  if (items.length) {
-    items.slice(0, 6).forEach((it, i) => {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, String(it.name ?? `Item ${i+1}`)));
-      const score = getFirstScore(it);
-      tr.appendChild(el('td', 'text-end', score != null ? String(score) : '—'));
-      tbody.appendChild(tr);
-    });
-  } else if (Array.isArray(competitors)) {
-    // pure array fallback e.g., ["LG","Samsung",...]
-    competitors.slice(0, 6).forEach((v, i) => {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, typeof v === 'string' ? v : `Item ${i+1}`));
-      tr.appendChild(el('td', 'text-end', typeof v === 'number' ? String(v) : '—'));
-      tbody.appendChild(tr);
-    });
-  } else {
-    const tr = el('tr');
-    tr.appendChild(el('td', 'text-muted', '—'));
-    tr.appendChild(el('td', 'text-end text-muted', '—'));
-    tbody.appendChild(tr);
+  if (Array.isArray(obj)) {
+    obj.forEach((v, i) => collectAllNumbers(v, `${path}[${i}]`, out, seen));
+    return out;
   }
 
-  // Legend/footer showing legacy score if present
-  const legacy = competitors?.top_competitor_score ?? null;
-  q('#compLegend').textContent = (legacy != null) ? `Legacy top competitor score: ${legacy}` : '';
+  for (const [k, v] of Object.entries(obj)) {
+    const fullKey = path ? `${path}.${k}` : k;
+    const cleanLabel = titleize(k.split(/[_.\d]+/).filter(Boolean).join(' '));
+
+    if (typeof v === 'number' && !Number.isNaN(v)) {
+      const sig = `${fullKey}:${v}`;
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        out.push({ key: fullKey, label: cleanLabel || titleize(k), value: v, depth: path.split('.').length });
+      }
+    } else if (v && typeof v === 'object') {
+      // Try to extract score-like
+      const score = v.score ?? v.value ?? v.total ?? v.points ?? v.overall ?? v.percent ?? null;
+      if (score != null && typeof score === 'number') {
+        const sig = `${fullKey}:score:${score}`;
+        if (!seen.has(sig)) {
+          seen.add(sig);
+          out.push({ key: fullKey, label: cleanLabel + ' Score', value: score, depth: path.split('.').length });
+        }
+      }
+      collectAllNumbers(v, fullKey, out, seen);
+    }
+  }
+  return out;
 }
 
-function renderMetricsGrid(breakdown) {
+// ──────────────────────────────────────────────
+// Rendering functions (more generic)
+// ──────────────────────────────────────────────
+function renderMetricsGrid(payload) {
   const grid = q('#metricsGrid');
   grid.innerHTML = '';
-  const metrics = collectNumericMetrics(breakdown || {});
-  // Prefer human-friendly top-level keys
-  // rank by occurrence & recentness, then limit
-  const seen = new Set();
-  const unique = metrics.filter(m => (seen.has(m.label) ? false : seen.add(m.label)));
-  const top = unique
-    .filter(m => !/extras|items|names|links|chart|json|payload/i.test(m.label))
-    .slice(0, 12); // show up to 12 metric cards
 
-  (top.length ? top : [{label:'SEO',value:0},{label:'Performance',value:0},{label:'Competitors',value:0},{label:'AI',value:95}])
-    .forEach(m => {
-      const col = el('div', 'col-6 col-md-3');
-      const box = el('div', 'metric-box');
-      box.appendChild(el('div', 'metric-label', titleize(m.label.split('.').pop())));
-      box.appendChild(el('div', 'metric-value', String(asInt(m.value))));
-      col.appendChild(box);
-      grid.appendChild(col);
-    });
-}
+  const all = collectAllNumbers(payload);
+  // Prefer shallower & higher values first, limit to ~12
+  const top = all
+    .filter(m => m.depth <= 3 && !/(url|link|competitor|chart|timestamp|date|id)/i.test(m.key))
+    .sort((a,b) => b.value - a.value || a.depth - b.depth)
+    .slice(0, 12);
 
-function kvTable(obj) {
-  const tbl = el('table', 'table table-dark table-sm kv-table mb-0');
-  const tb = el('tbody');
-  Object.entries(obj || {}).forEach(([k,v]) => {
-    if (['internal_links_count','external_links_count','warning_links_count','broken_internal_links'].includes(k)) return;
-    const tr = el('tr');
-    tr.appendChild(el('td', 'text-muted', titleize(k)));
-    tr.appendChild(el('td', 'text-end', typeof v === 'object' ? `<code>${JSON.stringify(v)}</code>` : String(v)));
-    tb.appendChild(tr);
+  if (!top.length) {
+    grid.innerHTML = '<div class="col-12 text-center text-muted">No prominent metrics detected</div>';
+    return;
+  }
+
+  top.forEach(m => {
+    const col = el('div', 'col-6 col-md-3');
+    const box = el('div', 'metric-box');
+    box.innerHTML = `
+      <div class="metric-label">${m.label}</div>
+      <div class="metric-value">${asInt(m.value)}</div>
+    `;
+    col.appendChild(box);
+    grid.appendChild(col);
   });
-  tbl.appendChild(tb);
-  return tbl;
 }
 
-function renderLinks(links) {
-  q('#intCount').textContent  = links?.internal_links_count ?? '0';
-  q('#extCount').textContent  = links?.external_links_count ?? '0';
-  q('#warnCount').textContent = links?.warning_links_count ?? '0';
-  q('#brkCount').textContent  = links?.broken_internal_links ?? '0';
+function renderSpecialSections(payload) {
+  // Links
+  const links = payload?.breakdown?.links || payload?.links || {};
+  q('#linksSummary').innerHTML = `
+    <div class="d-flex justify-content-between mb-1"><span>Internal:</span><span>${links.internal_links_count ?? links.internal ?? '—'}</span></div>
+    <div class="d-flex justify-content-between mb-1"><span>External:</span><span>${links.external_links_count ?? links.external ?? '—'}</span></div>
+    <div class="d-flex justify-content-between mb-1"><span>Warnings:</span><span>${links.warning_links_count ?? links.warnings ?? '—'}</span></div>
+    <div class="d-flex justify-content-between"><span>Broken:</span><span class="text-danger">${links.broken_internal_links ?? links.broken ?? '—'}</span></div>
+  `;
+  const detail = q('#linksDetail');
+  detail.innerHTML = '';
+  if (Object.keys(links).length > 4) detail.appendChild(createSimpleTable(links, excludeKeys=['internal_links_count','external_links_count','warning_links_count','broken_internal_links']));
 
-  const wrap = q('#linksKvWrap');
-  wrap.innerHTML = '';
-  const others = Object.assign({}, links);
-  delete others.internal_links_count; delete others.external_links_count;
-  delete others.warning_links_count; delete others.broken_internal_links;
-  if (Object.keys(others).length) wrap.appendChild(kvTable(others));
+  // Competitors
+  const comp = payload?.breakdown?.competitors || payload?.competitors || {};
+  q('#competitorBadges').innerHTML = '';
+  (comp.names || []).slice(0,8).forEach(n => {
+    const b = el('span', 'badge badge-soft me-1 mb-1', `<i class="bi bi-trophy-fill me-1"></i>${n}`);
+    q('#competitorBadges').appendChild(b);
+  });
+
+  q('#competitorsSummary').textContent = comp.description || comp.note || '';
+
+  const tableWrap = q('#competitorsTableWrap');
+  tableWrap.innerHTML = '';
+  const items = comp.items || comp.list || (Array.isArray(comp) ? comp : []);
+  if (items.length) {
+    const tbl = createSimpleTable(items, { name:'Name', score:'Score', value:'Value' });
+    tableWrap.appendChild(tbl);
+  } else {
+    tableWrap.innerHTML = '<div class="text-muted small">No competitor data available</div>';
+  }
 }
 
-function normalizeToChartData(key, src) {
-  // Already Chart.js shape?
-  if (src && typeof src === 'object' && Array.isArray(src.datasets)) return src;
+function createSimpleTable(data, headers = null) {
+  const table = el('table', 'table table-dark table-sm kv-table mb-0');
+  const thead = el('thead');
+  const tbody = el('tbody');
 
-  // Object map => pie-like
-  if (src && typeof src === 'object' && !Array.isArray(src)) {
-    const labels = Object.keys(src);
-    const data = labels.map(k => asInt(src[k], 0));
-    const colors = labels.map((_,i)=>colorAt(i));
-    return {
-      labels,
-      datasets: [{ label: titleize(key), data, backgroundColor: colors.map(c=>c.bg), borderColor: colors.map(c=>c.bd), borderWidth:1 }]
-    };
+  // Auto-detect headers or use provided
+  let keys = headers ? Object.keys(headers) : [];
+  if (!keys.length && data.length && typeof data[0] === 'object') {
+    keys = Object.keys(data[0]).slice(0,4);
   }
 
-  // Array of numbers => index labels
-  if (Array.isArray(src) && src.every(x => typeof x === 'number')) {
-    const labels = src.map((_,i)=> String(i+1));
-    const colors = labels.map((_,i)=>colorAt(i));
-    return {
-      labels,
-      datasets: [{ label: titleize(key), data: src, backgroundColor: colors.map(c=>c.bg), borderColor: colors.map(c=>c.bd), borderWidth:1 }]
-    };
+  if (keys.length) {
+    const tr = el('tr');
+    keys.forEach(k => {
+      const th = el('th', '', headers?.[k] || titleize(k));
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+    table.appendChild(thead);
   }
 
-  // Array of objects with {label, value}
-  if (Array.isArray(src) && src.every(x => typeof x === 'object')) {
-    const labels = src.map(x => String(x.label ?? x.name ?? 'Item'));
-    const data   = src.map(x => asInt(x.value ?? getFirstScore(x) ?? 0));
-    const colors = labels.map((_,i)=>colorAt(i));
-    return {
-      labels,
-      datasets: [{ label: titleize(key), data, backgroundColor: colors.map(c=>c.bg), borderColor: colors.map(c=>c.bd), borderWidth:1 }]
-    };
-  }
+  data.forEach(row => {
+    const tr = el('tr');
+    if (typeof row === 'object') {
+      keys.forEach(k => {
+        const td = el('td', k.toLowerCase().includes('score') ? 'text-end' : '');
+        td.textContent = row[k] ?? '—';
+        tr.appendChild(td);
+      });
+    } else {
+      tr.appendChild(el('td', 'colspan=' + (keys.length || 1), String(row)));
+    }
+    tbody.appendChild(tr);
+  });
 
-  // Fallback
-  return null;
+  table.appendChild(tbody);
+  return table;
 }
 
-function renderCharts(chart_data) {
-  clearCharts();
+function renderDynamicSections(payload) {
+  const container = q('#dynamicSections');
+  container.innerHTML = '';
+
+  const sections = payload?.breakdown || payload || {};
+
+  Object.entries(sections).forEach(([key, value]) => {
+    if (['overall_score','grade','chart_data'].includes(key)) return; // already shown
+
+    const section = el('div', 'card-glass mb-4');
+    section.appendChild(el('h5', 'text-warning mb-3', titleize(key)));
+
+    if (typeof value === 'object' && value) {
+      if (Array.isArray(value)) {
+        if (value.every(v => typeof v === 'string' || typeof v === 'number')) {
+          const list = el('ul', 'list-group list-group-flush');
+          value.forEach(v => list.appendChild(el('li', 'list-group-item bg-transparent text-light', String(v))));
+          section.appendChild(list);
+        } else {
+          section.appendChild(createSimpleTable(value));
+        }
+      } else {
+        section.appendChild(createSimpleTable([value])); // single object as row
+      }
+    } else {
+      section.appendChild(el('p', 'text-light', String(value)));
+    }
+
+    container.appendChild(section);
+  });
+}
+
+function renderCharts(chartData) {
+  chartInstances.forEach(c => c?.destroy());
+  chartInstances = [];
+
   const wrap = q('#autoCharts');
   wrap.innerHTML = '';
 
-  if (!chart_data || typeof chart_data !== 'object') return;
+  if (!chartData || typeof chartData !== 'object') return;
 
-  Object.entries(chart_data).forEach(([key, dataObj], idx) => {
-    const normalized = normalizeToChartData(key, dataObj) || dataObj;
-    if (!normalized || typeof normalized !== 'object' || !Array.isArray(normalized.datasets)) return;
+  Object.entries(chartData).forEach(([key, raw]) => {
+    const normalized = normalizeToChartData(key, raw);
+    if (!normalized?.datasets) return;
 
     const col = el('div', 'col-md-6');
     const card = el('div', 'chart-card');
-    const title = el('div', 'text-warning small mb-2', `<i class="bi bi-graph-up"></i> ${titleize(key)}`);
+    card.appendChild(el('div', 'text-warning small mb-2', `<i class="bi bi-graph-up"></i> ${titleize(key)}`));
+
     const canvas = el('canvas');
-    card.appendChild(title);
     card.appendChild(canvas);
     col.appendChild(card);
     wrap.appendChild(col);
 
-    const type = guessChartType(key, dataObj);
     try {
       const inst = new Chart(canvas.getContext('2d'), {
-        type,
+        type: guessChartType(key, raw),
         data: normalized,
-        options: Object.assign(
-          { responsive:true, plugins:{legend:{display:true}}, scales: {} },
-          (type === 'bar' || type === 'line') ? { scales:{ y:{ beginAtZero:true } } } : {}
-        )
+        options: {
+          responsive: true,
+          plugins: { legend: { display: true, position: 'top' } },
+          scales: (['bar','line'].includes(guessChartType(key, raw))) ? { y: { beginAtZero: true } } : {}
+        }
       });
       chartInstances.push(inst);
     } catch (e) {
-      const err = el('div','text-danger small mt-2','Chart render failed, showing raw data');
-      card.appendChild(err);
-      const pre = el('pre','json-view bg-dark p-2 rounded border border-secondary mt-2');
-      renderJSON(pre, dataObj);
+      card.innerHTML += `<div class="text-danger small mt-2">Chart failed: ${e.message}</div>`;
+      const pre = el('pre', 'json-view bg-dark p-2 rounded mt-2');
+      pre.textContent = JSON.stringify(raw, null, 2);
       card.appendChild(pre);
     }
   });
 }
 
-function renderAutoSections(payload) {
-  const host = q('#autoSections');
-  host.innerHTML = '';
-  const breakdown = payload?.breakdown || {};
+function normalizeToChartData(key, src) {
+  if (src?.datasets) return src; // already Chart.js format
 
-  Object.entries(breakdown).forEach(([key, val]) => {
-    if (['links','performance','competitors'].includes(key)) return;
-    if (val && typeof val === 'object') {
-      const card = el('div', 'card-glass mb-3');
-      card.appendChild(el('h6', 'text-warning', titleize(key)));
-      const pre = el('pre', 'json-view bg-dark p-3 rounded border border-secondary', '');
-      pre.style.maxHeight = '280px';
-      pre.style.overflow = 'auto';
-      renderJSON(pre, val);
-      card.appendChild(pre);
-      host.appendChild(card);
-    }
-  });
-
-  if (payload?.extras) {
-    const card = el('div', 'card-glass mb-3');
-    card.appendChild(el('h6', 'text-warning', 'Extras'));
-    const pre = el('pre', 'json-view bg-dark p-3 rounded border border-secondary', '');
-    pre.style.maxHeight = '280px';
-    pre.style.overflow = 'auto';
-    renderJSON(pre, payload.extras);
-    card.appendChild(pre);
-    host.appendChild(card);
+  // Common patterns backend might send
+  if (typeof src === 'object' && !Array.isArray(src)) {
+    const labels = Object.keys(src);
+    const data = labels.map(k => asInt(src[k]));
+    return makeDataset(titleize(key), labels, data);
   }
+
+  if (Array.isArray(src)) {
+    if (src.every(x => typeof x === 'number')) {
+      return makeDataset(titleize(key), src.map((_,i)=>i+1), src);
+    }
+    if (src.every(x => x && typeof x === 'object' && ('label' in x || 'name' in x))) {
+      const labels = src.map(x => x.label ?? x.name ?? 'Item');
+      const data = src.map(x => asInt(x.value ?? x.score ?? getFirstScore(x) ?? 0));
+      return makeDataset(titleize(key), labels, data);
+    }
+  }
+
+  return null;
 }
 
-function renderPayload(r) {
-  // Header
-  q('#ovScore').textContent      = r.overall_score ?? '—';
-  q('#gradeDisplay').textContent = `GRADE: ${r.grade ?? '—'}`;
-
-  // Breakdown
-  const breakdown = r.breakdown || {};
-
-  renderMetricsGrid(breakdown);
-  renderCompetitors(breakdown?.competitors || {});
-  renderLinks(breakdown?.links || {});
-
-  // Charts
-  renderCharts(r.chart_data);
-
-  // Raw JSON
-  renderJSON(q('#jsonRaw'), r);
+function makeDataset(label, labels, data) {
+  const colors = labels.map((_,i) => colorAt(i));
+  return {
+    labels,
+    datasets: [{
+      label,
+      data,
+      backgroundColor: colors.map(c => c.bg),
+      borderColor: colors.map(c => c.bd),
+      borderWidth: 1
+    }]
+  };
 }
 
-/* ===========================
-   WS + Controls + Fallbacks
-   =========================== */
-const statusEl   = q("#statusLabel");
+const palette = ["#ffd700aa","#3b82f6aa","#10b981aa","#9333eaaa","#f43f5eaa","#eab308aa"];
+const paletteBorder = ["#ffd700","#3b82f6","#10b981","#9333ea","#f43f5e","#eab308"];
+function colorAt(i) { return { bg: palette[i % palette.length], bd: paletteBorder[i % paletteBorder.length] }; }
+
+function guessChartType(key) {
+  const k = key.toLowerCase();
+  if (k.includes('doughnut') || k.includes('pie')) return 'doughnut';
+  if (k.includes('radar')) return 'radar';
+  if (k.includes('line')) return 'line';
+  if (k.includes('bar') || k.includes('score')) return 'bar';
+  return 'pie'; // safe default
+}
+
+function renderExplorer(payload, container) {
+  container.innerHTML = '';
+  function buildNode(obj, name = '') {
+    if (obj == null) return el('span', 'text-muted', 'null');
+    if (typeof obj !== 'object') return document.createTextNode(String(obj));
+
+    const details = el('details');
+    details.open = name.length < 20; // shallow open
+    const summary = el('summary', '', name ? titleize(name) : 'Root');
+    details.appendChild(summary);
+
+    if (Array.isArray(obj)) {
+      obj.forEach((v,i) => {
+        const li = el('div');
+        li.appendChild(buildNode(v, `[${i}]`));
+        details.appendChild(li);
+      });
+    } else {
+      Object.entries(obj).forEach(([k,v]) => {
+        const div = el('div', 'ms-4');
+        div.appendChild(buildNode(v, k));
+        details.appendChild(div);
+      });
+    }
+    return details;
+  }
+  container.appendChild(buildNode(payload));
+}
+
+// ──────────────────────────────────────────────
+// Main render
+// ──────────────────────────────────────────────
+function renderPayload(payload) {
+  q('#ovScore').textContent = payload.overall_score ?? payload.score ?? payload.total ?? '—';
+  q('#gradeDisplay').textContent = `GRADE: ${payload.grade ?? '—'}`;
+
+  renderMetricsGrid(payload);
+  renderSpecialSections(payload);
+  renderCharts(payload.chart_data || payload.charts || {});
+  renderDynamicSections(payload);
+  renderJSON(q('#jsonRaw'), payload);
+  renderExplorer(payload, q('#payloadExplorer'));
+}
+
+function renderJSON(el, obj) {
+  try { el.textContent = JSON.stringify(obj, null, 2); }
+  catch { el.textContent = String(obj); }
+}
+
+// ──────────────────────────────────────────────
+// WS + Controls
+// ──────────────────────────────────────────────
+const overlay = q("#loadingOverlay");
+const results = q("#resultsPanel");
+const statusEl = q("#statusLabel");
 const loadingBar = q("#loadingBar");
-const overlay    = q("#loadingOverlay");
-const results    = q("#resultsPanel");
 
-async function startOver(url) {
+async function startAudit(url) {
   overlay.classList.add("show");
   results.classList.add("d-none");
-  q("#auditLog").innerHTML = "&gt; Starting new audit sequence...";
-  statusEl.textContent = "Connecting to FF Engine...";
+  q("#auditLog").innerHTML = "> Starting audit...";
+  statusEl.textContent = "Connecting...";
   loadingBar.style.width = "5%";
 
-  const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-  let ws;
+  const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsProto}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`;
 
-  try {
-    ws = new WebSocket(`${wsProtocol}//${location.host}/ws/audit-progress?url=${encodeURIComponent(url)}`);
-  } catch {
-    log("WebSocket not supported, consider HTTP fallback.", true);
-  }
+  let ws;
+  try { ws = new WebSocket(wsUrl); } catch (e) { log("WebSocket init failed: " + e, true); }
 
   if (ws) {
-    ws.onopen = () => { log("Connection established"); statusEl.textContent = "Engine initialized..."; };
-    ws.onmessage = (e) => onMessage(e.data);
-    ws.onerror = () => onWsError(url);
-    ws.onclose = () => {};
+    ws.onopen = () => { log("WS connected"); statusEl.textContent = "Engine running..."; };
+    ws.onmessage = e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.status) { statusEl.textContent = data.status; log(data.status); }
+        if (data.crawl_progress != null) loadingBar.style.width = Math.min(data.crawl_progress, 100) + "%";
+        if (data.error) log(data.error, true);
+
+        if (data.partial) {
+          lastPayload = deepMerge(lastPayload || {}, data.partial);
+          results.classList.remove("d-none");
+          renderPayload(lastPayload);
+        }
+        if (data.finished) {
+          overlay.classList.remove("show");
+          lastPayload = data;
+          renderPayload(data);
+          log("Audit finished.");
+        }
+      } catch (err) { log("Parse error: " + err.message, true); }
+    };
+    ws.onerror = () => { log("WS error – check backend", true); overlay.classList.remove("show"); };
   } else {
-    onWsError(url);
+    overlay.classList.remove("show");
+    alert("WebSocket unavailable. Is the backend running?");
   }
 }
 
-function onWsError(url) {
-  log("WS connection failed. You can wire an HTTP fallback here.", true);
-  overlay.classList.remove("show");
-  alert("Audit Engine Connection Failed. Ensure backend is running.");
-  // OPTIONAL: implement fetch-based start + poll here if you expose REST endpoints.
-  // Example:
-  // fetch(`/api/run-audit?url=${encodeURIComponent(url)}`).then(r=>r.json()).then(({job_id}) => poll(job_id));
-}
-
-function onMessage(raw) {
-  try {
-    const r = JSON.parse(raw);
-
-    if (r.status) { statusEl.textContent = r.status; log(r.status); }
-    if (r.crawl_progress != null) loadingBar.style.width = clamp(r.crawl_progress, 0, 100) + "%";
-    if (r.error) log(r.error, true);
-
-    // Handle partial progressive updates (deep merge)
-    if (r.partial) {
-      lastPayload = deepMerge(lastPayload || {}, r);
-      results.classList.remove("d-none");
-      renderPayload(lastPayload);
-      return;
-    }
-
-    if (r.finished) {
-      overlay.classList.remove("show");
-      results.classList.remove("d-none");
-      lastPayload = r; // keep the final one
-      renderPayload(r);
-      log("Audit complete. Data synchronized.");
-    }
-  } catch(err) { log("Data handling error: " + err.message, true); }
-}
-
-/* Controls */
+// Controls
 q("#btnRun").onclick = () => {
   let url = q("#urlInput").value.trim();
-  if (!url) return alert("Please enter a URL");
+  if (!url) return alert("Enter a URL");
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  localStorage.setItem('ff_audit_last_url', url);
-  startOver(url);
+  localStorage.setItem('last_audit_url', url);
+  startAudit(url);
 };
 
 q("#btnReset").onclick = () => {
   results.classList.add("d-none");
   q("#urlInput").value = "";
-  q("#auditLog").innerHTML = "&gt; Results cleared. Ready.";
-  q("#urlInput").focus();
+  q("#auditLog").innerHTML = "> Ready for new audit.";
   clearCharts();
   lastPayload = null;
 };
 
 q("#btnDownload").onclick = async () => {
-  try {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF('p', 'pt', 'a4');
-    const node = document.getElementById("printableArea");
-    const canvas = await html2canvas(node, {scale: 2});
-    const imgData = canvas.toDataURL("image/png");
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const ratio = canvas.width / canvas.height;
-    const imgWidth = pageWidth;
-    const imgHeight = imgWidth / ratio;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF('p', 'pt', 'a4');
+  const canvas = await html2canvas(q("#printableArea"), {scale: 2});
+  const imgData = canvas.toDataURL("image/png");
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const ratio = canvas.width / canvas.height;
+  let heightLeft = canvas.height * (pageWidth / canvas.width);
+  let position = 0;
 
-    let y = 0;
-    if (imgHeight <= pageHeight) {
-      doc.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
-    } else {
-      // paginate tall content
-      let remaining = imgHeight;
-      let position = 0;
-      const canvasPage = document.createElement('canvas');
-      const ctx = canvasPage.getContext('2d');
-      const pageCanvasHeight = Math.floor(canvas.width * (pageHeight / pageWidth));
-      canvasPage.width = canvas.width;
-      canvasPage.height = pageCanvasHeight;
+  doc.addImage(imgData, 'PNG', 0, position, pageWidth, heightLeft);
+  heightLeft -= pageHeight;
 
-      while (remaining > 0) {
-        ctx.clearRect(0, 0, canvasPage.width, canvasPage.height);
-        ctx.drawImage(canvas, 0, position, canvas.width, pageCanvasHeight, 0, 0, canvasPage.width, canvasPage.height);
-        const pageData = canvasPage.toDataURL('image/png');
-        doc.addImage(pageData, 'PNG', 0, 0, pageWidth, pageHeight);
-        remaining -= pageHeight;
-        position += pageCanvasHeight;
-        if (remaining > 0) doc.addPage();
-      }
-    }
+  while (heightLeft > 0) {
+    position = heightLeft - canvas.height;
+    doc.addPage();
+    doc.addImage(imgData, 'PNG', 0, position, pageWidth, canvas.height);
+    heightLeft -= pageHeight;
+  }
 
-    doc.save(`audit-report-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`);
-    log("Report exported to PDF.");
-  } catch(err) { log("PDF error: " + err.message, true); }
+  doc.save(`audit-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`);
+  log("PDF exported.");
 };
 
 q("#btnCopyJSON").onclick = async () => {
-  try {
-    const text = q('#jsonRaw').textContent || '';
+  const text = q('#jsonRaw').textContent;
+  if (text && text !== '—') {
     await navigator.clipboard.writeText(text);
-    log("Payload JSON copied to clipboard.");
-  } catch (e) {
-    log("Clipboard error: " + e.message, true);
+    log("JSON copied.");
   }
 };
 
-/* Theme toggle */
 q('#themeToggle').onclick = () => {
   const html = document.documentElement;
-  const cur = html.getAttribute('data-bs-theme') || 'dark';
-  const next = cur === 'dark' ? 'light' : 'dark';
+  const next = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
   html.setAttribute('data-bs-theme', next);
-  localStorage.setItem('ff_theme', next);
+  localStorage.setItem('theme', next);
 };
 
-/* Boot: restore URL/theme and autorun via ?url= */
-(function boot(){
-  const savedUrl = localStorage.getItem('ff_audit_last_url');
-  if (savedUrl) q('#urlInput').value = savedUrl;
-  const savedTheme = localStorage.getItem('ff_theme');
-  if (savedTheme) document.documentElement.setAttribute('data-bs-theme', savedTheme);
+// Boot
+(function init() {
+  const saved = localStorage.getItem('last_audit_url');
+  if (saved) q('#urlInput').value = saved;
+  const theme = localStorage.getItem('theme');
+  if (theme) document.documentElement.setAttribute('data-bs-theme', theme);
 
   const params = new URLSearchParams(location.search);
-  const url = params.get('url');
-  if (url) {
-    q('#urlInput').value = url;
-    startOver(/^https?:\/\//i.test(url) ? url : ('https://' + url));
+  const u = params.get('url');
+  if (u) {
+    q('#urlInput').value = u;
+    startAudit(/^https?:\/\//i.test(u) ? u : 'https://' + u);
   }
 })();
 </script>
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
