@@ -1,184 +1,440 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FFTech AI Website Audit</title>
-
-    <!-- Tailwind (optional but recommended) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- Chart.js v4 -->
-    src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <style>
-        body { background: #f8fafc; }
-        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 14px rgba(0,0,0,0.08); }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FF Tech Audit Engine – Adaptive Runner</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --primary: #fbbf24;
+      --bg: #0f172a;
+      --card: #111827;
+      --border: #1f2937;
+      --muted: #94a3b8;
+      --text: #e2e8f0;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-family: system-ui, sans-serif;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .kpi {
+      font-weight: 800;
+      font-size: 2.8rem;
+      color: var(--primary);
+      line-height: 1;
+    }
+    .muted { color: var(--muted); }
+    .progress {
+      height: 12px;
+      background: #1e293b;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .badge-grade {
+      font-size: 1.6rem;
+      padding: 0.6rem 1.4rem;
+    }
+    pre.small-mono {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      font-size: 0.9rem;
+      max-height: 260px;
+      overflow: auto;
+    }
+    .error-box {
+      background: rgba(239,68,68,0.15);
+      border: 1px solid #ef4444;
+      color: #fecaca;
+      padding: 1.25rem;
+      border-radius: 0.5rem;
+      margin: 1.5rem 0;
+    }
+    canvas { max-height: 280px; }
+    ul.competitors li {
+      background: #1e293b;
+      margin: 0.75rem 0;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      border-left: 5px solid var(--primary);
+    }
+    .dynamic-card {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+  </style>
 </head>
-<body class="p-6">
+<body>
+  <div class="container py-5">
+    <header class="text-center mb-5">
+      <h1 class="display-4 fw-bold text-warning">FF Tech Audit Engine</h1>
+      <p class="lead muted">Adaptive • Flexible • Future-Proof Website Audit</p>
+    </header>
 
-    <h1 class="text-3xl font-bold text-center mb-8">FFTech AI Website Audit</h1>
-
-    <!-- URL Input -->
-   >
-        <input id="urlInput" type="text" placeholder="https://example.com"
-               class="w-full border px-3 py-2 rounded mb-4">
-
-        <button onclick="runAudit()"
-                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold">
-            🔍 Run Audit
-        </button>
-
-        <p id="status" class="text-gray-600 mt-4 text-sm"></p>
-    </div>
-
-    <!-- Results -->
-    <div id="results" class="hidden">
-
-        <!-- Summary -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-
-            <div class="card">
-                <h3 class="font-bold text-lg mb-1">Overall Score</h3>
-                <p id="overallScore" class="text-4xl font-bold text-blue-700"></p>
-                <p id="grade" class="text-xl text-gray-500"></p>
-            </div>
-
-            <div class="card">
-                <h3 class="font-bold text-lg mb-1">SEO</h3>
-                <p id="seoScore" class="text-4xl font-bold text-yellow-600"></p>
-            </div>
-
-            <div class="card">
-                <h3 class="font-bold text-lg mb-1">Performance</h3>
-                <p id="performanceScore" class="text-4xl font-bold text-green-600"></p>
-                <p class="text-gray-500 text-sm">LCP: <span id="lcpMS"></span> ms</p>
-            </div>
-
+    <!-- Input & Controls -->
+    <section class="card p-4 mb-5 shadow-lg">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-8">
+          <label for="urlInput" class="form-label fw-semibold mb-1">Website URL</label>
+          <input id="urlInput" type="text" class="form-control bg-dark text-white border-secondary"
+                 placeholder="e.g., www.haier.com.pk" autofocus />
         </div>
-
-        <!-- Competitors -->
-        <div class="card mb-6">
-            <h3 class="font-bold text-lg mb-3">Top Competitors</h3>
-            <p class="text-gray-700"><strong>Score:</strong> <span id="compScore"></span></p>
-            <p class="text-gray-700"><strong>Names:</strong> 
-                <span id="compNames"></span>
-            </p>
+        <div class="col-md-4 d-flex gap-2">
+          <button id="runBtn" class="btn btn-warning fw-bold w-100">RUN AUDIT</button>
+          <button id="resetBtn" class="btn btn-outline-danger w-100">RESET</button>
         </div>
+      </div>
+      <div id="statusLine" class="mt-3 small fw-semibold text-info">Status: Idle</div>
+      <div class="progress mt-2">
+        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
+      </div>
+    </section>
 
-        <!-- Links -->
-        <div class="card mb-6">
-            <h3 class="font-bold text-lg mb-3">Link Summary</h3>
-            <ul class="text-gray-700 leading-relaxed">
-                <li>Internal Links: <span id="internalLinks"></span></li>
-                <li>External Links: <span id="externalLinks"></span></li>
-                <li>Warnings: <span id="warningLinks"></span></li>
-                <li>Broken Links: <span id="brokenLinks"></span></li>
-            </ul>
+    <!-- KPIs -->
+    <section class="row g-4 mb-5">
+      <div class="col-md-3">
+        <div class="card p-4 text-center">
+          <div class="muted small fw-semibold mb-1">Overall Score</div>
+          <div id="overallScore" class="kpi">—</div>
         </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card p-4 text-center">
+          <div class="muted small fw-semibold mb-1">Grade</div>
+          <div id="grade" class="badge-grade badge bg-success">—</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card p-4 text-center">
+          <div class="muted small fw-semibold mb-1">SEO Score</div>
+          <div id="seoScore" class="kpi">—</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card p-4 text-center">
+          <div class="muted small fw-semibold mb-1">Speed Score</div>
+          <div id="perfScore" class="kpi">—</div>
+        </div>
+      </div>
+    </section>
 
-        <!-- Charts -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- Charts -->
+    <section class="row g-4 mb-5">
+      <div class="col-md-6">
+        <div class="card p-4">
+          <h6 class="muted fw-semibold mb-3">Score Breakdown</h6>
+          <canvas id="barChart"></canvas>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card p-4">
+          <h6 class="muted fw-semibold mb-3">Link Health</h6>
+          <canvas id="doughnutChart"></canvas>
+        </div>
+      </div>
+    </section>
 
-            <div class="card">
-                <h3 class="font-bold text-lg mb-3">Audit Breakdown</h3>
-                <canvas id="barChart"></canvas>
+    <!-- Core Details -->
+    <section class="row g-4 mb-5">
+      <div class="col-md-6">
+        <div class="card p-4">
+          <h6 class="muted fw-semibold mb-3">Links Overview</h6>
+          <div id="linksSummary" class="small mb-2">Internal: — | External: — | Warnings: — | Broken: —</div>
+          <pre id="linksRaw" class="small-mono"></pre>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card p-4">
+          <h6 class="muted fw-semibold mb-3">Performance</h6>
+          <div id="perfSummary" class="small mb-2">LCP (ms): — | Score: —</div>
+          <pre id="perfExtras" class="small-mono"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Competitors -->
+    <section class="card p-4 mb-5 shadow-lg">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="muted fw-semibold mb-0">Top 3 Competitors</h5>
+        <small class="text-info">Flexible rendering from analyzer</small>
+      </div>
+      <ul id="competitorList" class="competitors mb-3"></ul>
+      <pre id="competitorItems" class="small-mono"></pre>
+    </section>
+
+    <!-- Dynamic / Plugin Results -->
+    <section id="dynamicSection" class="mb-5 d-none">
+      <h5 class="text-warning mb-4">Additional Insights</h5>
+      <div id="dynamicCards" class="row g-4"></div>
+    </section>
+
+    <!-- Error -->
+    <div id="errorBox" class="error-box d-none"></div>
+
+    <footer class="text-center small muted mt-5">
+      © FF Tech Audit Engine – Adaptive & Future-Proof – Powered by Flexible Runner
+    </footer>
+  </div>
+
+  <script>
+    // ──────────────────────────────────────────────
+    // Utilities
+    // ──────────────────────────────────────────────
+    const $ = id => document.getElementById(id);
+    const setText = (id, val) => { if ($(id)) $(id).textContent = val ?? "—"; };
+    const pretty = obj => JSON.stringify(obj, null, 2);
+    const deepGet = (obj, path, fallback = "—") => {
+      try {
+        return path.split(".").reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), obj) ?? fallback;
+      } catch { return fallback; }
+    };
+
+    // ──────────────────────────────────────────────
+    // Charts
+    // ──────────────────────────────────────────────
+    let barChart, doughnutChart;
+    function destroyCharts() {
+      [barChart, doughnutChart].forEach(c => c?.destroy());
+      barChart = doughnutChart = null;
+    }
+
+    function renderBarChart(data) {
+      if (!data || !$("barChart")) return;
+      const ctx = $("barChart").getContext("2d");
+      destroyCharts();
+      barChart = new Chart(ctx, {
+        type: "bar",
+        data: data,
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: "#e2e8f0" } } },
+          scales: {
+            x: { ticks: { color: "#93c5fd" }, grid: { color: "#1f2937" } },
+            y: { ticks: { color: "#93c5fd" }, grid: { color: "#1f2937" }, beginAtZero: true, max: 100 }
+          }
+        }
+      });
+    }
+
+    function renderDoughnutChart(data) {
+      if (!data || !$("doughnutChart")) return;
+      const ctx = $("doughnutChart").getContext("2d");
+      destroyCharts();
+      doughnutChart = new Chart(ctx, {
+        type: "doughnut",
+        data: data,
+        options: {
+          responsive: true,
+          plugins: { legend: { position: "top", labels: { color: "#e2e8f0" } } }
+        }
+      });
+    }
+
+    // ──────────────────────────────────────────────
+    // Reset UI
+    // ──────────────────────────────────────────────
+    function resetUI() {
+      setText("statusLine", "Status: Idle");
+      $("progressBar").style.width = "0%";
+      setText("overallScore", "—");
+      setText("grade", "—");
+      setText("seoScore", "—");
+      setText("perfScore", "—");
+      setText("linksSummary", "Internal: — | External: — | Warnings: — | Broken: —");
+      setText("perfSummary", "LCP (ms): — | Score: —");
+      $("linksRaw").textContent = "";
+      $("perfExtras").textContent = "";
+      $("competitorList").innerHTML = "";
+      $("competitorItems").textContent = "";
+      $("errorBox").textContent = "";
+      $("dynamicSection").classList.add("d-none");
+      $("#dynamicCards").empty();
+      destroyCharts();
+    }
+
+    // ──────────────────────────────────────────────
+    // WebSocket – matches main.py /ws
+    // ──────────────────────────────────────────────
+    function makeWsUrl(path) {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${location.host}${path}`;
+    }
+
+    let socket = null;
+
+    $("resetBtn")?.addEventListener("click", () => {
+      if (socket?.readyState === WebSocket.OPEN) socket.close();
+      resetUI();
+    });
+
+    $("runBtn")?.addEventListener("click", () => {
+      const url = $("urlInput")?.value.trim();
+      if (!url) {
+        $("errorBox").textContent = "Please enter a valid URL.";
+        $("errorBox").classList.remove("d-none");
+        return;
+      }
+      runAudit(url);
+    });
+
+    function updateStatus(msg) {
+      if (msg.status) setText("statusLine", `Status: ${msg.status}`);
+      if (typeof msg.crawl_progress === "number") {
+        $("progressBar").style.width = `${Math.min(100, Math.max(0, msg.crawl_progress))}%`;
+      }
+    }
+
+    function renderCompetitors(block) {
+      const ul = $("competitorList");
+      ul.innerHTML = "";
+      const names = Array.isArray(block?.names) ? block.names : [];
+      const items = Array.isArray(block?.items) ? block.items : [];
+      if (items.length > 0) {
+        items.slice(0, 3).forEach(it => {
+          const li = document.createElement("li");
+          li.textContent = `${it.name || "Unknown"} — ${it.score ?? "—"}`;
+          ul.appendChild(li);
+        });
+        $("competitorItems").textContent = pretty(items);
+      } else if (names.length > 0) {
+        names.slice(0, 3).forEach(n => {
+          const li = document.createElement("li");
+          li.textContent = n;
+          ul.appendChild(li);
+        });
+      } else {
+        const li = document.createElement("li");
+        li.textContent = "No competitors detected.";
+        ul.appendChild(li);
+      }
+    }
+
+    function renderDynamicSection(dynamic) {
+      const section = $("dynamicSection");
+      const container = $("#dynamicCards");
+      container.empty();
+      if (!dynamic || (!dynamic.cards?.length && !dynamic.kv)) {
+        section.classList.add("d-none");
+        return;
+      }
+      section.classList.remove("d-none");
+
+      // Render generic cards
+      if (dynamic.cards && Array.isArray(dynamic.cards)) {
+        dynamic.cards.forEach(card => {
+          const col = document.createElement("div");
+          col.className = "col-md-3";
+          col.innerHTML = `
+            <div class="dynamic-card text-center">
+              <div class="muted small fw-semibold mb-1">${card.title || "Metric"}</div>
+              <div class="kpi">${card.value ?? "—"}</div>
+              ${card.unit ? `<small class="muted">${card.unit}</small>` : ""}
             </div>
+          `;
+          container.append(col);
+        });
+      }
 
-            <div class="card">
-                <h3 class="font-bold text-lg mb-3">Link Health</h3>
-                <canvas id="doughnutChart"></canvas>
-            </div>
+      // Render KV pairs if any (fallback)
+      if (dynamic.kv && Object.keys(dynamic.kv).length) {
+        const pre = document.createElement("pre");
+        pre.className = "small-mono mt-3";
+        pre.textContent = pretty(dynamic.kv);
+        container.append(pre);
+      }
+    }
 
-        </div>
+    function renderFinalPayload(msg) {
+      setText("overallScore", msg.overall_score ?? "—");
+      setText("grade", msg.grade ?? "—");
+      setText("seoScore", deepGet(msg, "breakdown.seo") ?? deepGet(msg, "scores.seo") ?? "—");
+      setText("perfScore", deepGet(msg, "breakdown.performance.score") ?? deepGet(msg, "scores.performance") ?? "—");
 
-    </div>
+      // Links
+      const links = deepGet(msg, "breakdown.links", {});
+      const il = parseInt(links.internal_links_count ?? 0, 10);
+      const el = parseInt(links.external_links_count ?? 0, 10);
+      const wl = parseInt(links.warning_links_count ?? 0, 10);
+      const bl = parseInt(links.broken_internal_links ?? 0, 10);
+      setText("linksSummary", `Internal: ${il} | External: ${el} | Warnings: ${wl} | Broken: ${bl}`);
+      $("linksRaw").textContent = pretty(links);
 
-    <!-- JS Logic -->
-    <script>
-        let barChart, doughnutChart;
+      // Performance
+      setText("perfSummary", `LCP (ms): ${deepGet(msg, "breakdown.performance.lcp_ms", "—")} | Score: ${deepGet(msg, "breakdown.performance.score", "—")}`);
+      $("perfExtras").textContent = pretty(deepGet(msg, "breakdown.performance.extras", {}));
 
-        async function runAudit() {
-            const url = document.getElementById("urlInput").value.trim();
-            if (!url) return alert("Enter a valid URL!");
+      // Charts
+      const bar = deepGet(msg, "chart_data.bar");
+      const dough = deepGet(msg, "chart_data.doughnut");
+      if (bar) renderBarChart(bar);
+      if (dough) renderDoughnutChart(dough);
 
-            document.getElementById("status").innerText = "⏳ Running audit...";
-            document.getElementById("results").classList.add("hidden");
+      // Competitors
+      const compBlock = deepGet(msg, "breakdown.competitors", { names: [], items: [] });
+      renderCompetitors(compBlock);
 
-            // Start streaming
-            const response = await fetch("/run_audit", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url })
-            });
+      // Dynamic / future-proof section
+      if (msg.dynamic) renderDynamicSection(msg.dynamic);
+    }
 
-            if (!response.body) {
-                alert("Server error: No stream found.");
-                return;
-            }
+    function runAudit(url) {
+      resetUI();
+      $("statusLine").textContent = "Status: Connecting…";
+      $("progressBar").style.width = "5%";
+      $("errorBox").classList.add("d-none");
 
-            const reader = response.body.pipeTo(new WritableStream({
-                write(chunk) {
+      if (socket?.readyState === WebSocket.OPEN) socket.close();
 
-                    const text = new TextDecoder().decode(chunk);
-                    const messages = text.split("\n").filter(x => x.trim().length);
+      socket = new WebSocket(makeWsUrl("/ws"));
 
-                    for (const msg of messages) {
-                        const data = JSON.parse(msg);
+      socket.addEventListener("open", () => {
+        $("statusLine").textContent = "Status: Connected. Starting audit…";
+        socket.send(JSON.stringify({ url }));
+      });
 
-                        if (data.status) {
-                            document.getElementById("status").innerText = data.status;
-                        }
+      socket.addEventListener("message", ev => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
 
-                        if (data.finished) renderResults(data);
-                    }
-                }
-            }));
+        if (msg.status || typeof msg.crawl_progress === "number") {
+          updateStatus(msg);
         }
 
-        function renderResults(data) {
-            document.getElementById("results").classList.remove("hidden");
-
-            document.getElementById("overallScore").innerText = data.overall_score;
-            document.getElementById("grade").innerText = "Grade: " + data.grade;
-
-            document.getElementById("seoScore").innerText = data.breakdown.seo;
-            document.getElementById("performanceScore").innerText = data.breakdown.performance.score;
-            document.getElementById("lcpMS").innerText = data.breakdown.performance.lcp_ms;
-
-            document.getElementById("compScore").innerText =
-                data.breakdown.competitors.top_competitor_score;
-
-            document.getElementById("compNames").innerText =
-                (data.breakdown.competitors.names || []).join(", ") || "No competitors detected";
-
-            const links = data.breakdown.links;
-            document.getElementById("internalLinks").innerText = links.internal_links_count;
-            document.getElementById("externalLinks").innerText = links.external_links_count;
-            document.getElementById("warningLinks").innerText = links.warning_links_count;
-            document.getElementById("brokenLinks").innerText = links.broken_internal_links;
-
-            // Charts
-            const barData = data.chart_data.bar;
-            const doughnutData = data.chart_data.doughnut;
-
-            if (barChart) barChart.destroy();
-            barChart = new Chart(document.getElementById("barChart"), {
-                type: "bar",
-                data: barData,
-                options: { responsive: true }
-            });
-
-            if (doughnutChart) doughnutChart.destroy();
-            doughnutChart = new Chart(document.getElementById("doughnutChart"), {
-                type: "doughnut",
-                data: doughnutData,
-                options: { responsive: true }
-            });
-
-            document.getElementById("status").innerText = "✅ Audit Complete";
+        if (msg.error) {
+          $("errorBox").textContent = msg.error;
+          $("errorBox").classList.remove("d-none");
         }
-    </script>
+
+        if (msg.finished && !msg.error) {
+          updateStatus({ status: "✅ Completed", crawl_progress: 100 });
+          renderFinalPayload(msg);
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        $("statusLine").textContent += " (connection closed)";
+      });
+
+      socket.addEventListener("error", () => {
+        $("errorBox").textContent = "WebSocket connection failed – check server status";
+        $("errorBox").classList.remove("d-none");
+      });
+    }
+  </script>
 </body>
 </html>
