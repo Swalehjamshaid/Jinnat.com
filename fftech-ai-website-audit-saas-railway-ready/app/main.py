@@ -1,295 +1,202 @@
-# app/main.py
-import os
-import json
-import asyncio
-import contextlib
-from pathlib import Path
-from typing import Any, Dict, Optional, AsyncGenerator, Callable
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+import asyncio
+import json
+import logging
+import os
+from typing import Any, Dict, Optional, Tuple, Union
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from starlette.websockets import WebSocketState
 
 from app.audit.runner import WebsiteAuditRunner
 
+# ------------------------------------------------------------
+# Logging (Railway-friendly)
+# ------------------------------------------------------------
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s | %(name)s | %(message)s")
+logger = logging.getLogger("ff-tech-audit")
 
-# ---------------------------
-# Paths & Templates
-# ---------------------------
-APP_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = APP_DIR / "templates"
-INDEX_PATH = TEMPLATES_DIR / "index.html"
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+# ------------------------------------------------------------
+# App + Templates
+# ------------------------------------------------------------
+app = FastAPI(title="FF Tech Audit", version="1.0.0")
 
+# Your templates must be in: app/templates/index.html  OR  templates/index.html
+# Adjust if your folder is different. This tries both safely.
+_templates_dir = "templates"
+if os.path.isdir(os.path.join("app", "templates")):
+    _templates_dir = os.path.join("app", "templates")
 
-# ---------------------------
-# FastAPI App
-# ---------------------------
-app = FastAPI(title="Flexible Audit Runner", version="1.0.0")
+templates = Jinja2Templates(directory=_templates_dir)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # keep as-is
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ---------------------------
-# URL Validation (same input contract)
-# ---------------------------
-def _validate_url(url: Optional[str]) -> str:
-    if not url or not isinstance(url, str) or len(url.strip()) < 4:
-        raise HTTPException(status_code=400, detail="Provide a valid URL")
-    u = url.strip()
-    return u if u.startswith("http") else f"https://{u}"
-
-
-# ---------------------------
-# JSON Safe Dump (never crashes)
-# ---------------------------
-def _json_dumps_safe(obj: Any) -> str:
-    try:
-        return json.dumps(obj, ensure_ascii=False)
-    except Exception:
-        # fallback: stringify non-serializable values
-        try:
-            return json.dumps({"error": "Non-serializable message", "raw": str(obj)}, ensure_ascii=False)
-        except Exception:
-            return '{"error":"Non-serializable message"}'
-
-
-# ---------------------------
-# Flexible Runner Adapter
-# Supports BOTH:
-# 1) WebsiteAuditRunner().run(url, progress_cb=...)
-# 2) WebsiteAuditRunner(url).run_audit(callback)
-# ---------------------------
-async def _run_runner_flexible(
-    target_url: str,
-    push: Callable[[Dict[str, Any]], Any],
-    timeout_s: float,
-) -> None:
+# ------------------------------------------------------------
+# Helpers (super flexible parsing + safe send)
+# ------------------------------------------------------------
+def _extract_url(payload: Any) -> str:
     """
-    Streams progress messages to push(...) and finishes with a completed/final message.
-    Does NOT change your endpoints or input formats.
+    Accepts many input shapes and extracts URL/domain safely.
+    Supports:
+      - dict with url/website/domain/link
+      - nested dict like {"data":{"url":".."}}
+      - plain string "example.com"
     """
+    if payload is None:
+        return ""
 
-    async def progress_emit(status: str, percent: int, payload: Optional[dict] = None) -> None:
-        msg: Dict[str, Any] = {"status": status, "progress": int(percent)}
-        if payload:
-            # If payload looks like final result, we embed it as result (for UI)
-            if isinstance(payload, dict) and (
-                "overall_score" in payload or "breakdown" in payload or "grade" in payload
-            ):
-                msg["result"] = payload
-            else:
-                msg.update(payload)
-        await push(msg)
+    # plain string
+    if isinstance(payload, str):
+        return payload.strip()
 
-    # Try "new style" runner first: WebsiteAuditRunner().run(url, progress_cb=...)
+    if isinstance(payload, dict):
+        # common keys
+        for key in ("url", "website", "domain", "link", "target"):
+            val = payload.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+
+        # nested containers
+        for key in ("data", "payload", "message", "input"):
+            inner = payload.get(key)
+            got = _extract_url(inner)
+            if got:
+                return got
+
+    # unknown format
+    return ""
+
+
+async def _safe_ws_send(ws: WebSocket, message: Dict[str, Any]) -> None:
+    """
+    Send JSON safely. Never crashes if client disconnected.
+    """
     try:
-        runner = WebsiteAuditRunner()  # new-style runner has no required init args
-
-        if hasattr(runner, "run") and callable(getattr(runner, "run")):
-            # start
-            await progress_emit("starting", 5, {"url": target_url})
-
-            async def cb(status: str, percent: int, payload: Optional[dict] = None):
-                await progress_emit(status, percent, payload)
-
-            # run with timeout
-            try:
-                result = await asyncio.wait_for(runner.run(target_url, progress_cb=cb), timeout=timeout_s)
-            except asyncio.TimeoutError:
-                await push({"error": "Audit timed out", "finished": True})
-                return
-
-            # final message (keep finished contract)
-            await push({
-                "status": "completed",
-                "progress": 100,
-                "result": result,
-                "finished": True
-            })
-            return
-    except TypeError:
-        # runner likely requires (url) in constructor => old style
-        pass
+        if ws.client_state == WebSocketState.CONNECTED:
+            await ws.send_text(json.dumps(message, ensure_ascii=False))
     except Exception as e:
-        # runner init/logic error
-        await push({"error": f"Runner error: {e}", "finished": True})
-        return
-
-    # Old style runner: WebsiteAuditRunner(url).run_audit(callback)
-    try:
-        runner = WebsiteAuditRunner(target_url)
-
-        if not hasattr(runner, "run_audit") or not callable(getattr(runner, "run_audit")):
-            await push({"error": "Runner interface not supported", "finished": True})
-            return
-
-        async def old_callback(msg: Dict[str, Any]):
-            # Pass-through message, but ensure it won’t crash JSON encoding
-            if not isinstance(msg, dict):
-                msg = {"message": str(msg)}
-            await push(msg)
-
-        try:
-            await asyncio.wait_for(runner.run_audit(old_callback), timeout=timeout_s)
-        except asyncio.TimeoutError:
-            await push({"error": "Audit timed out", "finished": True})
-            return
-
-        # If old runner didn’t emit finished, ensure we do
-        await push({"status": "completed", "progress": 100, "finished": True})
-        return
-
-    except Exception as e:
-        await push({"error": f"Runner error: {e}", "finished": True})
-        return
+        logger.warning("WS send failed: %s", e)
 
 
-# ---------------------------
-# SSE Streaming Generator
-# ---------------------------
-async def _sse_stream(queue: asyncio.Queue) -> AsyncGenerator[bytes, None]:
-    HEARTBEAT = 10
-    while True:
-        try:
-            msg = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT)
-            yield f"data: {_json_dumps_safe(msg)}\n\n".encode("utf-8")
-            if isinstance(msg, dict) and (msg.get("finished") or msg.get("error")):
-                break
-        except asyncio.TimeoutError:
-            yield b": heartbeat\n\n"
+async def _send_status(ws: WebSocket, status: str, progress: int, extra: Optional[Dict[str, Any]] = None) -> None:
+    msg: Dict[str, Any] = {"status": status, "progress": int(progress)}
+    if extra:
+        msg.update(extra)
+    await _safe_ws_send(ws, msg)
 
 
-# ---------------------------
+# ------------------------------------------------------------
 # Routes
-# ---------------------------
+# ------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    if INDEX_PATH.exists():
-        return templates.TemplateResponse("index.html", {"request": request})
-    return HTMLResponse("<h1>Index not found</h1>", status_code=404)
-
-
-@app.get("/healthz")
-async def healthz():
-    return {"ok": True, "app": "audit-runner"}
-
-
-@app.get("/api/audit")
-async def audit_sse(url: Optional[str] = None):
+async def home(request: Request):
     """
-    SSE endpoint streaming audit updates
-    Input stays same: /api/audit?url=example.com
+    Serves the dashboard page.
+    Keep this route unchanged to avoid breaking your UI link.
     """
-    target = _validate_url(url)
-    queue: asyncio.Queue = asyncio.Queue()
-
-    timeout_s = float(os.getenv("AUDIT_TIMEOUT", "120"))
-
-    async def push(msg: Dict[str, Any]):
-        await queue.put(msg)
-
-    task = asyncio.create_task(_run_runner_flexible(target, push=push, timeout_s=timeout_s))
-
-    async def stream_wrapper():
-        try:
-            async for chunk in _sse_stream(queue):
-                yield chunk
-        finally:
-            task.cancel()
-            with contextlib.suppress(Exception):
-                await task
-
-    return StreamingResponse(stream_wrapper(), media_type="text/event-stream")
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.post("/api/audit", response_class=JSONResponse)
-async def audit_once(request: Request):
+@app.get("/health")
+async def health():
     """
-    Single-run audit returning final JSON
-    Input stays same: {"url":"example.com"}
+    Simple health check endpoint (optional but useful for Railway).
     """
-    body = await request.json()
-    target = _validate_url(body.get("url"))
-
-    timeout_s = float(os.getenv("AUDIT_TIMEOUT", "120"))
-    final_payload: Dict[str, Any] = {}
-    done = asyncio.Event()
-
-    async def push(msg: Dict[str, Any]):
-        nonlocal final_payload
-        # Prefer final result when present
-        if isinstance(msg, dict) and "result" in msg and isinstance(msg["result"], dict):
-            final_payload = msg["result"]
-        else:
-            final_payload = msg
-
-        if isinstance(msg, dict) and (msg.get("finished") or msg.get("error")):
-            done.set()
-
-    task = asyncio.create_task(_run_runner_flexible(target, push=push, timeout_s=timeout_s))
-    try:
-        await asyncio.wait_for(done.wait(), timeout=timeout_s + 5)
-    except asyncio.TimeoutError:
-        task.cancel()
-        raise HTTPException(status_code=504, detail="Audit timed out")
-    finally:
-        task.cancel()
-        with contextlib.suppress(Exception):
-            await task
-
-    return JSONResponse(final_payload or {"error": "No payload"})
+    return {"ok": True}
 
 
-# ---------------------------
-# WebSocket Endpoint (same /ws)
-# ---------------------------
+# ------------------------------------------------------------
+# WebSocket: /ws
+# ------------------------------------------------------------
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    """
+    WebSocket endpoint used by the frontend.
+    Input:  {url:"..."} or many other shapes
+    Output:
+      - progress updates: {"status":"...", "progress": N}
+      - final result:     {"status":"completed","progress":100,"result":{...}}
+      - errors:           {"status":"error","progress":100,"error":"..."}
+    """
     await ws.accept()
+    await _send_status(ws, "connected", 0)
 
-    timeout_s = float(os.getenv("AUDIT_TIMEOUT", "120"))
+    runner = WebsiteAuditRunner()
+    running_lock = asyncio.Lock()  # prevents overlapping runs on same socket
 
-    async def ws_push(msg: Dict[str, Any]):
-        # send safe JSON
-        await ws.send_text(_json_dumps_safe(msg))
-
-    try:
-        init_data = await ws.receive_text()
-
+    while True:
         try:
-            data = json.loads(init_data)
-        except Exception:
-            await ws_push({"error": "Send JSON like {\"url\": \"https://example.com\"}", "finished": True})
-            await ws.close()
-            return
+            raw = await ws.receive_text()
 
-        url = _validate_url(data.get("url"))
+            # Parse JSON if possible, else treat as plain URL string
+            payload: Any
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                payload = raw  # allow plain string
 
-        await _run_runner_flexible(url, push=ws_push, timeout_s=timeout_s)
+            url = _extract_url(payload)
+            if not url:
+                await _safe_ws_send(ws, {
+                    "status": "error",
+                    "progress": 100,
+                    "error": "Invalid input. Send JSON like {\"url\":\"example.com\"} or send a plain URL string."
+                })
+                continue
 
-        with contextlib.suppress(Exception):
-            await ws.close()
+            # Prevent multiple audits at once per connection
+            if running_lock.locked():
+                await _send_status(ws, "busy", 0, {"message": "Audit already running. Please wait."})
+                continue
 
-    except WebSocketDisconnect:
-        return
-    except Exception as e:
-        with contextlib.suppress(Exception):
-            await ws_push({"error": f"Server error: {e}", "finished": True})
-            await ws.close()
+            async with running_lock:
+                await _send_status(ws, "starting", 5, {"url": url})
 
+                # progress callback from runner -> websocket
+                async def progress_cb(status: str, percent: int, data: Optional[dict] = None):
+                    # keep message shape stable
+                    msg = {"status": status, "progress": int(percent)}
+                    if data is not None:
+                        # optional attachment; frontend can ignore
+                        msg["payload"] = data
+                    await _safe_ws_send(ws, msg)
 
-# ---------------------------
-# Run Uvicorn (local dev)
-# ---------------------------
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", "8000"))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)
+                try:
+                    result = await runner.run(url, progress_cb=progress_cb)
+
+                    # If runner reports internal error, still return stable shape
+                    if isinstance(result, dict) and result.get("error"):
+                        await _safe_ws_send(ws, {
+                            "status": "error",
+                            "progress": 100,
+                            "error": str(result.get("error")),
+                            "result": result,  # optional; useful for debugging
+                        })
+                        continue
+
+                    # Final success
+                    await _safe_ws_send(ws, {
+                        "status": "completed",
+                        "progress": 100,
+                        "result": result
+                    })
+
+                except Exception as e:
+                    logger.exception("Audit run failed")
+                    await _safe_ws_send(ws, {
+                        "status": "error",
+                        "progress": 100,
+                        "error": f"Server error: {e}"
+                    })
+
+        except WebSocketDisconnect:
+            logger.info("Client disconnected")
+            break
+        except Exception as e:
+            logger.exception("WS loop error: %s", e)
+            # If something unexpected happens, try to inform client (if still connected)
+            await _safe_ws_send(ws, {"status": "error", "progress": 100, "error": f"WS error: {e}"})
+            break
