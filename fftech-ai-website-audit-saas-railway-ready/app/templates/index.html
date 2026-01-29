@@ -1,28 +1,28 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FF Tech Audit – World-Class Website Auditor</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf"></script>
-  <style>
-    body {background-color:#1e1e2f; color:#f1f1f1; font-family:sans-serif;}
-    .metric-card {background:#2e2e3f; padding:15px; border-radius:12px; margin-bottom:15px; text-align:center;}
-    .metric-card .metric-icon {font-size:2rem;}
-    .metric-card .metric-value {font-size:1.5rem; font-weight:bold;}
-    .progress {height:20px; border-radius:10px;}
-    #resultsArea {margin-top:20px;}
-    .json-tree {background:#1a1a2e; padding:10px; border-radius:10px; font-family:monospace; max-height:400px; overflow:auto;}
-    .chart-container {background:#2e2e3f; padding:15px; border-radius:12px; margin-bottom:15px;}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FF Tech Audit – Integrated Auditor</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf"></script>
+<style>
+  body {background:#1e1e2f; color:#f1f1f1; font-family:sans-serif;}
+  .metric-card {background:#2e2e3f; padding:15px; border-radius:12px; margin-bottom:15px; text-align:center;}
+  .metric-card .metric-icon {font-size:2rem;}
+  .metric-card .metric-value {font-size:1.5rem; font-weight:bold;}
+  .progress {height:20px; border-radius:10px;}
+  #resultsArea {margin-top:20px;}
+  .json-tree {background:#1a1a2e; padding:10px; border-radius:10px; font-family:monospace; max-height:400px; overflow:auto;}
+  .chart-container {background:#2e2e3f; padding:15px; border-radius:12px; margin-bottom:15px;}
+</style>
 </head>
 <body class="p-4">
 
 <div class="container">
-  <h1 class="mb-4">🌐 FF Tech Audit – World-Class Auditor</h1>
+  <h1 class="mb-4">🌐 FF Tech Audit – Python Integrated</h1>
 
   <!-- URL Input -->
   <div class="input-group mb-3">
@@ -36,7 +36,7 @@
   </div>
 
   <!-- Results -->
-  <div id="resultsArea" class="d-none mt-4">
+  <div id="resultsArea" class="d-none">
 
     <!-- Overview -->
     <div class="d-flex align-items-center mb-4">
@@ -71,10 +71,10 @@
       <div id="competitorTable"></div>
     </div>
 
-    <!-- AI Recommendations -->
+    <!-- Dynamic Cards -->
     <div class="mt-4">
-      <h4>AI Recommendations</h4>
-      <div class="row" id="aiRecommendations"></div>
+      <h4>Key Metrics</h4>
+      <div class="row" id="dynamicCards"></div>
     </div>
 
     <!-- Raw JSON -->
@@ -88,36 +88,36 @@
 </div>
 
 <script>
-let evtSource = null;
-const runBtn = document.getElementById("runBtn");
-const resetBtn = document.getElementById("resetBtn");
-const urlInput = document.getElementById("urlInput");
-const statusLine = document.getElementById("statusLine");
-const progressBar = document.getElementById("progressBar");
-const resultsArea = document.getElementById("resultsArea");
-const auditUrl = document.getElementById("auditUrl");
-const ovScore = document.getElementById("ovScore");
-const gradeBadge = document.getElementById("grade");
-const kpiSection = document.getElementById("kpiSection");
-const competitorTable = document.getElementById("competitorTable");
-const aiRecommendations = document.getElementById("aiRecommendations");
-const scoreCircle = document.getElementById("scoreCircle");
-const rawJson = document.getElementById("rawJson");
-const exportPDF = document.getElementById("exportPDF");
+let evtSource=null;
+const runBtn=document.getElementById("runBtn");
+const resetBtn=document.getElementById("resetBtn");
+const urlInput=document.getElementById("urlInput");
+const statusLine=document.getElementById("statusLine");
+const progressBar=document.getElementById("progressBar");
+const resultsArea=document.getElementById("resultsArea");
+const auditUrl=document.getElementById("auditUrl");
+const ovScore=document.getElementById("ovScore");
+const gradeBadge=document.getElementById("grade");
+const kpiSection=document.getElementById("kpiSection");
+const competitorTable=document.getElementById("competitorTable");
+const dynamicCards=document.getElementById("dynamicCards");
+const rawJson=document.getElementById("rawJson");
+const scoreCircle=document.getElementById("scoreCircle");
+const exportPDF=document.getElementById("exportPDF");
 
-let barChartInstance = null;
-let doughnutChartInstance = null;
+let barChartInstance=null;
+let doughnutChartInstance=null;
 
 function resetUI(){
   resultsArea.classList.add("d-none");
-  kpiSection.innerHTML = "";
-  competitorTable.innerHTML = "";
-  aiRecommendations.innerHTML = "";
-  ovScore.textContent = "—";
-  gradeBadge.textContent = "—";
-  progressBar.style.width = "0%";
-  progressBar.textContent = "0%";
-  rawJson.textContent = "";
+  kpiSection.innerHTML="";
+  competitorTable.innerHTML="";
+  dynamicCards.innerHTML="";
+  ovScore.textContent="—";
+  gradeBadge.textContent="—";
+  progressBar.style.width="0%";
+  progressBar.textContent="0%";
+  rawJson.textContent="";
   if(evtSource){ evtSource.close(); evtSource=null; }
   if(barChartInstance){ barChartInstance.destroy(); barChartInstance=null; }
   if(doughnutChartInstance){ doughnutChartInstance.destroy(); doughnutChartInstance=null; }
@@ -128,65 +128,59 @@ resetBtn.addEventListener("click", resetUI);
 
 function renderKPI(data){
   kpiSection.innerHTML="";
-  const categories = ["seo","performance","trust"];
+  const categories = ["seo","performance","links"];
   categories.forEach(cat=>{
-    if(data[cat]){
-      const card=document.createElement("div");
-      card.className="col-md-4";
-      card.innerHTML=`<div class="metric-card">
-        <div class="metric-icon">${cat==="seo"?"🔍":cat==="performance"?"⚡":"🔒"}</div>
-        <div class="metric-value">${data[cat].score||"—"}</div>
-        <div class="kpi-label">${cat.toUpperCase()}</div>
-      </div>`;
-      kpiSection.appendChild(card);
-    }
+    const val = data.breakdown?.[cat]?.score || 0;
+    const card=document.createElement("div");
+    card.className="col-md-4";
+    card.innerHTML=`<div class="metric-card">
+      <div class="metric-icon">${cat==="seo"?"🔍":cat==="performance"?"⚡":"🔗"}</div>
+      <div class="metric-value">${val}</div>
+      <div class="kpi-label">${cat.toUpperCase()}</div>
+    </div>`;
+    kpiSection.appendChild(card);
   });
 }
 
 function renderCompetitors(data){
-  if(!data.competitors) return;
-  let html = `<table class="table table-dark table-striped table-hover">
-    <thead>
-      <tr><th>Name</th><th>URL</th><th>Score</th><th>SEO</th><th>Performance</th></tr>
-    </thead><tbody>`;
-  data.competitors.forEach(c=>{
+  const comp = data.breakdown?.competitors?.items || [];
+  if(!comp.length){ competitorTable.innerHTML="<p>No competitor data.</p>"; return; }
+  let html=`<table class="table table-dark table-striped table-hover">
+  <thead><tr><th>Name</th><th>Score</th></tr></thead><tbody>`;
+  comp.forEach(c=>{
     html+=`<tr>
-      <td>${c.competitor_name}</td>
-      <td><a href="${c.competitor_url}" target="_blank">${c.competitor_url}</a></td>
-      <td>${c.score}</td>
-      <td>${c.seo_score}</td>
-      <td>${c.performance_score}</td>
+      <td>${c.name||c.title||"—"}</td>
+      <td>${c.score||"—"}</td>
     </tr>`;
   });
   html+="</tbody></table>";
   competitorTable.innerHTML=html;
 }
 
-function renderAIRecommendations(data){
-  if(!data.ai_recommendations) return;
-  aiRecommendations.innerHTML="";
-  data.ai_recommendations.forEach(r=>{
-    const card=document.createElement("div");
-    card.className="col-md-4";
-    card.innerHTML=`<div class="metric-card">
-      <div class="metric-icon">💡</div>
-      <div>${r.recommendation_text}</div>
-      <small class="text-muted">Category: ${r.category}, Impact: ${r.impact_score}</small>
+function renderDynamicCards(data){
+  dynamicCards.innerHTML="";
+  const cards = data.dynamic?.cards || [];
+  cards.forEach(c=>{
+    const div=document.createElement("div");
+    div.className="col-md-3";
+    div.innerHTML=`<div class="metric-card">
+      <div class="metric-icon">📊</div>
+      <div class="metric-value">${c.value||"—"} ${c.unit||""}</div>
+      <div class="kpi-label">${c.title}</div>
     </div>`;
-    aiRecommendations.appendChild(card);
+    dynamicCards.appendChild(div);
   });
 }
 
 function renderCharts(data){
-  const barData = data.chart_data?.bar;
-  const doughData = data.chart_data?.doughnut;
+  const barData=data.chart_data?.bar;
+  const doughData=data.chart_data?.doughnut;
 
   if(barData){
     const ctx=document.getElementById("barChart").getContext("2d");
     if(barChartInstance) barChartInstance.destroy();
     barChartInstance=new Chart(ctx,{type:"bar",data:barData,options:{responsive:true,plugins:{legend:{display:false}}}});
   }
-
   if(doughData){
     const ctx=document.getElementById("doughnutChart").getContext("2d");
     if(doughnutChartInstance) doughnutChartInstance.destroy();
@@ -200,7 +194,7 @@ function renderJSONTree(data){
 
 runBtn.addEventListener("click", ()=>{
   const url=urlInput.value.trim();
-  if(!url) return alert("Please enter a valid URL");
+  if(!url) return alert("Enter a valid URL");
 
   resetUI();
   resultsArea.classList.remove("d-none");
@@ -212,7 +206,10 @@ runBtn.addEventListener("click", ()=>{
     let data;
     try{ data=JSON.parse(event.data); } catch(e){ console.error(e); return; }
 
-    if(data.progress){ progressBar.style.width=data.progress+"%"; progressBar.textContent=data.progress+"%"; }
+    if(data.crawl_progress!==undefined){
+      progressBar.style.width=data.crawl_progress+"%";
+      progressBar.textContent=data.crawl_progress+"%";
+    }
     if(data.overall_score){
       ovScore.textContent=data.overall_score;
       const dashoffset=691-(691*data.overall_score/100);
@@ -222,7 +219,7 @@ runBtn.addEventListener("click", ()=>{
 
     renderKPI(data);
     renderCompetitors(data);
-    renderAIRecommendations(data);
+    renderDynamicCards(data);
     renderCharts(data);
     renderJSONTree(data);
 
@@ -237,7 +234,6 @@ runBtn.addEventListener("click", ()=>{
   };
 });
 
-// PDF Export
 exportPDF.addEventListener("click", ()=>{
   const doc = new jsPDF();
   doc.setFontSize(12);
