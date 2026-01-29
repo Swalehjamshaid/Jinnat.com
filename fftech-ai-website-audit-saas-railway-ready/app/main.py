@@ -27,14 +27,14 @@ app = FastAPI(title="Flexible Audit Runner", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(","),
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ---------------------------
-# Utility Functions
+# URL Validation
 # ---------------------------
 def _validate_url(url: str | None) -> str:
     if not url or not isinstance(url, str) or len(url.strip()) < 4:
@@ -42,28 +42,22 @@ def _validate_url(url: str | None) -> str:
     url = url.strip()
     return url if url.startswith("http") else f"https://{url}"
 
+# ---------------------------
+# SSE Streaming Generator
+# ---------------------------
 async def _run_audit_queue(url: str, queue: asyncio.Queue):
-    """Run the audit and push structured messages to an asyncio queue"""
+    """Run audit and push messages to queue"""
     runner = WebsiteAuditRunner(url)
 
     async def callback(msg: Dict[str, Any]):
-        payload = {
-            "seo_score": msg.get("seo_score", 0),
-            "performance_score": msg.get("performance_score", 0),
-            "trust_score": msg.get("trust_score", 0),
-            "progress": msg.get("progress", 0),
-            "finished": msg.get("finished", False),
-            "error": msg.get("error"),
-            "competitor_comparison": msg.get("competitor_comparison", {"labels": [], "datasets": []}),
-            "history": msg.get("history", []),
-            "ai_recommendations": msg.get("ai_recommendations", []),
-        }
-        await queue.put(payload)
+        try:
+            await queue.put(msg)
+        except Exception:
+            await queue.put({"error": "Non-serializable message", "finished": True})
 
     await runner.run_audit(callback)
 
 async def _sse_stream(queue: asyncio.Queue) -> AsyncGenerator[bytes, None]:
-    """Server-Sent Event stream"""
     HEARTBEAT = 10
     while True:
         try:
@@ -89,7 +83,7 @@ async def healthz():
 
 @app.get("/api/audit")
 async def audit_sse(url: str | None = None):
-    """SSE endpoint for streaming audit updates"""
+    """SSE endpoint streaming audit updates"""
     target = _validate_url(url)
     queue: asyncio.Queue = asyncio.Queue()
     asyncio.create_task(_run_audit_queue(target, queue))
@@ -97,7 +91,7 @@ async def audit_sse(url: str | None = None):
 
 @app.post("/api/audit", response_class=JSONResponse)
 async def audit_once(request: Request):
-    """Single-run audit returning final structured JSON"""
+    """Single-run audit returning final JSON"""
     body = await request.json()
     target = _validate_url(body.get("url"))
     final_payload: Dict[str, Any] = {}
@@ -105,17 +99,7 @@ async def audit_once(request: Request):
 
     async def callback(msg: Dict[str, Any]):
         nonlocal final_payload
-        final_payload = {
-            "seo_score": msg.get("seo_score", 0),
-            "performance_score": msg.get("performance_score", 0),
-            "trust_score": msg.get("trust_score", 0),
-            "progress": msg.get("progress", 0),
-            "finished": msg.get("finished", False),
-            "error": msg.get("error"),
-            "competitor_comparison": msg.get("competitor_comparison", {"labels": [], "datasets": []}),
-            "history": msg.get("history", []),
-            "ai_recommendations": msg.get("ai_recommendations", []),
-        }
+        final_payload = msg
         if msg.get("finished") or msg.get("error"):
             done.set()
 
@@ -146,18 +130,7 @@ async def ws_endpoint(ws: WebSocket):
         url = _validate_url(data.get("url"))
 
         async def callback(msg: Dict[str, Any]):
-            payload = {
-                "seo_score": msg.get("seo_score", 0),
-                "performance_score": msg.get("performance_score", 0),
-                "trust_score": msg.get("trust_score", 0),
-                "progress": msg.get("progress", 0),
-                "finished": msg.get("finished", False),
-                "error": msg.get("error"),
-                "competitor_comparison": msg.get("competitor_comparison", {"labels": [], "datasets": []}),
-                "history": msg.get("history", []),
-                "ai_recommendations": msg.get("ai_recommendations", []),
-            }
-            await ws.send_text(json.dumps(payload, ensure_ascii=False))
+            await ws.send_text(json.dumps(msg, ensure_ascii=False))
 
         runner = WebsiteAuditRunner(url)
         await runner.run_audit(callback)
@@ -174,4 +147,4 @@ async def ws_endpoint(ws: WebSocket):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=bool(os.getenv("RELOAD", "1") == "1"))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)
