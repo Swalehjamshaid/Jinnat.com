@@ -1,265 +1,251 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FF Tech Audit – World-Class Dashboard</title>
-
-<!-- Bootstrap 5 & Icons -->
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-<!-- Google Fonts -->
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-
-<style>
-:root {
-  --primary: #fbbf24;
-  --bg: #0a0f1a;
-  --card: rgba(15,23,42,0.75);
-  --border: #1f2937;
-  --muted: #94a3b8;
-  --text: #e2e8f0;
-  --success: #22c55e;
-  --warning: #eab308;
-  --danger: #ef4444;
-  --gradient-gold: linear-gradient(135deg,#fbbf24,#f59e0b);
-  --gradient-success: linear-gradient(135deg,#22c55e,#16a34a);
-  --gradient-warning: linear-gradient(135deg,#eab308,#ca8a04);
-  --gradient-danger: linear-gradient(135deg,#ef4444,#dc2626);
-}
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: "Inter", system-ui, sans-serif;
-  min-height: 100vh;
-  background-image:
-    radial-gradient(circle at 10% 20%, rgba(251,191,36,0.08) 0%, transparent 40%),
-    radial-gradient(circle at 100% -10%, rgba(56,189,248,0.07) 0%, transparent 45%);
-}
-
-a { text-decoration: none; }
-
-.navbar { border-bottom: 1px solid var(--border); }
-
-.container { max-width: 1320px; }
-
-.card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 1.25rem;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 10px 35px rgba(0,0,0,0.55);
-  transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
-}
-.card:hover { transform: translateY(-8px); box-shadow: 0 20px 50px rgba(251,191,36,0.18); }
-
-.audit__section-header {
-  color: var(--primary);
-  margin: 3rem 0 1.5rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  position: relative;
-  display: inline-block;
-}
-.audit__section-header::after {
-  content:'';
-  position:absolute;
-  bottom:-6px;
-  left:0;
-  width:60px;
-  height:3px;
-  background: var(--gradient-gold);
-  border-radius:3px;
-}
-
-.metric-card {
-  background: linear-gradient(135deg, rgba(30,41,59,0.8), rgba(17,24,39,0.8));
-  border:1px solid var(--border);
-  border-radius:1.25rem;
-  padding:1.75rem;
-  text-align:center;
-  transition:all 0.4s ease;
-}
-.metric-card:hover { transform: translateY(-10px) scale(1.02); box-shadow:0 15px 45px rgba(251,191,36,0.18); }
-.metric-icon { font-size:2.2rem; margin-bottom:0.75rem; opacity:0.9; color: var(--primary); }
-.metric-value { font-size:2.2rem; font-weight:900; background:var(--gradient-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-.kpi { font-weight:900; font-size:3.5rem; background:var(--gradient-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent; line-height:1; }
-.kpi-label { font-size:0.9rem; color: var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
-
-.progress { height:14px; background: rgba(30,41,59,0.6); border-radius:7px; overflow:hidden; }
-.progress-bar { background: var(--gradient-gold); transition: width 0.9s ease; }
-
-.score-ring { width:260px; height:260px; margin:0 auto; position:relative; filter: drop-shadow(0 10px 26px rgba(251,191,36,0.18)); }
-.score-ring svg { transform: rotate(-90deg); }
-.circle-bg { fill:none; stroke: rgba(255,255,255,0.08); stroke-width:22; }
-.circle { fill:none; stroke-linecap:round; stroke-width:22; transition: stroke-dashoffset 1.4s cubic-bezier(0.34,1.56,0.64,1), stroke 1.4s ease; }
-
-.code-block { background: rgba(15,23,42,0.7); border:1px solid var(--border); border-radius:.75rem; padding:1rem; font-size:.85rem; max-height:400px; overflow:auto; }
-
-.json-key { color: #38bdf8; font-weight: 600; }
-.json-value { color: #fbbf24; }
-.json-toggle { cursor:pointer; color:#fbbf24; margin-right:0.3rem; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FF Tech Audit – World-Class Website Auditor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf"></script>
+  <style>
+    body {background-color:#1e1e2f; color:#f1f1f1; font-family:sans-serif;}
+    .metric-card {background:#2e2e3f; padding:15px; border-radius:12px; margin-bottom:15px; text-align:center;}
+    .metric-card .metric-icon {font-size:2rem;}
+    .metric-card .metric-value {font-size:1.5rem; font-weight:bold;}
+    .progress {height:20px; border-radius:10px;}
+    #resultsArea {margin-top:20px;}
+    .json-tree {background:#1a1a2e; padding:10px; border-radius:10px; font-family:monospace; max-height:400px; overflow:auto;}
+    .chart-container {background:#2e2e3f; padding:15px; border-radius:12px; margin-bottom:15px;}
+  </style>
 </head>
-<body>
+<body class="p-4">
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg">
-  <div class="container">
-    <a class="navbar-brand fw-bold fs-4" href="/" style="color: var(--primary);">FF Tech Audit</a>
-  </div>
-</nav>
-
-<main class="container py-5">
-  <!-- Header -->
-  <header class="text-center mb-5">
-    <h1 class="display-4 fw-black" style="background: var(--gradient-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
-      FF Tech Audit Dashboard
-    </h1>
-    <p class="lead muted fw-light">World-class interactive website audit</p>
-  </header>
+<div class="container">
+  <h1 class="mb-4">🌐 FF Tech Audit – World-Class Auditor</h1>
 
   <!-- URL Input -->
-  <section class="card p-4 mb-5">
-    <div class="row g-3 align-items-end">
-      <div class="col-md-8">
-        <label class="form-label fw-semibold" for="urlInput">Website URL</label>
-        <input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="e.g., www.example.com" autofocus>
-      </div>
-      <div class="col-md-4 d-flex gap-2">
-        <button id="runBtn" class="btn btn-primary w-100"><i class="bi bi-rocket-takeoff-fill me-2"></i>Run Audit</button>
-        <button id="resetBtn" class="btn btn-outline-danger w-100"><i class="bi bi-arrow-counterclockwise me-2"></i>Reset</button>
-      </div>
-    </div>
-    <div id="statusLine" class="mt-3 small fw-semibold text-info">Status: Idle</div>
-    <div class="progress mt-2" role="progressbar">
-      <div id="progressBar" class="progress-bar" style="width:0%"></div>
-    </div>
-  </section>
+  <div class="input-group mb-3">
+    <input type="text" id="urlInput" class="form-control" placeholder="Enter website URL e.g. https://example.com">
+    <button class="btn btn-primary" id="runBtn">Run Audit</button>
+    <button class="btn btn-secondary" id="resetBtn">Reset</button>
+  </div>
+  <div id="statusLine">Status: Idle</div>
+  <div class="progress mt-2">
+    <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width:0%">0%</div>
+  </div>
 
   <!-- Results -->
-  <section id="resultsArea" class="d-none">
+  <div id="resultsArea" class="d-none mt-4">
 
-    <!-- Overall Score -->
-    <section class="text-center mb-5">
-      <h5 class="text-muted mb-2">Audited URL</h5>
-      <h4 id="auditUrl" class="text-info fw-medium">—</h4>
-      <div class="score-ring my-5">
-        <svg viewBox="0 0 240 240">
-          <circle class="circle-bg" cx="120" cy="120" r="110"></circle>
-          <circle id="scoreCircle" class="circle" cx="120" cy="120" r="110" stroke-dasharray="691" stroke-dashoffset="691"></circle>
+    <!-- Overview -->
+    <div class="d-flex align-items-center mb-4">
+      <div class="me-4 text-center">
+        <svg width="120" height="120">
+          <circle cx="60" cy="60" r="55" stroke="#444" stroke-width="10" fill="none"/>
+          <circle id="scoreCircle" cx="60" cy="60" r="55" stroke="#ffc107" stroke-width="10" fill="none" stroke-dasharray="691" stroke-dashoffset="691" transform="rotate(-90 60 60)"/>
+          <text x="50%" y="50%" text-anchor="middle" dy="0.3em" font-size="24px" fill="#fff" id="ovScore">—</text>
         </svg>
-        <div class="position-absolute top-50 start-50 translate-middle text-center">
-          <div id="ovScore" class="display-2 fw-black text-white">—</div>
-          <small class="text-muted">/100</small>
-        </div>
+        <div>Overall Score</div>
+        <div class="badge bg-info mt-2" id="grade">—</div>
       </div>
-      <div id="grade" class="badge-grade bg-primary text-white">—</div>
-    </section>
+      <div class="flex-grow-1">
+        <h5>Website: <span id="auditUrl"></span></h5>
+        <div class="row" id="kpiSection"></div>
+      </div>
+    </div>
 
-    <!-- KPI Cards -->
-    <section class="row g-4 mb-5" id="kpiSection"></section>
+    <!-- Charts -->
+    <div class="row">
+      <div class="col-md-6 chart-container">
+        <canvas id="barChart"></canvas>
+      </div>
+      <div class="col-md-6 chart-container">
+        <canvas id="doughnutChart"></canvas>
+      </div>
+    </div>
 
-    <!-- Competitor Comparison -->
-    <section>
-      <h5 class="audit__section-header">Competitor Comparison</h5>
-      <div id="competitorTable" class="table-responsive"></div>
-    </section>
+    <!-- Competitors -->
+    <div class="mt-4">
+      <h4>Competitor Comparison</h4>
+      <div id="competitorTable"></div>
+    </div>
 
     <!-- AI Recommendations -->
-    <section>
-      <h5 class="audit__section-header">AI Recommendations</h5>
-      <div id="aiRecommendations" class="row g-3"></div>
-    </section>
+    <div class="mt-4">
+      <h4>AI Recommendations</h4>
+      <div class="row" id="aiRecommendations"></div>
+    </div>
 
-    <!-- Raw JSON Viewer -->
-    <section class="mt-5">
-      <h5 class="audit__section-header toggle-btn" onclick="toggleJSON()">
-        <i class="bi bi-code-slash me-2"></i>Toggle Raw JSON View
-      </h5>
-      <div id="jsonViewer" class="card p-3 bg-dark border-secondary d-none" style="max-height:400px; overflow:auto;"></div>
-    </section>
+    <!-- Raw JSON -->
+    <div class="mt-4">
+      <h4>Raw JSON Data</h4>
+      <pre class="json-tree" id="rawJson"></pre>
+      <button class="btn btn-success mt-2" id="exportPDF">Export PDF</button>
+    </div>
 
-  </section>
-</main>
+  </div>
+</div>
 
-<footer class="text-center small text-secondary py-4">
-  © FF Tech Audit Engine – Adaptive Dashboard
-</footer>
-
-<!-- Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- Main JS -->
 <script>
-function toggleJSON() {
-  const viewer = document.getElementById('jsonViewer');
-  viewer.classList.toggle('d-none');
+let evtSource = null;
+const runBtn = document.getElementById("runBtn");
+const resetBtn = document.getElementById("resetBtn");
+const urlInput = document.getElementById("urlInput");
+const statusLine = document.getElementById("statusLine");
+const progressBar = document.getElementById("progressBar");
+const resultsArea = document.getElementById("resultsArea");
+const auditUrl = document.getElementById("auditUrl");
+const ovScore = document.getElementById("ovScore");
+const gradeBadge = document.getElementById("grade");
+const kpiSection = document.getElementById("kpiSection");
+const competitorTable = document.getElementById("competitorTable");
+const aiRecommendations = document.getElementById("aiRecommendations");
+const scoreCircle = document.getElementById("scoreCircle");
+const rawJson = document.getElementById("rawJson");
+const exportPDF = document.getElementById("exportPDF");
+
+let barChartInstance = null;
+let doughnutChartInstance = null;
+
+function resetUI(){
+  resultsArea.classList.add("d-none");
+  kpiSection.innerHTML = "";
+  competitorTable.innerHTML = "";
+  aiRecommendations.innerHTML = "";
+  ovScore.textContent = "—";
+  gradeBadge.textContent = "—";
+  progressBar.style.width = "0%";
+  progressBar.textContent = "0%";
+  rawJson.textContent = "";
+  if(evtSource){ evtSource.close(); evtSource=null; }
+  if(barChartInstance){ barChartInstance.destroy(); barChartInstance=null; }
+  if(doughnutChartInstance){ doughnutChartInstance.destroy(); doughnutChartInstance=null; }
+  statusLine.textContent="Status: Idle";
 }
 
-function renderJSONTree(jsonData) {
-  const viewer = document.getElementById('jsonViewer');
-  viewer.innerHTML = '';
+resetBtn.addEventListener("click", resetUI);
 
-  function createNode(key, value) {
-    const node = document.createElement('div');
-    node.style.marginLeft = '1rem';
-    node.style.fontFamily = 'monospace';
-    node.style.fontSize = '0.85rem';
-
-    if (typeof value === 'object' && value !== null) {
-      const toggleBtn = document.createElement('span');
-      toggleBtn.textContent = '▶ ';
-      toggleBtn.className = 'json-toggle';
-      const keySpan = document.createElement('span');
-      keySpan.textContent = key + ': ';
-      keySpan.className = 'json-key';
-
-      const childrenContainer = document.createElement('div');
-      childrenContainer.style.display = 'none';
-
-      for (const [k, v] of Object.entries(value)) {
-        childrenContainer.appendChild(createNode(k, v));
-      }
-
-      toggleBtn.addEventListener('click', () => {
-        if (childrenContainer.style.display === 'none') {
-          childrenContainer.style.display = 'block';
-          toggleBtn.textContent = '▼ ';
-        } else {
-          childrenContainer.style.display = 'none';
-          toggleBtn.textContent = '▶ ';
-        }
-      });
-
-      node.appendChild(toggleBtn);
-      node.appendChild(keySpan);
-      node.appendChild(childrenContainer);
-    } else {
-      const keySpan = document.createElement('span');
-      keySpan.textContent = key + ': ';
-      keySpan.className = 'json-key';
-      const valueSpan = document.createElement('span');
-      valueSpan.textContent = value;
-      valueSpan.className = 'json-value';
-      node.appendChild(keySpan);
-      node.appendChild(valueSpan);
+function renderKPI(data){
+  kpiSection.innerHTML="";
+  const categories = ["seo","performance","trust"];
+  categories.forEach(cat=>{
+    if(data[cat]){
+      const card=document.createElement("div");
+      card.className="col-md-4";
+      card.innerHTML=`<div class="metric-card">
+        <div class="metric-icon">${cat==="seo"?"🔍":cat==="performance"?"⚡":"🔒"}</div>
+        <div class="metric-value">${data[cat].score||"—"}</div>
+        <div class="kpi-label">${cat.toUpperCase()}</div>
+      </div>`;
+      kpiSection.appendChild(card);
     }
-    return node;
+  });
+}
+
+function renderCompetitors(data){
+  if(!data.competitors) return;
+  let html = `<table class="table table-dark table-striped table-hover">
+    <thead>
+      <tr><th>Name</th><th>URL</th><th>Score</th><th>SEO</th><th>Performance</th></tr>
+    </thead><tbody>`;
+  data.competitors.forEach(c=>{
+    html+=`<tr>
+      <td>${c.competitor_name}</td>
+      <td><a href="${c.competitor_url}" target="_blank">${c.competitor_url}</a></td>
+      <td>${c.score}</td>
+      <td>${c.seo_score}</td>
+      <td>${c.performance_score}</td>
+    </tr>`;
+  });
+  html+="</tbody></table>";
+  competitorTable.innerHTML=html;
+}
+
+function renderAIRecommendations(data){
+  if(!data.ai_recommendations) return;
+  aiRecommendations.innerHTML="";
+  data.ai_recommendations.forEach(r=>{
+    const card=document.createElement("div");
+    card.className="col-md-4";
+    card.innerHTML=`<div class="metric-card">
+      <div class="metric-icon">💡</div>
+      <div>${r.recommendation_text}</div>
+      <small class="text-muted">Category: ${r.category}, Impact: ${r.impact_score}</small>
+    </div>`;
+    aiRecommendations.appendChild(card);
+  });
+}
+
+function renderCharts(data){
+  const barData = data.chart_data?.bar;
+  const doughData = data.chart_data?.doughnut;
+
+  if(barData){
+    const ctx=document.getElementById("barChart").getContext("2d");
+    if(barChartInstance) barChartInstance.destroy();
+    barChartInstance=new Chart(ctx,{type:"bar",data:barData,options:{responsive:true,plugins:{legend:{display:false}}}});
   }
 
-  for (const [key, value] of Object.entries(jsonData)) {
-    viewer.appendChild(createNode(key, value));
+  if(doughData){
+    const ctx=document.getElementById("doughnutChart").getContext("2d");
+    if(doughnutChartInstance) doughnutChartInstance.destroy();
+    doughnutChartInstance=new Chart(ctx,{type:"doughnut",data:doughData,options:{responsive:true,plugins:{legend:{position:"bottom"}}}});
   }
 }
 
-// Example: Replace with SSE/WebSocket updates
-// renderJSONTree(sampleData);
+function renderJSONTree(data){
+  rawJson.textContent=JSON.stringify(data,null,2);
+}
+
+runBtn.addEventListener("click", ()=>{
+  const url=urlInput.value.trim();
+  if(!url) return alert("Please enter a valid URL");
+
+  resetUI();
+  resultsArea.classList.remove("d-none");
+  auditUrl.textContent=url;
+  statusLine.textContent="Status: Running...";
+
+  evtSource=new EventSource(`/api/audit?url=${encodeURIComponent(url)}`);
+  evtSource.onmessage=function(event){
+    let data;
+    try{ data=JSON.parse(event.data); } catch(e){ console.error(e); return; }
+
+    if(data.progress){ progressBar.style.width=data.progress+"%"; progressBar.textContent=data.progress+"%"; }
+    if(data.overall_score){
+      ovScore.textContent=data.overall_score;
+      const dashoffset=691-(691*data.overall_score/100);
+      scoreCircle.style.strokeDashoffset=dashoffset;
+    }
+    if(data.grade) gradeBadge.textContent=data.grade;
+
+    renderKPI(data);
+    renderCompetitors(data);
+    renderAIRecommendations(data);
+    renderCharts(data);
+    renderJSONTree(data);
+
+    if(data.finished||data.error){
+      statusLine.textContent=data.error?"Status: Error":"Status: Finished";
+      evtSource.close();
+    }
+  };
+  evtSource.onerror=function(){
+    statusLine.textContent="Status: Connection Error";
+    evtSource.close();
+  };
+});
+
+// PDF Export
+exportPDF.addEventListener("click", ()=>{
+  const doc = new jsPDF();
+  doc.setFontSize(12);
+  doc.text("Audit Report: "+(urlInput.value||"Unknown"),10,10);
+  doc.text(JSON.stringify(JSON.parse(rawJson.textContent),null,2),10,20);
+  doc.save("audit_report.pdf");
+});
 </script>
+
 </body>
 </html>
