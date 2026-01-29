@@ -1,163 +1,150 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FF Tech Audit – World-Class Dashboard</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-<style>
-:root {
-  --primary: #fbbf24; --bg: #0a0f1a; --card: rgba(15,23,42,0.85);
-  --border: #1f2937; --muted: #94a3b8; --text: #e2e8f0; --success: #22c55e;
-  --warning: #eab308; --danger: #ef4444;
-  --gradient-gold: linear-gradient(135deg,#fbbf24,#f59e0b);
-}
-body { background: var(--bg); color: var(--text); font-family: "Inter",sans-serif; min-height:100vh; }
-.card { background: var(--card); border:1px solid var(--border); border-radius:1.25rem; backdrop-filter:blur(12px); box-shadow:0 10px 35px rgba(0,0,0,0.55); transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1); }
-.card:hover{ transform:translateY(-8px); box-shadow:0 20px 50px rgba(251,191,36,0.18);}
-.metric-card { cursor:pointer; outline:none; transition: transform 0.3s; }
-.metric-card:hover, .metric-card:focus { transform: translateY(-6px) scale(1.02); box-shadow: 0 15px 45px rgba(251,191,36,0.18); }
-.kpi { font-weight:900; font-size:3rem; background: var(--gradient-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent; line-height:1; }
-.kpi-label { font-size:0.9rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
-.progress { height:14px; background: rgba(30,41,59,0.6); border-radius:7px; overflow:hidden; }
-.progress-bar { background: var(--gradient-gold); transition: width 0.9s ease; position: relative; }
-.progress-bar::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.25),transparent); animation: shimmer 2s linear infinite; }
-@keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
-.score-ring { width:260px; height:260px; margin:0 auto; position:relative; }
-.score-ring svg { transform:rotate(-90deg); }
-.circle-bg { fill:none; stroke: rgba(255,255,255,0.08); stroke-width:22; }
-.circle { fill:none; stroke-linecap:round; stroke-width:22; transition: stroke-dashoffset 1.4s cubic-bezier(0.34,1.56,0.64,1), stroke 1.4s ease; }
-.section-header { color: var(--primary); margin: 3rem 0 1.5rem; font-weight:700; letter-spacing:0.02em; position:relative; display:inline-block;}
-.section-header:after { content:''; position:absolute; bottom:-6px; left:0; width:60px; height:3px; background: var(--gradient-gold); border-radius:3px; }
-:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; }
-.tooltip-inner { background-color: var(--card); color: var(--text); border:1px solid var(--border); font-size:.85rem; }
-</style>
-</head>
-<body>
-<nav class="navbar navbar-expand-lg border-bottom border-secondary">
-<div class="container"><a class="navbar-brand fw-bold fs-4" href="/" style="color: var(--primary);">FF Tech Audit</a></div>
-</nav>
-<div class="container py-5">
-<header class="text-center mb-5">
-<h1 class="display-4 fw-black" style="background: var(--gradient-gold); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">FF Tech Audit Dashboard</h1>
-<p class="lead muted fw-light">World-class visualization of your website audit</p>
-</header>
+# app/main.py
+import os
+import json
+import asyncio
+from pathlib import Path
+from typing import Any, Dict, AsyncGenerator
 
-<section class="card p-4 mb-5" aria-label="Website URL Input" role="region">
-<div class="row g-3 align-items-end">
-<div class="col-md-8">
-<label class="form-label fw-semibold" for="urlInput">Website URL</label>
-<input id="urlInput" type="url" class="form-control bg-dark text-white border-secondary" placeholder="e.g., www.example.com" autofocus>
-</div>
-<div class="col-md-4 d-flex gap-2">
-<button id="runBtn" class="btn btn-primary w-100" tabindex="0"><i class="bi bi-rocket-takeoff-fill me-2"></i>Run Audit</button>
-<button id="resetBtn" class="btn btn-outline-danger w-100" tabindex="0"><i class="bi bi-arrow-counterclockwise me-2"></i>Reset</button>
-</div>
-</div>
-<div id="statusLine" class="mt-3 small fw-semibold text-info" role="status" aria-live="polite">Status: Idle</div>
-<div class="progress mt-2" role="progressbar" aria-label="Audit Progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-<div id="progressBar" class="progress-bar" style="width:0%"></div>
-</div>
-</section>
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 
-<div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+from app.audit.runner import WebsiteAuditRunner
 
-<div id="resultsArea" class="d-none" role="region" aria-label="Audit Results">
-<section class="text-center mb-5">
-<h5 class="text-muted mb-2">Audited URL</h5>
-<h4 id="auditUrl" class="text-info fw-medium">—</h4>
-<div class="score-ring my-5">
-<svg viewBox="0 0 240 240">
-<circle class="circle-bg" cx="120" cy="120" r="110"/>
-<circle id="scoreCircle" class="circle" cx="120" cy="120" r="110" stroke-dasharray="691" stroke-dashoffset="691"/>
-</svg>
-<div class="position-absolute top-50 start-50 translate-middle text-center">
-<div id="ovScore" class="display-2 fw-black text-white">—</div>
-<small class="text-muted">/100</small>
-</div>
-</div>
-<div id="grade" class="badge bg-primary text-white badge-pill">—</div>
-</section>
+# ---------------------------
+# Paths & Templates
+# ---------------------------
+APP_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = APP_DIR / "templates"
+INDEX_PATH = TEMPLATES_DIR / "index.html"
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-<section class="row g-4 mb-5" id="kpiSection" role="region" aria-label="Key Performance Indicators" tabindex="0"></section>
+# ---------------------------
+# FastAPI App
+# ---------------------------
+app = FastAPI(title="Flexible Audit Runner", version="1.0.0")
 
-<section>
-<h5 class="section-header">Visual Analytics</h5>
-<div class="row g-4" id="chartsSection" role="region" aria-label="Charts and Visual Analytics" tabindex="0"></div>
-</section>
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-<section>
-<h5 class="section-header">Detailed Audit Insights</h5>
-<div id="structuredInsights" role="region" aria-label="Detailed Audit Panels" tabindex="0"></div>
-</section>
+# ---------------------------
+# Utility Functions
+# ---------------------------
+def _validate_url(url: str | None) -> str:
+    if not url or not isinstance(url, str) or len(url.strip()) < 4:
+        raise HTTPException(status_code=400, detail="Provide a valid URL")
+    url = url.strip()
+    return url if url.startswith("http") else f"https://{url}"
 
-<section class="mt-5">
-<h5 class="section-header toggle-btn" tabindex="0" onclick="$('auditJson').classList.toggle('d-none')">
-<i class="bi bi-code-slash me-2"></i>Toggle Raw JSON View
-</h5>
-<pre id="auditJson" class="code-block d-none"></pre>
-</section>
-</div>
-</div>
+async def _run_audit_queue(url: str, queue: asyncio.Queue):
+    """Run the audit and push messages to an asyncio queue"""
+    runner = WebsiteAuditRunner(url)
 
-<footer class="text-center small text-secondary py-4">
-© FF Tech Audit Engine – Beautiful, Accessible & Adaptive Dashboard
-</footer>
+    async def callback(msg: Dict[str, Any]):
+        """Send messages to queue for streaming"""
+        try:
+            json.dumps(msg)  # ensure serializable
+            await queue.put(msg)
+        except Exception:
+            await queue.put({"error": "Non-serializable message", "finished": True})
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-const $ = id=>document.getElementById(id);
-function resetUI(){ setText("statusLine","Status: Idle"); $("progressBar").style.width="0%"; $("progressBar").setAttribute("aria-valuenow",0); $("kpiSection").innerHTML=""; $("chartsSection").innerHTML=""; $("structuredInsights").innerHTML=""; $("auditJson").textContent=""; $("resultsArea").classList.add("d-none"); $("errorBox").classList.add("d-none"); const c=$("scoreCircle"); if(c){c.style.strokeDashoffset="691"; c.style.stroke="#3b82f6";} }
-function setText(id,val){ $(id) && ($(id).textContent=val??"—"); }
-$("urlInput").addEventListener("keydown",e=>{if(e.key==="Enter")$("runBtn").click();});
-function updateStatus(msg){
-  if(msg.status){ const s=$("statusLine"); s.textContent=`Status: ${msg.status}`; s.setAttribute('aria-live','polite'); }
-  if(typeof msg.crawl_progress==="number"){ const p=$("progressBar"); const val=Math.min(100,Math.max(0,msg.crawl_progress)); p.style.width=val+"%"; p.setAttribute('aria-valuenow',val);}
-}
-$("runBtn").addEventListener("click",()=>{
-  const url=$("urlInput").value.trim();
-  if(!url){ $("errorBox").textContent="Please enter a valid URL"; $("errorBox").classList.remove("d-none"); return; }
-  $("resultsArea").classList.remove("d-none");
-  $("auditUrl").textContent=url;
+    await runner.run_audit(callback)
 
-  const ws = new WebSocket(`ws://${window.location.host}/ws`);
-  ws.addEventListener('open',()=>{ ws.send(JSON.stringify({url})); });
-  ws.addEventListener('message', e=>{
-    let msg=JSON.parse(e.data);
-    updateStatus(msg);
-    $("auditJson").textContent=JSON.stringify(msg,null,2);
+async def _sse_stream(queue: asyncio.Queue) -> AsyncGenerator[bytes, None]:
+    """Server-Sent Event stream"""
+    HEARTBEAT = 10
+    while True:
+        try:
+            msg = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT)
+            yield f"data: {json.dumps(msg)}\n\n".encode("utf-8")
+            if msg.get("finished") or msg.get("error"):
+                break
+        except asyncio.TimeoutError:
+            yield b": heartbeat\n\n"
 
-    // Example KPI update
-    if(msg.kpis){
-      $("kpiSection").innerHTML = "";
-      msg.kpis.forEach(k=>{
-        const div=document.createElement("div");
-        div.className="col-md-3 metric-card";
-        div.tabIndex=0;
-        div.setAttribute("role","group");
-        div.setAttribute("aria-label",k.name);
-        div.innerHTML=`<div class="card p-3 text-center">
-          <div class="kpi">${k.value}</div>
-          <div class="kpi-label">${k.name}</div>
-        </div>`;
-        $("kpiSection").appendChild(div);
-      });
-    }
+# ---------------------------
+# Routes
+# ---------------------------
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    if INDEX_PATH.exists():
+        return templates.TemplateResponse("index.html", {"request": request})
+    return HTMLResponse("<h1>Index not found</h1>", status_code=404)
 
-    // Example Overall score update
-    if(typeof msg.score==="number"){
-      const s=msg.score; setText("ovScore",s); $("scoreCircle").style.strokeDashoffset = 691 - (691*s/100);
-      $("scoreCircle").style.stroke = s>80?"#22c55e":s>60?"#eab308":"#ef4444";
-      if(msg.grade)setText("grade",msg.grade);
-    }
-  });
-  ws.addEventListener('close',()=>console.log("WS closed"));
-});
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True, "app": "audit-runner"}
 
-$("resetBtn").addEventListener("click",()=>{ resetUI(); });
-</script>
-</body>
-</html>
+@app.get("/api/audit")
+async def audit_sse(url: str | None = None):
+    """SSE endpoint for streaming audit updates"""
+    target = _validate_url(url)
+    queue: asyncio.Queue = asyncio.Queue()
+    asyncio.create_task(_run_audit_queue(target, queue))
+    return StreamingResponse(_sse_stream(queue), media_type="text/event-stream")
+
+@app.post("/api/audit", response_class=JSONResponse)
+async def audit_once(request: Request):
+    """Single-run audit returning final JSON"""
+    body = await request.json()
+    target = _validate_url(body.get("url"))
+    final_payload: Dict[str, Any] = {}
+    done = asyncio.Event()
+
+    async def callback(msg: Dict[str, Any]):
+        nonlocal final_payload
+        final_payload = msg
+        if msg.get("finished") or msg.get("error"):
+            done.set()
+
+    runner = WebsiteAuditRunner(target)
+    task = asyncio.create_task(runner.run_audit(callback))
+    try:
+        await asyncio.wait_for(done.wait(), timeout=float(os.getenv("AUDIT_TIMEOUT", "120")))
+    except asyncio.TimeoutError:
+        task.cancel()
+        raise HTTPException(status_code=504, detail="Audit timed out")
+    return JSONResponse(final_payload or {"error": "No payload"})
+
+# ---------------------------
+# WebSocket Endpoint
+# ---------------------------
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    await ws.accept()
+    try:
+        init_data = await ws.receive_text()
+        try:
+            data = json.loads(init_data)
+        except Exception:
+            await ws.send_text(json.dumps({"error": "Send JSON like {\"url\": \"https://example.com\"}"}))
+            await ws.close()
+            return
+
+        url = _validate_url(data.get("url"))
+
+        async def callback(msg: Dict[str, Any]):
+            await ws.send_text(json.dumps(msg, ensure_ascii=False))
+
+        runner = WebsiteAuditRunner(url)
+        await runner.run_audit(callback)
+        await ws.close()
+    except WebSocketDisconnect:
+        return
+    except Exception as e:
+        await ws.send_text(json.dumps({"error": f"Server error: {e}", "finished": True}))
+        await ws.close()
+
+# ---------------------------
+# Run Uvicorn
+# ---------------------------
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=bool(os.getenv("RELOAD", "1") == "1"))
