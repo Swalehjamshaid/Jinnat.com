@@ -17,7 +17,6 @@
 
 <style>
 :root {
-  /* Color Palette */
   --primary: #fbbf24;
   --bg: #0a0f1a;
   --card: rgba(15,23,42,0.75);
@@ -100,10 +99,11 @@ a { text-decoration: none; }
 .circle-bg { fill:none; stroke: rgba(255,255,255,0.08); stroke-width:22; }
 .circle { fill:none; stroke-linecap:round; stroke-width:22; transition: stroke-dashoffset 1.4s cubic-bezier(0.34,1.56,0.64,1), stroke 1.4s ease; }
 
-.code-block { background: rgba(15,23,42,0.7); border:1px solid var(--border); border-radius:.75rem; padding:1rem; font-size:.85rem; max-height:350px; overflow:auto; }
+.code-block { background: rgba(15,23,42,0.7); border:1px solid var(--border); border-radius:.75rem; padding:1rem; font-size:.85rem; max-height:400px; overflow:auto; }
 
-.badge-grade { font-size:1.1rem; padding:0.55rem 1rem; border-radius:2rem; }
-
+.json-key { color: #38bdf8; font-weight: 600; }
+.json-value { color: #fbbf24; }
+.json-toggle { cursor:pointer; color:#fbbf24; margin-right:0.3rem; }
 </style>
 </head>
 <body>
@@ -116,17 +116,16 @@ a { text-decoration: none; }
 </nav>
 
 <main class="container py-5">
-
   <!-- Header -->
   <header class="text-center mb-5">
     <h1 class="display-4 fw-black" style="background: var(--gradient-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
       FF Tech Audit Dashboard
     </h1>
-    <p class="lead muted fw-light">World-class graphical visualization of your website audit</p>
+    <p class="lead muted fw-light">World-class interactive website audit</p>
   </header>
 
-  <!-- URL Input Panel -->
-  <section class="card p-4 mb-5" aria-label="Website URL Input">
+  <!-- URL Input -->
+  <section class="card p-4 mb-5">
     <div class="row g-3 align-items-end">
       <div class="col-md-8">
         <label class="form-label fw-semibold" for="urlInput">Website URL</label>
@@ -142,9 +141,6 @@ a { text-decoration: none; }
       <div id="progressBar" class="progress-bar" style="width:0%"></div>
     </div>
   </section>
-
-  <!-- Error Box -->
-  <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
 
   <!-- Results -->
   <section id="resultsArea" class="d-none">
@@ -167,49 +163,103 @@ a { text-decoration: none; }
     </section>
 
     <!-- KPI Cards -->
-    <section class="row g-4 mb-5" id="kpiSection" aria-label="Key Performance Indicators"></section>
+    <section class="row g-4 mb-5" id="kpiSection"></section>
 
-    <!-- Dynamic Cards -->
+    <!-- Competitor Comparison -->
     <section>
-      <h5 class="audit__section-header">Detailed Metrics</h5>
-      <div class="row g-4" id="dynamicCards"></div>
+      <h5 class="audit__section-header">Competitor Comparison</h5>
+      <div id="competitorTable" class="table-responsive"></div>
     </section>
 
-    <!-- Charts -->
+    <!-- AI Recommendations -->
     <section>
-      <h5 class="audit__section-header">Visual Analytics</h5>
-      <div class="row g-4" id="chartsSection"></div>
+      <h5 class="audit__section-header">AI Recommendations</h5>
+      <div id="aiRecommendations" class="row g-3"></div>
     </section>
 
-    <!-- Structured Panels -->
-    <section>
-      <h5 class="audit__section-header">Detailed Audit Insights</h5>
-      <div id="structuredInsights"></div>
-    </section>
-
-    <!-- Raw JSON -->
+    <!-- Raw JSON Viewer -->
     <section class="mt-5">
-      <h5 class="audit__section-header toggle-btn" onclick="$('auditJson').classList.toggle('d-none')">
+      <h5 class="audit__section-header toggle-btn" onclick="toggleJSON()">
         <i class="bi bi-code-slash me-2"></i>Toggle Raw JSON View
       </h5>
-      <pre id="auditJson" class="code-block d-none"></pre>
+      <div id="jsonViewer" class="card p-3 bg-dark border-secondary d-none" style="max-height:400px; overflow:auto;"></div>
     </section>
 
   </section>
-
 </main>
 
 <footer class="text-center small text-secondary py-4">
-  © FF Tech Audit Engine – Beautiful & Adaptive Dashboard
+  © FF Tech Audit Engine – Adaptive Dashboard
 </footer>
 
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- Main JS (WebSocket & Render) -->
+<!-- Main JS -->
 <script>
-// Core utilities, renderAll(), resetUI(), renderStructuredInsights(), WebSocket flow
-// Use the same JS as provided in your latest refactor
+function toggleJSON() {
+  const viewer = document.getElementById('jsonViewer');
+  viewer.classList.toggle('d-none');
+}
+
+function renderJSONTree(jsonData) {
+  const viewer = document.getElementById('jsonViewer');
+  viewer.innerHTML = '';
+
+  function createNode(key, value) {
+    const node = document.createElement('div');
+    node.style.marginLeft = '1rem';
+    node.style.fontFamily = 'monospace';
+    node.style.fontSize = '0.85rem';
+
+    if (typeof value === 'object' && value !== null) {
+      const toggleBtn = document.createElement('span');
+      toggleBtn.textContent = '▶ ';
+      toggleBtn.className = 'json-toggle';
+      const keySpan = document.createElement('span');
+      keySpan.textContent = key + ': ';
+      keySpan.className = 'json-key';
+
+      const childrenContainer = document.createElement('div');
+      childrenContainer.style.display = 'none';
+
+      for (const [k, v] of Object.entries(value)) {
+        childrenContainer.appendChild(createNode(k, v));
+      }
+
+      toggleBtn.addEventListener('click', () => {
+        if (childrenContainer.style.display === 'none') {
+          childrenContainer.style.display = 'block';
+          toggleBtn.textContent = '▼ ';
+        } else {
+          childrenContainer.style.display = 'none';
+          toggleBtn.textContent = '▶ ';
+        }
+      });
+
+      node.appendChild(toggleBtn);
+      node.appendChild(keySpan);
+      node.appendChild(childrenContainer);
+    } else {
+      const keySpan = document.createElement('span');
+      keySpan.textContent = key + ': ';
+      keySpan.className = 'json-key';
+      const valueSpan = document.createElement('span');
+      valueSpan.textContent = value;
+      valueSpan.className = 'json-value';
+      node.appendChild(keySpan);
+      node.appendChild(valueSpan);
+    }
+    return node;
+  }
+
+  for (const [key, value] of Object.entries(jsonData)) {
+    viewer.appendChild(createNode(key, value));
+  }
+}
+
+// Example: Replace with SSE/WebSocket updates
+// renderJSONTree(sampleData);
 </script>
 </body>
 </html>
