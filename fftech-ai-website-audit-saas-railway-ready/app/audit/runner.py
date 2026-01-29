@@ -1,738 +1,914 @@
-# app/audit/runner.py
-import os
-import time
-import inspect
-import asyncio
-import pkgutil
-from importlib import import_module
-from typing import Any, Dict, Callable, Awaitable, Optional, List, Tuple
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FF Tech Audit – World-Class Dashboard</title>
 
-import httpx
-from bs4 import BeautifulSoup
+  <!-- Bootstrap 5 & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
 
-# Dependent analyzers (names stay consistent; signatures/returns may vary)
-from app.audit import seo as seo_mod
-from app.audit import links as links_mod
-from app.audit import performance as perf_mod
-from app.audit import competitor_report as comp_mod
-from app.audit.grader import compute_grade
-from app.audit.record import save_audit_record
+  <!-- Font (Inter) -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-# ============================================================
-# Environment Flags
-# ============================================================
+  <style>
+    :root{
+      --primary:#fbbf24;
+      --bg:#0a0f1a;
+      --card:rgba(15, 23, 42, 0.72);
+      --border:#1f2937;
+      --muted:#94a3b8;
+      --text:#e2e8f0;
+      --success:#22c55e;
+      --warning:#eab308;
+      --danger:#ef4444;
+      --info:#38bdf8;
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    val = os.getenv(name)
-    if val is None:
-        return default
-    return str(val).strip().lower() in ("1", "true", "yes", "on")
+      --gradient-gold: linear-gradient(135deg, #fbbf24, #f59e0b);
+      --gradient-success: linear-gradient(135deg, #22c55e, #16a34a);
+      --gradient-warning: linear-gradient(135deg, #eab308, #ca8a04);
+      --gradient-danger: linear-gradient(135deg, #ef4444, #dc2626);
 
-AUDIT_DEBUG = _env_flag("AUDIT_DEBUG", False)
-AUDIT_DISCOVER_PLUGINS = _env_flag("AUDIT_DISCOVER_PLUGINS", True)  # auto-discover extra analyzers
-
-
-# ============================================================
-# Diagnostics
-# ============================================================
-
-def _log_debug(diag: List[str], msg: str):
-    if AUDIT_DEBUG:
-        diag.append(msg)
-
-
-# ============================================================
-# Flexible Call Utilities
-# ============================================================
-
-def _select_kwargs(func: Callable, pool: Dict[str, Any]) -> Dict[str, Any]:
-    """Select only parameters the target function actually accepts."""
-    try:
-        sig = inspect.signature(func)
-        return {k: v for k, v in pool.items() if k in sig.parameters}
-    except Exception:
-        return {}
-
-async def _maybe_call(func: Optional[Callable], diag: List[str], **pool) -> Any:
-    """
-    Call ANY function (sync/async) with only accepted kwargs.
-    If it fails, retry with no kwargs. Returns None on failure.
-    """
-    if not callable(func):
-        _log_debug(diag, f"Skipped call: target not callable ({func})")
-        return None
-
-    kwargs = _select_kwargs(func, pool)
-    try:
-        res = func(**kwargs)
-        if asyncio.iscoroutine(res):
-            res = await res
-        return res
-    except TypeError as te:
-        # Retry with no kwargs (some functions take zero args)
-        _log_debug(diag, f"TypeError with kwargs {list(kwargs.keys())}: {te}; retrying with no args.")
-        try:
-            res = func()
-            if asyncio.iscoroutine(res):
-                res = await res
-            return res
-        except Exception as e:
-            _log_debug(diag, f"Call failed with no args: {e}")
-            return None
-    except Exception as e:
-        _log_debug(diag, f"Call error: {e}")
-        return None
-
-
-# ============================================================
-# Data Normalization / Extraction
-# ============================================================
-
-def _extract_score(raw: Any, default: int = 0, diag: Optional[List[str]] = None) -> int:
-    """
-    Extract an integer-like score from varied return shapes:
-    - int / float
-    - dict → 'score'|'value'|'total'|'overall' (or nested under 'metrics'/'data' etc.)
-    - list/tuple → first item that yields a score
-    """
-    if raw is None:
-        return default
-
-    if isinstance(raw, (int, float)):
-        return int(round(float(raw)))
-
-    if isinstance(raw, dict):
-        for k in ("score", "value", "total", "overall"):
-            if k in raw:
-                try:
-                    return int(round(float(raw[k])))
-                except Exception:
-                    pass
-        for parent in ("metrics", "data", "result", "summary", "details"):
-            if parent in raw and isinstance(raw[parent], dict):
-                v = _extract_score(raw[parent], None, diag)
-                if v is not None:
-                    return v
-        # scan nested values
-        for v in raw.values():
-            vscore = _extract_score(v, None, diag)
-            if vscore is not None:
-                return vscore
-        return default
-
-    if isinstance(raw, (list, tuple)):
-        for item in raw:
-            v = _extract_score(item, None, diag)
-            if v is not None:
-                return v
-        return default
-
-    return default
-
-def _coerce_names(value: Any, limit: int = 3) -> List[str]:
-    """
-    Coerce a variety of shapes into a list of competitor names:
-    - ["LG", "Samsung", "TCL"]
-    - [{"name": "LG"}, {"brand":"Samsung"}, {"title":"TCL"}, {"domain":"tcl.com"}]
-    - tuple/list/mixed primitives
-    """
-    out: List[str] = []
-    if value is None:
-        return out
-
-    def _add(name):
-        if isinstance(name, str):
-            n = name.strip()
-            if n and n not in out:
-                out.append(n)
-
-    if isinstance(value, (list, tuple)):
-        for item in value:
-            if isinstance(item, str):
-                _add(item)
-            elif isinstance(item, dict):
-                for k in ("name", "brand", "title", "label", "domain"):
-                    if k in item and isinstance(item[k], str):
-                        _add(item[k])
-                        break
-    elif isinstance(value, dict):
-        # if dict has a 'names' list
-        if "names" in value and isinstance(value["names"], (list, tuple)):
-            out.extend(_coerce_names(value["names"], limit))
-        # single name-holding dict
-        for k in ("name", "brand", "title", "label", "domain"):
-            if k in value and isinstance(value[k], str):
-                _add(value[k])
-                break
-    elif isinstance(value, str):
-        _add(value)
-
-    return out[:limit]
-
-def _normalize_links(links_raw: Any) -> Dict[str, int]:
-    """
-    Normalize links output into the keys the HTML expects.
-    """
-    base = {
-        "internal_links_count": 0,
-        "external_links_count": 0,
-        "warning_links_count": 0,
-        "broken_internal_links": 0,
-    }
-    if not links_raw:
-        return base
-
-    if isinstance(links_raw, dict):
-        # direct map
-        for k in list(base.keys()):
-            v = links_raw.get(k)
-            if isinstance(v, (int, float)):
-                base[k] = int(v)
-        # alternative keys
-        alt_map = {
-            "internal": "internal_links_count",
-            "external": "external_links_count",
-            "warnings": "warning_links_count",
-            "broken": "broken_internal_links",
-            "broken_links": "broken_internal_links",
-        }
-        for src, dest in alt_map.items():
-            if base[dest] == 0 and src in links_raw:
-                try:
-                    base[dest] = int(links_raw[src])
-                except Exception:
-                    pass
-        return base
-
-    if isinstance(links_raw, (list, tuple)):
-        for item in links_raw:
-            if isinstance(item, dict):
-                d = _normalize_links(item)
-                for k in base:
-                    base[k] = base[k] or d.get(k, 0)
-        return base
-
-    return base
-
-def _flatten_scalars(obj: Any, prefix: str = "", max_items: int = 50) -> List[Tuple[str, Any]]:
-    """
-    Flatten nested dicts/lists into ('key.path', scalar) pairs for HTML display.
-    Keeps only scalars (int/float/bool/short str).
-    """
-    out: List[Tuple[str, Any]] = []
-
-    def _is_scalar(v: Any) -> bool:
-        if isinstance(v, (int, float, bool)):
-            return True
-        if isinstance(v, str):
-            return len(v) <= 200
-        return False
-
-    def _walk(o: Any, p: str):
-        if len(out) >= max_items:
-            return
-        if isinstance(o, dict):
-            for k, v in o.items():
-                _walk(v, f"{p}.{k}" if p else str(k))
-        elif isinstance(o, (list, tuple)):
-            for i, v in enumerate(o):
-                _walk(v, f"{p}[{i}]")
-        else:
-            if _is_scalar(o):
-                out.append((p, o))
-
-    _walk(obj, prefix)
-    return out[:max_items]
-
-def _kv_to_cards(kv: List[Tuple[str, Any]], top_n: int = 8) -> List[Dict[str, Any]]:
-    """
-    Convert flattened KV pairs into generic 'cards' for HTML:
-    [{'title': 'lcp_ms', 'value': 1234, 'unit': 'ms'}]
-    """
-    cards: List[Dict[str, Any]] = []
-
-    def unit_for(key: str, val: Any) -> Optional[str]:
-        k = key.lower()
-        if any(t in k for t in ("ms", "millis", "ttfb", "lcp", "fcp", "tti", "fid")):
-            return "ms"
-        if any(t in k for t in ("kb", "kib")):
-            return "KB"
-        if any(t in k for t in ("mb", "mib", "megabytes", "page_size", "bytes")):
-            return "MB"
-        if any(t in k for t in ("cls", "ratio", "score", "grade")):
-            return None
-        if isinstance(val, bool):
-            return None
-        return None
-
-    # Prefer numeric values first
-    nums = [(k, v) for k, v in kv if isinstance(v, (int, float))]
-    others = [(k, v) for k, v in kv if not isinstance(v, (int, float))]
-    ordered = nums + others
-
-    for k, v in ordered[:top_n]:
-        cards.append({"title": k, "value": v, "unit": unit_for(k, v)})
-    return cards
-
-
-# ============================================================
-# HTML-only analyzers (no extra network)
-# ============================================================
-
-def _analyze_html_only(url: str, html: str, soup: BeautifulSoup) -> Dict[str, Any]:
-    """
-    Compute a rich set of metrics strictly from the HTML document.
-    No external requests are made here.
-    """
-    # Basic sizes
-    html_bytes = len(html.encode("utf-8"))
-    text_content = soup.get_text(separator=" ", strip=True) if soup else ""
-    word_count = len([w for w in text_content.split() if w])
-
-    # Title / Meta
-    title = (soup.title.string or "").strip() if (soup and soup.title and soup.title.string) else ""
-    title_len = len(title)
-    meta_desc_tag = soup.find("meta", attrs={"name": "description"}) if soup else None
-    meta_desc = (meta_desc_tag.get("content") or "").strip() if meta_desc_tag else ""
-    meta_desc_len = len(meta_desc)
-
-    # Canonical / Robots / Language / Hreflang
-    canonical = soup.find("link", rel=lambda v: v and "canonical" in str(v).lower()) if soup else None
-    robots_meta = soup.find("meta", attrs={"name": "robots"}) if soup else None
-    lang_html = soup.html.get("lang") if (soup and soup.html) else None
-    hreflangs = soup.find_all("link", rel=lambda v: v and "alternate" in str(v).lower()) if soup else []
-
-    # Open Graph / Twitter
-    og_tags = soup.find_all("meta", property=lambda v: isinstance(v, str) and v.lower().startswith("og:")) if soup else []
-    tw_tags = soup.find_all("meta", attrs={"name": lambda v: isinstance(v, str) and v.lower().startswith("twitter:")}) if soup else []
-
-    # Headers
-    h1s = soup.find_all("h1") if soup else []
-    h2s = soup.find_all("h2") if soup else []
-
-    # Images
-    imgs = soup.find_all("img") if soup else []
-    img_alt_missing = sum(1 for i in imgs if not i.get("alt"))
-
-    # Scripts & Styles
-    scripts = soup.find_all("script") if soup else []
-    styles = soup.find_all("style") if soup else []
-    links_css = soup.find_all("link", rel=lambda v: v and "stylesheet" in str(v).lower()) if soup else []
-
-    inline_js_bytes = sum(len((s.string or "").encode("utf-8")) for s in scripts if not s.get("src"))
-    inline_css_bytes = sum(len((s.string or "").encode("utf-8")) for s in styles)
-
-    external_js_count = sum(1 for s in scripts if s.get("src"))
-    external_css_count = len(links_css)
-
-    # Links (simple counts, links module still covers canonical counters)
-    a_tags = soup.find_all("a") if soup else []
-    internal_guess = 0
-    external_guess = 0
-    for a in a_tags:
-        href = (a.get("href") or "").strip()
-        if not href or href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
-            continue
-        if href.startswith("/") or url.split("//")[-1].split("/")[0] in href:
-            internal_guess += 1
-        else:
-            external_guess += 1
-
-    # DOM complexity
-    dom_nodes = len(soup.find_all(True)) if soup else 0
-
-    # Simple HTTPS flag
-    uses_https = url.lower().startswith("https://")
-
-    # Compose result
-    return {
-        "html_bytes": html_bytes,
-        "text_word_count": word_count,
-        "dom_nodes": dom_nodes,
-
-        "title": title,
-        "title_length": title_len,
-        "meta_description_length": meta_desc_len,
-        "meta_description_present": bool(meta_desc_len > 0),
-
-        "canonical_present": bool(canonical is not None),
-        "robots_meta": (robots_meta.get("content") or "").lower() if robots_meta else "",
-        "lang": (lang_html or "").lower(),
-        "hreflang_count": len(hreflangs),
-
-        "og_tag_count": len(og_tags),
-        "twitter_tag_count": len(tw_tags),
-
-        "h1_count": len(h1s),
-        "h2_count": len(h2s),
-
-        "image_count": len(imgs),
-        "image_alt_missing": img_alt_missing,
-
-        "script_count": len(scripts),
-        "style_tag_count": len(styles),
-        "external_js_count": external_js_count,
-        "external_css_count": external_css_count,
-
-        "inline_js_bytes": inline_js_bytes,
-        "inline_css_bytes": inline_css_bytes,
-
-        "estimated_internal_links": internal_guess,
-        "estimated_external_links": external_guess,
-
-        "uses_https": uses_https,
-
-        # Size breakdown we can compute strictly from HTML
-        "download_size_breakdown": {
-            "html_bytes": html_bytes,
-            "inline_js_bytes": inline_js_bytes,
-            "inline_css_bytes": inline_css_bytes,
-            # Note: external assets sizes unknown (no extra requests by design)
-            "external_assets_bytes_estimated": 0
-        }
+      --shadow: 0 10px 35px rgba(0,0,0,0.55);
+      --shadow-hover: 0 20px 50px rgba(251,191,36,0.18);
+      --focus: 0 0 0 0.25rem rgba(251,191,36,0.30);
     }
 
+    [data-bs-theme="light"]{
+      --bg:#f8fafc;
+      --card: rgba(255,255,255,0.9);
+      --border:#e5e7eb;
+      --muted:#64748b;
+      --text:#0f172a;
+      --shadow: 0 10px 25px rgba(15,23,42,0.08);
+      --shadow-hover: 0 18px 45px rgba(15,23,42,0.14);
+      --focus: 0 0 0 0.25rem rgba(59,130,246,0.30);
+    }
 
-# ============================================================
-# Optional Plugin Discovery
-# ============================================================
+    html,body{ height:100%; }
+    body{
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, sans-serif;
+      min-height: 100vh;
+      background-image:
+        radial-gradient(circle at 10% 20%, rgba(251,191,36,0.10) 0%, transparent 45%),
+        radial-gradient(circle at 95% 10%, rgba(56,189,248,0.08) 0%, transparent 45%);
+      background-attachment: fixed;
+    }
 
-def _discover_plugin_callables(diag: List[str]) -> List[Tuple[str, Callable]]:
-    """
-    Find extra analyzer callables under app.audit.*:
-    - Modules whose name contains 'analyzer' or 'plugin'
-    - Functions named like: analyze_*, run_*, compute_*
-    Returns a list of (display_name, callable) pairs.
-    """
-    results: List[Tuple[str, Callable]] = []
-    try:
-        import app.audit as audit_pkg  # type: ignore
-        pkg_iter = pkgutil.iter_modules(audit_pkg.__path__, audit_pkg.__name__ + ".")
-        for finder, name, ispkg in pkg_iter:
-            lower = name.lower()
-            if any(tok in lower for tok in ("analyzer", "plugin")) and not ispkg:
-                try:
-                    mod = import_module(name)
-                    for fn_name, fn in inspect.getmembers(mod, callable):
-                        if any(fn_name.lower().startswith(p) for p in ("analyze_", "run_", "compute_")):
-                            results.append((f"{name}.{fn_name}", fn))
-                except Exception as e:
-                    _log_debug(diag, f"Plugin import failed for {name}: {e}")
-    except Exception as e:
-        _log_debug(diag, f"Plugin discovery skipped: {e}")
-    return results
+    .container-narrow{ max-width:1120px; }
 
+    .navbar{
+      background: transparent;
+      backdrop-filter: blur(8px);
+    }
+    .brand-badge{
+      color: var(--primary) !important;
+      font-weight: 800;
+      letter-spacing: .3px;
+    }
 
-# ============================================================
-# Main Runner
-# ============================================================
+    .theme-toggle{
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      border-radius: .8rem;
+      box-shadow: var(--shadow);
+    }
+    .theme-toggle:focus{ box-shadow: var(--focus); }
 
-class WebsiteAuditRunner:
-    """
-    Super-flexible runner:
-    - Accepts changing analyzer signatures (url/html/soup/lcp_ms/etc.)
-    - Handles sync/async seamlessly
-    - Normalizes outputs to a stable payload for HTML
-    - Adds 'dynamic' sections (cards + kv) so HTML can render ANY new data
-    - Optionally discovers and runs extra plugins
-    - ✅ Adds HTML-only metrics without changing any input/output contract
-    """
-    def __init__(self, url: str):
-        self.url = url if url.startswith("http") else f"https://{url}"
+    .card{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .card:hover{
+      transform: translateY(-7px);
+      box-shadow: var(--shadow-hover);
+      border-color: rgba(251,191,36,0.35);
+    }
 
-    async def run_audit(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
-        diag: List[str] = []
-        try:
-            await callback({"status": "🚀 Starting...", "crawl_progress": 5})
+    .title-gradient{
+      background: var(--gradient-gold);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
 
-            start = time.time()
+    .muted{ color: var(--muted); }
 
-            # -------------------------------------------------
-            # 1) Fetch HTML (single GET; downstream is offline)
-            # -------------------------------------------------
-            await callback({"status": "🌐 Fetching HTML...", "crawl_progress": 15})
-            async with httpx.AsyncClient(timeout=15, verify=False) as client:
-                res = await client.get(self.url, follow_redirects=True)
-                res.raise_for_status()
-                html = res.text
+    .section-header{
+      color: var(--primary);
+      margin: 2.2rem 0 1.2rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: .6rem;
+    }
+    .section-header:after{
+      content:'';
+      position:absolute;
+      bottom:-8px;
+      left:0;
+      width:72px;
+      height:3px;
+      background: var(--gradient-gold);
+      border-radius: 3px;
+    }
 
-            soup = BeautifulSoup(html, "html.parser")
-            lcp_ms = int((time.time() - start) * 1000)
+    .form-control.bg-dark{
+      background: linear-gradient(180deg, rgba(2,6,23,0.55), rgba(2,6,23,0.78)) !important;
+      border: 1px solid var(--border);
+      color: var(--text);
+      height: 48px;
+    }
+    .form-control:focus{
+      border-color: rgba(251,191,36,0.55);
+      box-shadow: var(--focus);
+    }
 
-            shared_args = {"url": self.url, "html": html, "soup": soup, "lcp_ms": lcp_ms}
+    .btn-run{
+      background: var(--gradient-gold);
+      border: none;
+      font-weight: 900;
+      letter-spacing: .3px;
+      color: #111827;
+      border-radius: 0.9rem;
+      box-shadow: 0 10px 26px rgba(251,191,36,0.18);
+    }
+    .btn-run:hover{ opacity: .95; }
 
-            # -------------------------------------------------
-            # HTML-only local insights (new, but used only in extras/dynamic)
-            # -------------------------------------------------
-            html_insights = _analyze_html_only(self.url, html, soup)
+    .btn-outline-danger{
+      border-radius: 0.9rem;
+    }
 
-            # -------------------------------------------------
-            # 2) Prepare analyzer callables (with fallbacks)
-            # -------------------------------------------------
-            # Performance
-            perf_fn = getattr(perf_mod, "calculate_performance_score", None)
-            if not callable(perf_fn):
-                for name, fn in inspect.getmembers(perf_mod, callable):
-                    if any(t in name.lower() for t in ("perf", "speed")):
-                        perf_fn = fn
-                        break
+    .progress{
+      height: 14px;
+      background: rgba(30,41,59,0.6);
+      border-radius: 9px;
+      overflow: hidden;
+    }
+    .progress-bar{
+      background: var(--gradient-gold);
+      transition: width 0.9s ease;
+      position: relative;
+    }
+    .progress-bar::after{
+      content:"";
+      position:absolute; inset:0;
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.28) 50%, rgba(255,255,255,0) 100%);
+      animation: shimmer 1.9s linear infinite;
+    }
+    @keyframes shimmer{
+      0%{ transform: translateX(-100%); }
+      100%{ transform: translateX(100%); }
+    }
 
-            # SEO
-            seo_fn = getattr(seo_mod, "calculate_seo_score", None)
-            if not callable(seo_fn):
-                for name, fn in inspect.getmembers(seo_mod, callable):
-                    if "seo" in name.lower():
-                        seo_fn = fn
-                        break
+    .error-box{
+      background: rgba(239,68,68,0.12);
+      border: 1px solid var(--danger);
+      color: #fecaca;
+      padding: 1rem 1.25rem;
+      border-radius: 1rem;
+      margin: 1.25rem 0;
+    }
 
-            # Links
-            links_fn = getattr(links_mod, "analyze_links_async", None)
-            if not callable(links_fn):
-                for name, fn in inspect.getmembers(links_mod, callable):
-                    if "link" in name.lower():
-                        links_fn = fn
-                        break
+    /* Score ring */
+    .score-ring{
+      width: 260px; height: 260px;
+      margin: 0 auto;
+      position: relative;
+      filter: drop-shadow(0 12px 35px rgba(251,191,36,0.12));
+    }
+    .score-ring svg{ transform: rotate(-90deg); }
+    .circle-bg{
+      fill: none;
+      stroke: rgba(255,255,255,0.08);
+      stroke-width: 22;
+    }
+    .circle{
+      fill: none;
+      stroke-linecap: round;
+      stroke-width: 22;
+      transition: stroke-dashoffset 1.35s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 1.1s ease;
+    }
+    #ovScore{
+      font-weight: 900;
+      letter-spacing: .8px;
+    }
+    .badge-grade{
+      font-size: 1.25rem;
+      padding: .65rem 1.1rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 10px 30px rgba(34,197,94,0.18);
+    }
 
-            # Competitors
-            comp_items_fn = getattr(comp_mod, "get_competitors_with_scores", None)
-            comp_names_fn = getattr(comp_mod, "get_competitors", None)
-            comp_score_fn = getattr(comp_mod, "get_top_competitor_score", None)
+    /* KPI cards */
+    .metric-card{
+      background: linear-gradient(135deg, rgba(30,41,59,0.78), rgba(17,24,39,0.78));
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      padding: 1.55rem 1.35rem;
+      text-align: center;
+      transition: all 0.35s ease;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .metric-card::before{
+      content:"";
+      position:absolute;
+      inset:-2px;
+      background: conic-gradient(from 180deg, rgba(251,191,36,0.10), transparent 40%, rgba(56,189,248,0.08), transparent 80%);
+      filter: blur(14px);
+      z-index:-1;
+      opacity: .85;
+    }
+    .metric-card:hover{
+      transform: translateY(-10px) scale(1.01);
+      box-shadow: 0 18px 45px rgba(251,191,36,0.18);
+      border-color: rgba(251,191,36,0.35);
+    }
+    .metric-icon{
+      width: 48px; height: 48px;
+      display: grid; place-items: center;
+      border-radius: 14px;
+      margin: 0 auto .75rem;
+      background: radial-gradient(circle at 30% 30%, rgba(251,191,36,0.22), rgba(251,191,36,0.06));
+      border: 1px solid rgba(251,191,36,0.35);
+      color: var(--primary);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .metric-label{
+      font-size: .82rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 800;
+    }
+    .metric-value{
+      font-size: 2.4rem;
+      font-weight: 900;
+      background: var(--gradient-gold);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.05;
+    }
 
-            # Optional plugins
-            plugins: List[Tuple[str, Callable]] = _discover_plugin_callables(diag) if AUDIT_DISCOVER_PLUGINS else []
+    /* Insights UI */
+    .nav-tabs .nav-link{
+      border: 1px solid transparent;
+      color: var(--muted);
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    .nav-tabs .nav-link.active{
+      color: var(--text);
+      border-color: rgba(251,191,36,0.35);
+      background: rgba(251,191,36,0.06);
+    }
 
-            # -------------------------------------------------
-            # 3) Run analyzers concurrently
-            # -------------------------------------------------
-            await callback({"status": "⚡ Running analyzers...", "crawl_progress": 35})
+    details{
+      border: 1px solid rgba(148,163,184,0.18);
+      border-radius: .9rem;
+      padding: .75rem 1rem;
+      background: rgba(2,6,23,0.25);
+    }
+    details + details{ margin-top: .75rem; }
+    summary{
+      cursor: pointer;
+      font-weight: 900;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      list-style: none;
+    }
+    summary::-webkit-details-marker{ display: none; }
 
-            async def call(fn: Optional[Callable]) -> Any:
-                return await _maybe_call(fn, diag, **shared_args)
+    .kv-table{
+      border-radius: .85rem;
+      overflow: hidden;
+      border: 1px solid rgba(148,163,184,0.18);
+    }
+    .kv-table table{
+      margin: 0;
+    }
+    .kv-table th{
+      width: 48%;
+      color: var(--muted);
+      font-weight: 800;
+    }
 
-            tasks = {
-                "perf": asyncio.create_task(call(perf_fn)),
-                "seo": asyncio.create_task(call(seo_fn)),
-                "links": asyncio.create_task(call(links_fn)),
-                "comp_items": asyncio.create_task(call(comp_items_fn)) if callable(comp_items_fn) else None,
-                "comp_names": asyncio.create_task(call(comp_names_fn)) if callable(comp_names_fn) else None,
-                "comp_score": asyncio.create_task(call(comp_score_fn)) if callable(comp_score_fn) else None,
-            }
+    .code-block{
+      background: #0a0f1d;
+      color: #93c5fd;
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1rem 1.25rem;
+      max-height: 520px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    }
 
-            # Plugins
-            plugin_tasks: Dict[str, asyncio.Task] = {}
-            for display, fn in plugins:
-                plugin_tasks[display] = asyncio.create_task(call(fn))
+    .skeleton{
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(90deg, rgba(148,163,184,0.10), rgba(148,163,184,0.18), rgba(148,163,184,0.10));
+      background-size: 200% 100%;
+      animation: shimmer 1.6s linear infinite;
+      border-radius: .8rem;
+      min-height: 18px;
+    }
 
-            # Await core tasks
-            perf_raw = await tasks["perf"]
-            seo_raw = await tasks["seo"]
-            links_raw = await tasks["links"]
-            comp_items_raw = await tasks["comp_items"] if tasks.get("comp_items") else None
-            comp_names_raw = await tasks["comp_names"] if tasks.get("comp_names") else None
-            comp_score_raw = await tasks["comp_score"] if tasks.get("comp_score") else None
+    canvas{ max-height: 360px; margin: 0 auto; display: block; }
 
-            # Await plugins
-            plugin_results: Dict[str, Any] = {}
-            for display, t in plugin_tasks.items():
-                try:
-                    plugin_results[display] = await t
-                except Exception as e:
-                    _log_debug(diag, f"Plugin task failed for {display}: {e}")
+    footer{
+      border-top: 1px solid var(--border);
+      padding-top: 2.5rem;
+      margin-top: 4rem;
+      color: var(--muted);
+    }
 
-            # -------------------------------------------------
-            # 4) Normalize outputs
-            # -------------------------------------------------
-            await callback({"status": "📊 Normalizing results...", "crawl_progress": 60})
+    @media (prefers-reduced-motion: reduce){
+      * { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
 
-            perf_score = _extract_score(perf_raw, default=0, diag=diag)
-            # Merge HTML insights into performance extras (without changing required keys)
-            perf_extras = {}
-            if isinstance(perf_raw, dict):
-                perf_extras.update(perf_raw)
-            else:
-                perf_extras["raw"] = perf_raw
-            perf_extras["html_insights"] = html_insights  # << HTML-only metrics
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg border-bottom border-secondary">
+    <div class="container container-narrow py-2 d-flex align-items-center justify-content-between">
+      <a class="navbar-brand brand-badge fs-4" href="/">
+        <i class="bi bi-cpu-fill me-2"></i>FF Tech Audit
+      </a>
 
-            seo_score = _extract_score(seo_raw, default=0, diag=diag)
-            # Preserve original raw SEO structure and add signals we computed purely from HTML
-            seo_extras = {}
-            if isinstance(seo_raw, dict):
-                seo_extras.update(seo_raw)
-            else:
-                seo_extras["raw"] = seo_raw
-            seo_extras.setdefault("html_signals", {})
-            seo_extras["html_signals"].update({
-                "title_length": html_insights.get("title_length"),
-                "meta_description_length": html_insights.get("meta_description_length"),
-                "meta_description_present": html_insights.get("meta_description_present"),
-                "h1_count": html_insights.get("h1_count"),
-                "h2_count": html_insights.get("h2_count"),
-                "canonical_present": html_insights.get("canonical_present"),
-                "og_tag_count": html_insights.get("og_tag_count"),
-                "twitter_tag_count": html_insights.get("twitter_tag_count"),
-                "hreflang_count": html_insights.get("hreflang_count"),
-                "lang": html_insights.get("lang"),
-                "image_count": html_insights.get("image_count"),
-                "image_alt_missing": html_insights.get("image_alt_missing"),
-            })
+      <button id="themeToggle" class="btn btn-sm theme-toggle" type="button" aria-label="Toggle theme" title="Toggle light/dark">
+        <i class="bi bi-sun-fill d-none" id="sunIcon"></i>
+        <i class="bi bi-moon-stars-fill" id="moonIcon"></i>
+      </button>
+    </div>
+  </nav>
 
-            links_data = _normalize_links(links_raw)
+  <div class="container container-narrow py-5">
+    <header class="text-center mb-5">
+      <h1 class="display-4 fw-black title-gradient">FF Tech Audit Dashboard</h1>
+      <p class="lead muted fw-light">World-class graphical visualization of your website audit</p>
+    </header>
 
-            comp_names = _coerce_names(comp_items_raw, 3) or _coerce_names(comp_names_raw, 3)
-            comp_score = _extract_score(comp_score_raw, default=0, diag=diag)
+    <!-- Input -->
+    <section class="card p-4 mb-5">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-8">
+          <label class="form-label fw-semibold" for="urlInput">Website URL</label>
+          <input id="urlInput" type="text" class="form-control bg-dark text-white" placeholder="e.g., www.example.com" autofocus />
+          <div class="form-text muted">Enter domain or full URL. Press <b>Enter</b> to run.</div>
+        </div>
+        <div class="col-md-4 d-flex gap-2">
+          <button id="runBtn" class="btn btn-run w-100">
+            <i class="bi bi-rocket-takeoff-fill me-2"></i>RUN AUDIT
+          </button>
+          <button id="resetBtn" class="btn btn-outline-danger w-100">
+            <i class="bi bi-arrow-counterclockwise me-2"></i>RESET
+          </button>
+        </div>
+      </div>
 
-            # -------------------------------------------------
-            # 5) Final grade (stable)
-            # -------------------------------------------------
-            overall, grade = compute_grade(seo_score, perf_score, comp_score)
+      <div id="statusLine" class="mt-3 small fw-semibold text-info" role="status" aria-live="polite">Status: Idle</div>
+      <div class="progress mt-2" aria-label="Crawl progress">
+        <div id="progressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
+      </div>
+    </section>
 
-            # -------------------------------------------------
-            # 6) Chart data (stable)
-            # -------------------------------------------------
-            bar_data = {
-                "labels": ["SEO", "Speed", "Security", "AI"],
-                "datasets": [{
-                    "label": "Scores",
-                    "data": [seo_score, perf_score, 90, 95],
-                    "backgroundColor": [
-                        "rgba(255, 215, 0, 0.8)",
-                        "rgba(59, 130, 246, 0.8)",
-                        "rgba(16, 185, 129, 0.8)",
-                        "rgba(147, 51, 234, 0.8)",
-                    ],
-                    "borderColor": [
-                        "rgba(255, 215, 0, 1)",
-                        "rgba(59, 130, 246, 1)",
-                        "rgba(16, 185, 129, 1)",
-                        "rgba(147, 51, 234, 1)",
-                    ],
-                    "borderWidth": 1
-                }]
-            }
+    <!-- Error Display -->
+    <div id="errorBox" class="error-box d-none" role="alert"></div>
 
-            doughnut_data = {
-                "labels": ["Healthy", "Warning", "Broken"],
-                "datasets": [{
-                    "data": [
-                        int(links_data.get("internal_links_count", 0)),
-                        int(links_data.get("warning_links_count", 0)),
-                        int(links_data.get("broken_internal_links", 0)),
-                    ],
-                    "backgroundColor": [
-                        "rgba(34, 197, 94, 0.7)",
-                        "rgba(234, 179, 8, 0.7)",
-                        "rgba(239, 68, 68, 0.7)",
-                    ],
-                    "borderColor": [
-                        "rgba(34, 197, 94, 1)",
-                        "rgba(234, 179, 8, 1)",
-                        "rgba(239, 68, 68, 1)",
-                    ],
-                    "borderWidth": 1
-                }]
-            }
+    <!-- Results -->
+    <div id="resultsArea" class="d-none">
+      <!-- Overall Score -->
+      <section class="text-center mb-5">
+        <h6 class="muted mb-2">Audited URL</h6>
+        <h4 id="auditUrl" class="text-info fw-medium text-break">—</h4>
 
-            # -------------------------------------------------
-            # 7) Dynamic HTML blocks (generic cards + kv for ANY data)
-            # -------------------------------------------------
-            dynamic: Dict[str, Any] = {
-                "cards": [],      # generic cards your HTML can loop over
-                "kv": {},         # per-section key/value pairs
-                "plugins": {}     # plugin results exposed the same way
-            }
+        <div class="score-ring my-5 position-relative">
+          <svg viewBox="0 0 240 240" aria-hidden="true">
+            <circle class="circle-bg" cx="120" cy="120" r="110"></circle>
+            <circle id="scoreCircle" class="circle" cx="120" cy="120" r="110" stroke-dasharray="691" stroke-dashoffset="691"></circle>
+          </svg>
+          <div class="position-absolute top-50 start-50 translate-middle text-center">
+            <div id="ovScore" class="display-2 fw-black title-gradient">—</div>
+            <small class="muted">/100</small>
+          </div>
+        </div>
 
-            # Core sections to cards/kv
-            perf_kv = _flatten_scalars(perf_extras, prefix="performance", max_items=50)
-            seo_kv = _flatten_scalars(seo_extras, prefix="seo", max_items=50)
-            links_kv = _flatten_scalars(links_data, prefix="links", max_items=50)
-            comp_struct = {
-                "top_competitor_score": comp_score,
-                "names": comp_names,
-                "items": comp_items_raw if isinstance(comp_items_raw, list) else []
-            }
-            comp_kv = _flatten_scalars(comp_struct, prefix="competitors", max_items=50)
+        <div id="grade" class="badge-grade bg-primary text-white">—</div>
+      </section>
 
-            dynamic["kv"]["performance"] = [{"key": k, "value": v} for k, v in perf_kv]
-            dynamic["kv"]["seo"] = [{"key": k, "value": v} for k, v in seo_kv]
-            dynamic["kv"]["links"] = [{"key": k, "value": v} for k, v in links_kv]
-            dynamic["kv"]["competitors"] = [{"key": k, "value": v} for k, v in comp_kv]
+      <!-- KPI Cards -->
+      <h5 class="section-header"><i class="bi bi-grid-1x2"></i> Key Metrics</h5>
+      <section class="row g-4 mb-5" id="kpiSection">
+        <!-- Skeletons -->
+        <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:48px"></div><div class="skeleton mb-2" style="height:18px"></div><div class="skeleton" style="height:44px"></div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:48px"></div><div class="skeleton mb-2" style="height:18px"></div><div class="skeleton" style="height:44px"></div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:48px"></div><div class="skeleton mb-2" style="height:18px"></div><div class="skeleton" style="height:44px"></div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:48px"></div><div class="skeleton mb-2" style="height:18px"></div><div class="skeleton" style="height:44px"></div></div></div>
+      </section>
 
-            # Cards — surface the most important HTML-only numbers up front
-            dynamic["cards"].extend([
-                {"title": "performance.html_insights.html_bytes", "value": html_insights["html_bytes"], "unit": "MB"},
-                {"title": "performance.html_insights.inline_js_bytes", "value": html_insights["inline_js_bytes"], "unit": "MB"},
-                {"title": "performance.html_insights.inline_css_bytes", "value": html_insights["inline_css_bytes"], "unit": "MB"},
-                {"title": "performance.html_insights.dom_nodes", "value": html_insights["dom_nodes"], "unit": None},
-                {"title": "seo.html_signals.title_length", "value": html_insights["title_length"], "unit": None},
-                {"title": "seo.html_signals.meta_description_length", "value": html_insights["meta_description_length"], "unit": None},
-            ])
-            # existing slices
-            dynamic["cards"].extend(_kv_to_cards(perf_kv, top_n=6))
-            dynamic["cards"].extend(_kv_to_cards(seo_kv, top_n=4))
-            dynamic["cards"].extend(_kv_to_cards(links_kv, top_n=4))
-            dynamic["cards"].extend(_kv_to_cards([("competitors.top_competitor_score", comp_score)], top_n=1))
+      <!-- Dynamic Cards -->
+      <h5 class="section-header"><i class="bi bi-collection"></i> Detailed Metrics</h5>
+      <section class="row g-4 mb-5" id="dynamicCards"></section>
 
-            # Plugins → kv + cards
-            for display_name, result in plugin_results.items():
-                kv = _flatten_scalars(result, prefix=display_name, max_items=50)
-                dynamic["plugins"][display_name] = {
-                    "kv": [{"key": k, "value": v} for k, v in kv],
-                    "cards": _kv_to_cards(kv, top_n=6),
-                }
-                # Also surface a few plugin cards at top-level
-                dynamic["cards"].extend(_kv_to_cards(kv, top_n=3))
+      <!-- Charts -->
+      <h5 class="section-header"><i class="bi bi-bar-chart-steps"></i> Visual Analytics</h5>
+      <section class="row g-4 mb-5" id="chartsSection">
+        <div class="col-12"><div class="card p-4"><div class="skeleton" style="height:260px"></div></div></div>
+      </section>
 
-            # -------------------------------------------------
-            # 8) Final Output (stable + dynamic)
-            # -------------------------------------------------
-            final_payload = {
-                "overall_score": overall,
-                "grade": grade,
-                "breakdown": {
-                    "seo": seo_score,
-                    "performance": {
-                        "lcp_ms": lcp_ms,
-                        "score": perf_score,
-                        "extras": perf_extras
-                    },
-                    "competitors": {
-                        "top_competitor_score": comp_score,
-                        "names": comp_names,
-                        "items": comp_items_raw if isinstance(comp_items_raw, list) else []
-                    },
-                    "links": links_data
-                },
-                "chart_data": {
-                    "bar": bar_data,
-                    "doughnut": doughnut_data
-                },
-                # Generic, forward-compatible blocks for your HTML to render
-                "dynamic": dynamic,
-                "finished": True
-            }
+      <!-- Structured Insights -->
+      <h5 class="section-header"><i class="bi bi-diagram-3"></i> Presentable Insights</h5>
 
-            if AUDIT_DEBUG:
-                final_payload["debug"] = {"trace": diag}
+      <section class="card p-4">
+        <ul class="nav nav-tabs mb-3" id="insightTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="structured-tab" data-bs-toggle="tab" data-bs-target="#structuredView" type="button" role="tab">
+              Structured Insights
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="raw-tab" data-bs-toggle="tab" data-bs-target="#rawView" type="button" role="tab">
+              Raw JSON (Advanced)
+            </button>
+          </li>
+        </ul>
 
-            await callback(final_payload)
+        <div class="tab-content">
+          <!-- Structured -->
+          <div class="tab-pane fade show active" id="structuredView" role="tabpanel">
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <button id="expandAllBtn" class="btn btn-sm btn-outline-light">
+                <i class="bi bi-arrows-expand me-1"></i>Expand All
+              </button>
+              <button id="collapseAllBtn" class="btn btn-sm btn-outline-light">
+                <i class="bi bi-arrows-collapse me-1"></i>Collapse All
+              </button>
 
-            # -------------------------------------------------
-            # 9) Persist (keys unchanged for storage)
-            # -------------------------------------------------
-            save_audit_record(self.url, {
-                "seo": seo_score,
-                "performance": perf_score,
-                "competitor": comp_score,
-                "links": links_data,
-                "overall": overall,
-                "grade": grade,
-                "lcp_ms": lcp_ms,
-                "competitor_names": comp_names
-            })
+              <div class="ms-auto d-flex gap-2">
+                <button id="copyJsonBtn" class="btn btn-sm btn-outline-light" type="button">
+                  <i class="bi bi-clipboard me-1"></i>Copy JSON
+                </button>
+                <button id="downloadJsonBtn" class="btn btn-sm btn-outline-light" type="button">
+                  <i class="bi bi-download me-1"></i>Download JSON
+                </button>
+              </div>
+            </div>
 
-        except Exception as e:
-            err_payload = {"error": f"Runner Error: {e}", "finished": True}
-            if AUDIT_DEBUG:
-                err_payload["debug"] = {"trace": diag}
-            await callback(err_payload)
+            <div id="structuredInsights"></div>
+          </div>
+
+          <!-- Raw -->
+          <div class="tab-pane fade" id="rawView" role="tabpanel">
+            <pre id="auditJson" class="code-block"></pre>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="text-center small mt-5">
+      © FF Tech Audit Engine – Beautiful &amp; Adaptive Dashboard
+    </footer>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    /* ============================================================
+       Utilities (safe, flexible, schema-tolerant)
+    ============================================================ */
+    const $ = (id) => document.getElementById(id);
+
+    if (!Element.prototype.empty) {
+      Element.prototype.empty = function () { this.innerHTML = ""; return this; };
+    }
+
+    const create = (tag, className = "", html = "") => {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      if (html) el.innerHTML = html;
+      return el;
+    };
+
+    const setText = (id, val) => { if ($(id)) $(id).textContent = (val ?? "—"); };
+    const pretty = (obj) => JSON.stringify(obj, null, 2);
+
+    const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
+
+    // safe getter: get(msg, "a.b.c", fallback)
+    function get(obj, path, fallback = undefined) {
+      if (!obj) return fallback;
+      const parts = String(path).split(".");
+      let cur = obj;
+      for (const p of parts) {
+        if (cur && typeof cur === "object" && p in cur) cur = cur[p];
+        else return fallback;
+      }
+      return cur;
+    }
+
+    // human readable labels
+    function humanize(key) {
+      return String(key || "")
+        .replace(/\[(\d+)\]/g, " $1 ")
+        .replace(/[._-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    // format values (bytes, booleans, long strings, nulls)
+    function formatValue(key, value, unit = null) {
+      if (value === null || value === undefined) return `<span class="muted">—</span>`;
+
+      if (typeof value === "boolean") {
+        return value
+          ? `<span class="badge bg-success">Yes</span>`
+          : `<span class="badge bg-secondary">No</span>`;
+      }
+
+      if (typeof value === "number") {
+        const k = String(key || "").toLowerCase();
+        if (k.includes("bytes")) {
+          const n = value;
+          const units = ["B", "KB", "MB", "GB"];
+          let i = 0; let v = n;
+          while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+          const best = `${v.toFixed(i === 0 ? 0 : 2)} ${units[i]}`;
+          return unit ? `${n} ${unit} <span class="muted">(${best})</span>` : best;
+        }
+        return unit ? `${value} ${unit}` : value.toLocaleString();
+      }
+
+      if (typeof value === "string") {
+        if (value.length > 140) {
+          return `<span title="${value.replace(/"/g, "&quot;")}">${value.slice(0, 137)}…</span>`;
+        }
+        return value === "" ? `<span class="muted">—</span>` : value;
+      }
+
+      // objects/arrays rendered elsewhere
+      return String(value);
+    }
+
+    // Make a clean table for a plain object
+    function renderKVTable(obj) {
+      const rows = Object.entries(obj || {}).map(([k, v]) => {
+        return `<tr>
+          <th class="text-break">${humanize(k)}</th>
+          <td class="text-break">${formatValue(k, v)}</td>
+        </tr>`;
+      }).join("");
+
+      return `
+        <div class="kv-table table-responsive">
+          <table class="table table-dark table-bordered table-sm align-middle">
+            <tbody>${rows || `<tr><td class="muted">No data</td></tr>`}</tbody>
+          </table>
+        </div>`;
+    }
+
+    // Render a KV array like [{key,value}]
+    function renderKVArray(items) {
+      const rows = (items || []).map((it) => {
+        return `<tr>
+          <th class="text-break">${humanize(it.key)}</th>
+          <td class="text-break">${formatValue(it.key, it.value)}</td>
+        </tr>`;
+      }).join("");
+
+      return `
+        <div class="kv-table table-responsive">
+          <table class="table table-dark table-bordered table-sm align-middle">
+            <tbody>${rows || `<tr><td class="muted">No data</td></tr>`}</tbody>
+          </table>
+        </div>`;
+    }
+
+    // Recursive tree renderer for unknown schemas (auto-adapts to changes)
+    function renderTree(key, value, openLevel = 0, level = 0) {
+      const title = humanize(key);
+
+      // primitive
+      if (!isObject(value) && !Array.isArray(value)) {
+        return `
+          <div class="d-flex justify-content-between gap-3 border-bottom border-secondary-subtle py-2">
+            <span class="muted text-break">${title}</span>
+            <span class="text-break">${formatValue(key, value)}</span>
+          </div>`;
+      }
+
+      // details group
+      const opened = level < openLevel ? "open" : "";
+      let inner = "";
+
+      if (Array.isArray(value)) {
+        if (value.length === 0) inner = `<div class="muted">[]</div>`;
+        else {
+          inner = value.map((v, i) => {
+            const childKey = `${key}[${i}]`;
+            return `<div class="mt-2">${renderTree(childKey, v, openLevel, level + 1)}</div>`;
+          }).join("");
+        }
+      } else {
+        const entries = Object.entries(value);
+        if (!entries.length) inner = `<div class="muted">{}</div>`;
+        else {
+          inner = entries.map(([k, v]) => {
+            return `<div class="mt-2">${renderTree(k, v, openLevel, level + 1)}</div>`;
+          }).join("");
+        }
+      }
+
+      return `
+        <details ${opened}>
+          <summary><i class="bi bi-folder2-open text-warning"></i>${title}</summary>
+          <div class="pt-2 ps-2">${inner}</div>
+        </details>`;
+    }
+
+    function metricTile(label, valueHtml, icon = "bi-graph-up") {
+      return `
+        <div class="col-md-3 col-sm-6">
+          <div class="metric-card">
+            <div class="metric-icon"><div class="metric-icon"><i class="bi ${icon}"></i></div></div>
+            <div class="metric-label mb-1">${label}</div>
+            <div class="metric-value">${valueHtml}</div>
+          </div>
+        </div>`;
+    }
+
+    /* ============================================================
+       UI Reset
+    ============================================================ */
+    function resetUI() {
+      setText("statusLine", "Status: Idle");
+      $("progressBar").style.width = "0%";
+
+      $("kpiSection")?.empty();
+      $("dynamicCards")?.empty();
+      $("chartsSection")?.empty();
+      $("structuredInsights")?.empty();
+
+      $("auditJson").textContent = "";
+      $("resultsArea").classList.add("d-none");
+      $("errorBox").classList.add("d-none");
+
+      // Reset gauge
+      const circle = $("scoreCircle");
+      if (circle) {
+        circle.style.strokeDashoffset = "691";
+        circle.style.stroke = "#3b82f6";
+      }
+
+      // Skeletons back
+      $("kpiSection").innerHTML = `
+        <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:48px"></div><div class="skeleton mb-2" style="height:18px"></div><div class="skeleton" style="height:44px"></div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:48px"></div><div class="skeleton mb-2" style="height:18px"></div><div class="skeleton" style="height:44px"></div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:48px"></div><div class="skeleton mb-2" style="height:18px"></div><div class="skeleton" style="height:44px"></div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="card p-3"><div class="skeleton mb-3" style="height:48px"></div><div class="skeleton mb-2" style="height:18px"></div><div class="skeleton" style="height:44px"></div></div></div>
+      `;
+      $("chartsSection").innerHTML = `<div class="col-12"><div class="card p-4"><div class="skeleton" style="height:260px"></div></div></div>`;
+    }
+
+    /* ============================================================
+       Theme Toggle (persisted)
+    ============================================================ */
+    (function initTheme() {
+      const root = document.documentElement;
+      const key = "ff_theme";
+      const saved = localStorage.getItem(key);
+      const prefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
+      const active = saved || (prefersLight ? "light" : "dark");
+
+      root.setAttribute("data-bs-theme", active);
+
+      function updateIcons() {
+        const isLight = root.getAttribute("data-bs-theme") === "light";
+        $("sunIcon").classList.toggle("d-none", !isLight);
+        $("moonIcon").classList.toggle("d-none", isLight);
+      }
+      updateIcons();
+
+      $("themeToggle").addEventListener("click", () => {
+        const now = root.getAttribute("data-bs-theme") === "light" ? "dark" : "light";
+        root.setAttribute("data-bs-theme", now);
+        localStorage.setItem(key, now);
+        updateIcons();
+      });
+    })();
+
+    /* ============================================================
+       Charts
+    ============================================================ */
+    function renderChart(container, title, data, type = "bar") {
+      const col = create("div", "col-12");
+      const card = create("div", "card p-4");
+      card.innerHTML = `<div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="muted fw-semibold mb-0">${title}</h6>
+        <span class="badge text-bg-dark border" style="border-color: rgba(251,191,36,0.25)">${type.toUpperCase()}</span>
+      </div>`;
+      const canvas = create("canvas");
+      card.appendChild(canvas);
+      col.appendChild(card);
+      container.appendChild(col);
+
+      const ctx = canvas.getContext("2d");
+      new Chart(ctx, {
+        type,
+        data,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: getComputedStyle(document.documentElement).getPropertyValue("--text") } },
+            tooltip: { backgroundColor: "rgba(15,23,42,0.92)" }
+          },
+          scales: type === "bar" ? {
+            x: { ticks: { color: "#93c5fd" }, grid: { color: "rgba(31,41,55,0.35)" } },
+            y: { ticks: { color: "#93c5fd" }, grid: { color: "rgba(31,41,55,0.35)" }, beginAtZero: true }
+          } : {}
+        }
+      });
+    }
+
+    /* ============================================================
+       Structured Insights (Presentable + Flexible)
+    ============================================================ */
+    function buildStructuredInsights(msg) {
+      const root = $("structuredInsights");
+      root.empty();
+
+      // 1) Summary Tiles (best for executives)
+      const summaryCard = create("div", "card p-4 mb-3");
+      summaryCard.innerHTML = `<h6 class="fw-black mb-3"><i class="bi bi-clipboard-data me-2 text-warning"></i>Summary</h6>`;
+      const summaryRow = create("div", "row g-4");
+
+      const overall = Number(msg.overall_score ?? 0);
+      const grade = msg.grade ?? "—";
+      const seo = (isObject(get(msg, "breakdown.seo")) ? get(msg, "breakdown.seo.score") : get(msg, "breakdown.seo")) ?? "—";
+      const speed = get(msg, "breakdown.performance.score", "—");
+      const comp = get(msg, "breakdown.competitors.top_competitor_score", "—");
+      const inLinks = get(msg, "breakdown.links.internal_links_count", "—");
+
+      summaryRow.innerHTML =
+        metricTile("Overall", overall, "bi-bullseye") +
+        metricTile("Grade", `<span class="badge bg-info text-dark">${grade}</span>`, "bi-award-fill") +
+        metricTile("SEO", seo, "bi-search") +
+        metricTile("Speed", speed, "bi-speedometer2") +
+        metricTile("Competitor", comp, "bi-trophy") +
+        metricTile("Internal Links", inLinks, "bi-link-45deg");
+
+      summaryCard.appendChild(summaryRow);
+      root.appendChild(summaryCard);
+
+      // 2) Breakdown Panel (auto)
+      if (msg.breakdown) {
+        const bCard = create("div", "card p-4 mb-3");
+        bCard.innerHTML = `<h6 class="fw-black mb-3"><i class="bi bi-speedometer me-2 text-warning"></i>Scoring Breakdown</h6>`;
+        const row = create("div", "row g-4");
+
+        const iconMap = {
+          seo: "bi-search",
+          performance: "bi-speedometer2",
+          links: "bi-link-45deg",
+          competitors: "bi-people-fill",
+          security: "bi-shield-lock",
+          ai: "bi-robot"
+        };
+
+        Object.entries(msg.breakdown).forEach(([k, v]) => {
+          const score = (isObject(v) && "score" in v) ? v.score : v;
+          row.innerHTML += metricTile(humanize(k), score ?? "—", iconMap[k.toLowerCase()] || "bi-graph-up");
+        });
+
+        bCard.appendChild(row);
+        root.appendChild(bCard);
+      }
+
+      // 3) Performance → HTML Insights (if exists)
+      const htmlIns = get(msg, "breakdown.performance.extras.html_insights");
+      if (htmlIns) {
+        const pCard = create("div", "card p-4 mb-3");
+        pCard.innerHTML = `<h6 class="fw-black mb-3"><i class="bi bi-fileAbsolutely, Khan ✅  
+Here is a **fully updated `index.html`** that includes **all the “world‑class” attributes** you asked for:
+
+### ✅ What this `index.html` includes (all in one file)
+- **Same WebSocket flow & path**: `/ws` ✅ (no backend change needed)
+- **Same IDs preserved** ✅ so your existing backend/output works:
+  - `urlInput`, `runBtn`, `resetBtn`, `statusLine`, `progressBar`, `errorBox`, `resultsArea`, `auditUrl`, `scoreCircle`, `ovScore`, `grade`, `kpiSection`, `chartsSection`, `auditJson`
+- **Presentable Insights instead of raw debug**
+  - **Structured Insights tab (default)**: beautiful, collapsible, sectioned panels
+  - **Raw JSON tab**: still available for debugging
+- **Extremely flexible schema handling**
+  - Auto-renders **unknown/new fields** via a generic tree view (so if backend adds new keys, UI still shows them properly)
+- **Dynamic cards** (from `msg.dynamic.cards`)
+- **Key–Value Inspector** (from `msg.dynamic.kv`)
+- **Charts** using `msg.chart_data` (bar, doughnut, line, etc.)
+- **Copy JSON** + **Download JSON**
+- **Expand All / Collapse All** structured panels
+- **Theme toggle (Dark/Light)** saved to local storage
+- **Skeleton loaders + smooth animations**
+- **Accessibility improvements**
+
+---
+
+# ✅ Updated `index.html` (Copy/Paste)
+
+> Save this as: `templates/index.html`
+
+```html
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FF Tech Audit – World-Class Dashboard</title>
+
+  <!-- Bootstrap 5 & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+
+  <!-- Inter font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #fbbf24;
+      --bg: #0a0f1a;
+      --card: rgba(15, 23, 42, 0.75);
+      --border: #1f2937;
+      --muted: #94a3b8;
+      --text: #e2e8f0;
+      --success: #22c55e;
+      --warning: #eab308;
+      --danger: #ef4444;
+      --info: #38bdf8;
+
+      --gradient-gold: linear-gradient(135deg, #fbbf24, #f59e0b);
+      --gradient-success: linear-gradient(135deg, #22c55e, #16a34a);
+      --gradient-warning: linear-gradient(135deg, #eab308, #ca8a04);
+      --gradient-danger: linear-gradient(135deg, #ef4444, #dc2626);
+
+      --shadow: 0 10px 35px rgba(0,0,0,0.55);
+      --shadow-hover: 0 20px 50px rgba(251,191,36,0.18);
+      --focus: 0 0 0 .25rem rgba(251,191,36,.25);
+    }
+
+    [data-bs-theme="light"]{
+      --bg: #f7fafc;
+      --card: rgba(255,255,255,0.92);
+      --border: #e5e7eb;
+      --muted: #64748b;
+      --text: #0f172a;
+      --shadow: 0 10px 28px rgba(15,23,42,0.10);
+      --shadow-hover: 0 18px 46px rgba(15,23,42,0.14);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, sans-serif;
+      min-height: 100vh;
+      background-image:
+        radial-gradient(circle at 10% 20%, rgba(251,191,36,0.10) 0%, transparent 40%),
+        radial-gradient(circle at 85% 15%, rgba(56,189,248,0.10) 0%, transparent 40%);
+      background-attachment: fixed;
+    }
+
+    .container-narrow{ max-width: 1120px; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
