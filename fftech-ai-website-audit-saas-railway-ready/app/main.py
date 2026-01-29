@@ -43,16 +43,22 @@ def _validate_url(url: str | None) -> str:
     return url if url.startswith("http") else f"https://{url}"
 
 async def _run_audit_queue(url: str, queue: asyncio.Queue):
-    """Run the audit and push messages to an asyncio queue"""
+    """Run the audit and push structured messages to an asyncio queue"""
     runner = WebsiteAuditRunner(url)
 
     async def callback(msg: Dict[str, Any]):
-        """Send messages to queue for streaming"""
-        try:
-            json.dumps(msg)  # ensure serializable
-            await queue.put(msg)
-        except Exception:
-            await queue.put({"error": "Non-serializable message", "finished": True})
+        payload = {
+            "seo_score": msg.get("seo_score", 0),
+            "performance_score": msg.get("performance_score", 0),
+            "trust_score": msg.get("trust_score", 0),
+            "progress": msg.get("progress", 0),
+            "finished": msg.get("finished", False),
+            "error": msg.get("error"),
+            "competitor_comparison": msg.get("competitor_comparison", {"labels": [], "datasets": []}),
+            "history": msg.get("history", []),
+            "ai_recommendations": msg.get("ai_recommendations", []),
+        }
+        await queue.put(payload)
 
     await runner.run_audit(callback)
 
@@ -91,7 +97,7 @@ async def audit_sse(url: str | None = None):
 
 @app.post("/api/audit", response_class=JSONResponse)
 async def audit_once(request: Request):
-    """Single-run audit returning final JSON"""
+    """Single-run audit returning final structured JSON"""
     body = await request.json()
     target = _validate_url(body.get("url"))
     final_payload: Dict[str, Any] = {}
@@ -99,7 +105,17 @@ async def audit_once(request: Request):
 
     async def callback(msg: Dict[str, Any]):
         nonlocal final_payload
-        final_payload = msg
+        final_payload = {
+            "seo_score": msg.get("seo_score", 0),
+            "performance_score": msg.get("performance_score", 0),
+            "trust_score": msg.get("trust_score", 0),
+            "progress": msg.get("progress", 0),
+            "finished": msg.get("finished", False),
+            "error": msg.get("error"),
+            "competitor_comparison": msg.get("competitor_comparison", {"labels": [], "datasets": []}),
+            "history": msg.get("history", []),
+            "ai_recommendations": msg.get("ai_recommendations", []),
+        }
         if msg.get("finished") or msg.get("error"):
             done.set()
 
@@ -130,7 +146,18 @@ async def ws_endpoint(ws: WebSocket):
         url = _validate_url(data.get("url"))
 
         async def callback(msg: Dict[str, Any]):
-            await ws.send_text(json.dumps(msg, ensure_ascii=False))
+            payload = {
+                "seo_score": msg.get("seo_score", 0),
+                "performance_score": msg.get("performance_score", 0),
+                "trust_score": msg.get("trust_score", 0),
+                "progress": msg.get("progress", 0),
+                "finished": msg.get("finished", False),
+                "error": msg.get("error"),
+                "competitor_comparison": msg.get("competitor_comparison", {"labels": [], "datasets": []}),
+                "history": msg.get("history", []),
+                "ai_recommendations": msg.get("ai_recommendations", []),
+            }
+            await ws.send_text(json.dumps(payload, ensure_ascii=False))
 
         runner = WebsiteAuditRunner(url)
         await runner.run_audit(callback)
