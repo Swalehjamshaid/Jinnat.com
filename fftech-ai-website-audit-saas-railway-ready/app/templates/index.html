@@ -65,7 +65,7 @@
       </div>
 
       <div class="flex items-center gap-2">
-        <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Toggle theme">
+        <button id="theme-toggle" type="button" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Toggle theme">
           <span id="theme-icon" class="text-lg">🌙</span>
         </button>
       </div>
@@ -89,12 +89,12 @@
                 <input id="url-input" type="text" placeholder="https://example.com"
                        class="flex-1 px-5 py-3.5 rounded-2xl border border-gray-300 dark:border-gray-700 bg-white/90 dark:bg-gray-800/80 focus:ring-2 focus:ring-indigo-500 outline-none transition"/>
 
-                <button id="audit-btn"
+                <button id="audit-btn" type="button"
                         class="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-2xl shadow transition active:scale-95">
                   ✨ Start Audit
                 </button>
 
-                <button id="stop-btn"
+                <button id="stop-btn" type="button"
                         class="px-6 py-3.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-semibold rounded-2xl border border-gray-200 dark:border-gray-700 transition active:scale-95"
                         disabled>
                   Stop
@@ -162,7 +162,7 @@
 
       <!-- PDF Button -->
       <div class="text-center">
-        <button id="download-pdf"
+        <button id="download-pdf" type="button"
                 class="hidden px-10 py-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold rounded-2xl shadow-xl transition transform hover:scale-[1.02] active:scale-100">
           ⬇️ Download Professional PDF Report
         </button>
@@ -243,6 +243,19 @@
   </footer>
 
   <script>
+    // =========================================================
+    // ✅ IMPORTANT FIX:
+    // Declare state BEFORE theme initialization (prevents TDZ crash)
+    // =========================================================
+    let ws = null;
+    let chart = null;
+    let lastResult = null;
+    let lastAuditUrl = '';
+
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT = 8;
+
     // -----------------------------
     // Theme Toggle
     // -----------------------------
@@ -254,7 +267,8 @@
       else html.classList.remove('dark');
       localStorage.theme = mode;
       themeIcon.textContent = (mode === 'dark') ? '🌙' : '☀️';
-      // redraw chart with theme colors
+
+      // redraw chart with theme colors (safe now)
       if (lastResult) renderChart(lastResult);
     }
 
@@ -286,15 +300,6 @@
     const clientInput = document.getElementById('client-name');
     const brandInput = document.getElementById('brand-name');
 
-    let ws = null;
-    let chart = null;
-    let lastResult = null;
-    let lastAuditUrl = '';
-
-    let reconnectTimer = null;
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT = 8;
-
     // -----------------------------
     // Helpers
     // -----------------------------
@@ -315,11 +320,14 @@
       return x.toFixed(i === 0 ? 0 : 2) + ' ' + units[i];
     }
 
+    // ✅ Correct HTML escaping
     function esc(s) {
       return String(s ?? '—')
         .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;');
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
     }
 
     function showError(msg) {
@@ -412,12 +420,10 @@
           try { msg = JSON.parse(e.data); }
           catch { return; }
 
-          // Always update progress if present
           if (msg.progress !== undefined) {
             setProgress(msg.progress, msg.status);
           }
 
-          // Error
           if (msg.status === 'error') {
             const err = msg.error || msg.payload?.error || 'Audit failed.';
             showError(err);
@@ -426,7 +432,6 @@
             return;
           }
 
-          // Completed: result may be in payload OR result
           if (msg.status === 'completed') {
             const result = (msg.payload && msg.payload.audited_url) ? msg.payload : msg.result;
             if (result) {
@@ -443,7 +448,6 @@
 
         ws.onclose = () => {
           socketState.textContent = 'closed';
-          // auto reconnect with backoff
           if (reconnectAttempts < MAX_RECONNECT) {
             const delay = Math.min(12000, 800 * Math.pow(2, reconnectAttempts));
             reconnectAttempts++;
@@ -488,7 +492,6 @@
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ url }));
       } else {
-        // wait a bit for connection
         statusText.textContent = "Connecting socket…";
         const t = setInterval(() => {
           if (ws && ws.readyState === WebSocket.OPEN) {
@@ -508,8 +511,9 @@
       }
     }
 
+    // ✅ Now these will definitely bind
     auditBtn.addEventListener('click', sendAudit);
-    urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendAudit(); });
+    urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendAudit(); });
 
     stopBtn.addEventListener('click', () => {
       try { if (ws) ws.close(); } catch {}
@@ -577,7 +581,6 @@
       results.classList.remove('hidden');
       clearError();
 
-      // Basic
       document.getElementById('audited-url').textContent = r.audited_url || '—';
       document.getElementById('overall-score').textContent = (r.overall_score ?? '—');
       document.getElementById('grade').textContent = (r.grade || '—');
@@ -587,27 +590,20 @@
 
       const b = r.breakdown || {};
 
-      // SEO
       document.getElementById('seo-score').textContent = b.seo?.score ?? '—';
       document.getElementById('seo-extras').innerHTML = renderKeyValues(b.seo?.extras, true);
 
-      // Performance
       document.getElementById('perf-score').textContent = b.performance?.score ?? '—';
       document.getElementById('perf-extras').innerHTML = renderPerfExtras(b.performance?.extras);
 
-      // Links
       document.getElementById('links-score').textContent = b.links?.score ?? '—';
-      document.getElementById('links-extras').innerHTML = `
-        <div><strong>Internal:</strong> ${esc(b.links?.internal_links_count ?? 0)}</div>
-        <div><strong>External:</strong> ${esc(b.links?.external_links_count ?? 0)}</div>
+      document.getElementById('linksrnal:</strong> ${esc(b.links?.external_links_count ?? 0)}</div>
         <div><strong>Total:</strong> ${esc(b.links?.total_links_count ?? 0)}</div>
       `;
 
-      // Security
       document.getElementById('sec-score').textContent = b.security?.score ?? '—';
       document.getElementById('sec-extras').innerHTML = renderSecurityExtras(b.security);
 
-      // Competitors & AI
       document.getElementById('competitors-score').textContent = b.competitors?.score ?? '—';
       document.getElementById('competitors-top').textContent =
         (b.competitors?.top_competitor_score !== undefined && b.competitors?.top_competitor_score !== null)
@@ -615,7 +611,6 @@
 
       document.getElementById('ai-score').textContent = b.ai?.score ?? '—';
 
-      // Dynamic cards
       const cardsCont = document.getElementById('dynamic-cards');
       cardsCont.innerHTML = '';
       (r.dynamic?.cards || []).forEach(c => {
@@ -628,7 +623,6 @@
         cardsCont.appendChild(el);
       });
 
-      // KV list
       const kvCont = document.getElementById('kv-list');
       kvCont.innerHTML = '';
       (r.dynamic?.kv || []).forEach(item => {
@@ -641,10 +635,7 @@
         kvCont.appendChild(div);
       });
 
-      // Chart
       renderChart(r);
-
-      // Raw JSON
       document.getElementById('raw-json').textContent = JSON.stringify(r, null, 2);
     }
 
