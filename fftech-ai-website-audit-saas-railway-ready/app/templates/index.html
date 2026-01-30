@@ -1,415 +1,1033 @@
-<!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FF Tech Audit – Professional Website Scanner</title>
-  <meta name="description" content="Instant SEO, Performance, Security & Links Audit"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FF Tech — AI Website Audit</title>
 
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            primary: '#4f46e5',
-            primaryDark: '#4338ca',
-          }
-        }
-      }
-    }
-  </script>
-
+  <!-- Bootstrap 5 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- Inter font -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-    body { font-family: 'Inter', system-ui, sans-serif; }
-    .score-circle {
-      background: conic-gradient(#10b981 0% var(--score,0%), #e5e7eb var(--score,0%) 100%);
+    :root{
+      --glass: rgba(255,255,255,.06);
+      --glass2: rgba(255,255,255,.10);
+      --border: rgba(255,255,255,.12);
+      --shadow: 0 10px 30px rgba(0,0,0,.25);
+      --grad:
+        radial-gradient(1200px 600px at 20% 0%, rgba(56,189,248,.22), transparent 60%),
+        radial-gradient(900px 500px at 100% 10%, rgba(244,63,94,.16), transparent 60%),
+        radial-gradient(900px 500px at 0% 90%, rgba(34,197,94,.16), transparent 60%);
     }
-    .dark .score-circle {
-      background: conic-gradient(#10b981 0% var(--score,0%), #374151 var(--score,0%) 100%);
+    [data-bs-theme="light"]{
+      --glass: rgba(0,0,0,.04);
+      --glass2: rgba(0,0,0,.06);
+      --border: rgba(0,0,0,.08);
+      --shadow: 0 10px 30px rgba(0,0,0,.10);
+      --grad:
+        radial-gradient(1200px 600px at 20% 0%, rgba(56,189,248,.20), transparent 60%),
+        radial-gradient(900px 500px at 100% 10%, rgba(244,63,94,.12), transparent 60%),
+        radial-gradient(900px 500px at 0% 90%, rgba(34,197,94,.12), transparent 60%);
+    }
+
+    body{ background: var(--grad); min-height: 100vh; }
+    .glass{
+      background: var(--glass);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 18px;
+    }
+    .glass-soft{
+      background: var(--glass2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+    .brand-pill{
+      display:inline-flex; align-items:center; gap:.6rem;
+      padding:.55rem .85rem;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background: rgba(15,23,42,.32);
+    }
+    [data-bs-theme="light"] .brand-pill{ background: rgba(255,255,255,.65); }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+    }
+
+    .score-ring{
+      width:150px;height:150px;border-radius:50%;
+      display:grid;place-items:center;
+      background:
+        radial-gradient(circle at center, rgba(0,0,0,.20) 58%, transparent 60%),
+        conic-gradient(var(--ring-color) var(--ring-deg), rgba(148,163,184,.22) 0);
+      border: 1px solid var(--border);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    [data-bs-theme="light"] .score-ring{
+      background:
+        radial-gradient(circle at center, rgba(255,255,255,.55) 58%, transparent 60%),
+        conic-gradient(var(--ring-color) var(--ring-deg), rgba(148,163,184,.25) 0);
+    }
+    .score-big{ font-size: 2.35rem; font-weight: 850; line-height: 1; }
+    .score-sub{ font-size: .92rem; opacity: .75; }
+
+    .kpi{
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      padding: 14px;
+      height: 100%;
+    }
+    [data-bs-theme="light"] .kpi{
+      background: linear-gradient(180deg, rgba(0,0,0,.03), rgba(0,0,0,.02));
+    }
+    .kpi .label{ font-size: .85rem; opacity: .78; }
+    .kpi .value{ font-size: 1.15rem; font-weight: 750; }
+
+    .fade-in{ animation: fadeIn .35s ease-out; }
+    @keyframes fadeIn{ from{ opacity:0; transform: translateY(8px);} to{ opacity:1; transform: translateY(0);} }
+
+    .section-title{
+      display:flex; align-items:center; justify-content:space-between;
+      gap: 12px;
+    }
+    .tiny{ font-size:.85rem; opacity:.75; }
+
+    pre{ white-space: pre-wrap; word-break: break-word; }
+
+    .nav-pills .nav-link{ border-radius: 12px; }
+    .nav-pills .nav-link.active{ background: rgba(59,130,246,.85); }
+
+    .badge-soft{
+      border:1px solid var(--border);
+      background: rgba(148,163,184,.12);
+      color: inherit;
     }
   </style>
 </head>
-<body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-300">
 
-  <!-- Header -->
-  <header class="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-bold text-xl flex items-center justify-center">FF</div>
-        <h1 class="text-xl font-semibold tracking-tight">Website Audit Pro</h1>
+<body>
+  <div class="container py-4 py-lg-5">
+
+    <!-- Top Bar -->
+    <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-4">
+      <div class="d-flex align-items-center gap-2">
+        <div class="brand-pill glass">
+          <i class="bi bi-stars text-info"></i>
+          <strong>FF Tech Audit</strong>
+          <span class="opacity-75">Runner Dashboard</span>
+        </div>
+        <span id="wsBadge" class="badge text-bg-warning glass-soft"><i class="bi bi-plug"></i> Disconnected</span>
+        <span class="badge badge-soft">/ws</span>
+        <span class="badge badge-soft">/generate-pdf</span>
       </div>
-      <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition">
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path id="sun" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707"/>
-          <path id="moon" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-        </svg>
-      </button>
+
+      <div class="d-flex align-items-center gap-2">
+        <button id="themeBtn" class="btn btn-outline-secondary btn-sm glass-soft">
+          <i class="bi bi-moon-stars"></i> <span class="ms-1">Theme</span>
+        </button>
+        <a class="btn btn-outline-success btn-sm glass-soft" href="/health" target="_blank">
+          <i class="bi bi-heart-pulse"></i> Health
+        </a>
+      </div>
     </div>
-  </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-
-    <!-- URL Input + Progress -->
-    <section class="mb-12">
-      <div class="max-w-2xl mx-auto">
-        <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Website URL</label>
-        <div class="flex gap-3">
-          <input id="url-input" type="text" placeholder="https://example.com" class="flex-1 px-5 py-3.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none transition"/>
-          <button id="audit-btn" class="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow transition active:scale-95">Run Audit</button>
-        </div>
-
-        <div id="status-container" class="mt-6 hidden">
-          <div class="flex justify-between mb-2 text-sm font-medium">
-            <span id="status-text">Connecting...</span>
-            <span id="progress-percent" class="text-indigo-600 dark:text-indigo-400">0%</span>
-          </div>
-          <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div id="progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-600 w-0 transition-all duration-500"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Results Section -->
-    <section id="results" class="hidden space-y-12">
-
-      <!-- Overall Score Hero -->
-      <div class="text-center">
-        <div class="inline-block relative">
-          <div id="score-circle" class="score-circle w-64 h-64 rounded-full flex items-center justify-center shadow-2xl mx-auto" style="--score: 0%">
-            <div class="text-center">
-              <div id="overall-score" class="text-7xl font-extrabold">—</div>
-              <div id="grade" class="text-4xl font-bold mt-1 text-gray-600 dark:text-gray-400">—</div>
+    <!-- Input + Summary -->
+    <div class="row g-3 g-lg-4">
+      <div class="col-lg-8">
+        <div class="glass p-4">
+          <div class="d-flex flex-wrap justify-content-between gap-3">
+            <div>
+              <h1 class="fw-bold mb-2">AI Website Audit</h1>
+              <p class="mb-0 opacity-75">
+                Live WebSocket audit (runner.py) — professional rendering of every returned attribute.
+              </p>
+            </div>
+            <div class="d-flex gap-2">
+              <button id="btnExample" class="btn btn-outline-info btn-sm glass-soft">
+                <i class="bi bi-magic"></i> Example
+              </button>
+              <button id="btnReset" class="btn btn-outline-secondary btn-sm glass-soft">
+                <i class="bi bi-arrow-counterclockwise"></i> Reset
+              </button>
             </div>
           </div>
-          <div class="mt-8 text-lg">
-            Audited: <span id="audited-url" class="font-mono font-medium text-indigo-600 dark:text-indigo-400 break-all"></span>
+
+          <hr class="my-4 opacity-25"/>
+
+          <div class="row g-3 align-items-end">
+            <div class="col-md-7">
+              <label class="form-label">Website URL / Domain</label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text glass-soft"><i class="bi bi-globe2"></i></span>
+                <input id="urlInput" class="form-control glass-soft" placeholder="example.com or https://example.com" />
+              </div>
+              <div class="form-text opacity-75">
+                Tip: You can paste a full URL or just a domain.
+              </div>
+            </div>
+
+            <div class="col-md-5">
+              <div class="d-grid gap-2">
+                <button id="runBtn" class="btn btn-primary btn-lg">
+                  <i class="bi bi-play-fill"></i> Run Audit
+                </button>
+
+                <div class="d-flex gap-2">
+                  <button id="pdfBtn" class="btn btn-outline-success w-100 glass-soft" disabled>
+                    <i class="bi bi-filetype-pdf"></i> Export PDF
+                  </button>
+                  <button id="copyBtn" class="btn btn-outline-secondary w-100 glass-soft" disabled>
+                    <i class="bi bi-clipboard"></i> Copy JSON
+                  </button>
+                  <button id="downloadBtn" class="btn btn-outline-secondary w-100 glass-soft" disabled>
+                    <i class="bi bi-download"></i> JSON
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Progress -->
+          <div class="mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge text-bg-info glass-soft">Live</span>
+                <span id="statusText" class="opacity-75">Idle</span>
+              </div>
+              <span id="progressText" class="mono opacity-75">0%</span>
+            </div>
+            <div class="progress" role="progressbar" aria-label="Progress">
+              <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="glass p-4 h-100">
+          <div class="section-title mb-2">
+            <h5 class="fw-bold mb-0">Executive Summary</h5>
+            <span id="gradeBadge" class="badge text-bg-secondary">—</span>
+          </div>
+
+          <div class="d-flex align-items-center gap-3">
+            <div id="scoreRing" class="score-ring" style="--ring-color:#9ca3af; --ring-deg:0deg;">
+              <div class="text-center">
+                <div id="scoreBig" class="score-big">—</div>
+                <div class="score-sub">Overall Score</div>
+              </div>
+            </div>
+
+            <div class="flex-grow-1">
+              <div class="kpi mb-2">
+                <div class="label">Audited URL</div>
+                <div id="auditedUrl" class="value text-truncate">—</div>
+              </div>
+              <div class="kpi">
+                <div class="label">Final Status</div>
+                <div id="finalStatus" class="value">Waiting…</div>
+              </div>
+            </div>
+          </div>
+
+          <hr class="my-4 opacity-25"/>
+
+          <div class="row g-2">
+            <div class="col-6"><div class="kpi"><div class="label"><i class="bi bi-search"></i> SEO</div><div id="seoScoreMini" class="value">—</div></div></div>
+            <div class="col-6"><div class="kpi"><div class="label"><i class="bi bi-speedometer2"></i> Performance</div><div id="perfScoreMini" class="value">—</div></div></div>
+            <div class="col-6"><div class="kpi"><div class="label"><i class="bi bi-link-45deg"></i> Links</div><div id="linksScoreMini" class="value">—</div></div></div>
+            <div class="col-6"><div class="kpi"><div class="label"><i class="bi bi-shield-check"></i> Security</div><div id="secScoreMini" class="value">—</div></div></div>
+          </div>
+
+          <div class="mt-3 tiny">
+            These mini-scores are pulled directly from <span class="mono">result.breakdown</span>.
           </div>
         </div>
       </div>
-
-      <!-- PDF Download Button -->
-      <div class="text-center">
-        <button id="download-pdf" class="hidden px-10 py-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-2xl shadow-xl transition transform hover:scale-105 active:scale-100">
-          Download Professional PDF Report
-        </button>
-      </div>
-
-      <!-- Breakdown Grid -->
-      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 hover:shadow-xl transition">
-          <h3 class="text-xl font-semibold mb-4 text-yellow-600 dark:text-yellow-400">SEO</h3>
-          <div class="text-6xl font-bold mb-4" id="seo-score">—</div>
-          <div id="seo-extras" class="text-sm space-y-2 text-gray-700 dark:text-gray-300"></div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 hover:shadow-xl transition">
-          <h3 class="text-xl font-semibold mb-4 text-cyan-600 dark:text-cyan-400">Performance</h3>
-          <div class="text-6xl font-bold mb-4" id="perf-score">—</div>
-          <div id="perf-extras" class="text-sm space-y-2 text-gray-700 dark:text-gray-300"></div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 hover:shadow-xl transition">
-          <h3 class="text-xl font-semibold mb-4 text-green-600 dark:text-green-400">Links</h3>
-          <div class="text-6xl font-bold mb-4" id="links-score">—</div>
-          <div id="links-extras" class="text-sm space-y-2 text-gray-700 dark:text-gray-300"></div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 hover:shadow-xl transition">
-          <h3 class="text-xl font-semibold mb-4 text-red-600 dark:text-red-400">Security</h3>
-          <div class="text-6xl font-bold mb-4" id="sec-score">—</div>
-          <div id="sec-extras" class="text-sm space-y-2 text-gray-700 dark:text-gray-300"></div>
-        </div>
-      </div>
-
-      <!-- Competitors & AI -->
-      <div class="grid md:grid-cols-2 gap-6">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
-          <h3 class="text-xl font-semibold mb-4 text-purple-600 dark:text-purple-400">Competitors</h3>
-          <div class="text-6xl font-bold" id="competitors-score">—</div>
-          <p id="competitors-top" class="mt-3 text-sm text-gray-600 dark:text-gray-400"></p>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
-          <h3 class="text-xl font-semibold mb-4 text-blue-600 dark:text-blue-400">AI Readiness</h3>
-          <div class="text-6xl font-bold" id="ai-score">—</div>
-        </div>
-      </div>
-
-      <!-- Score Chart -->
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-8">
-        <h3 class="text-2xl font-semibold mb-6 text-center">Score Breakdown</h3>
-        <div class="h-96"><canvas id="scoreChart"></canvas></div>
-      </div>
-
-      <!-- Dynamic Cards -->
-      <div id="dynamic-cards" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6"></div>
-
-      <!-- All Technical Details (KV) -->
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-xl font-semibold">Technical Details & Metadata</h3>
-        </div>
-        <dl id="kv-list" class="divide-y divide-gray-200 dark:divide-gray-700"></dl>
-      </div>
-
-      <!-- Raw JSON (Debug) -->
-      <details class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <summary class="px-6 py-5 font-medium cursor-pointer text-lg">View Raw Audit JSON (Debug)</summary>
-        <pre id="raw-json" class="p-6 text-sm overflow-auto bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 max-h-96"></pre>
-      </details>
-
-    </section>
-
-    <!-- Error Message -->
-    <div id="error-message" class="hidden max-w-3xl mx-auto mt-10 p-6 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-2xl text-red-800 dark:text-red-300">
-      <p id="error-text" class="font-medium"></p>
     </div>
 
-  </main>
+    <!-- Results Area -->
+    <div id="resultsWrap" class="mt-4 mt-lg-5 d-none">
+      <div class="row g-3 g-lg-4">
 
-  <footer class="mt-20 py-10 text-center text-sm text-gray-500 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800">
-    FF Tech Audit • Real-time • Professional Reports • © 2026
-  </footer>
+        <!-- Navigation Tabs -->
+        <div class="col-12">
+          <div class="glass p-3">
+            <ul class="nav nav-pills flex-wrap gap-2" id="tabs">
+              <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-overview"><i class="bi bi-grid-1x2"></i> Overview</button></li>
+              <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-breakdown"><i class="bi bi-clipboard-data"></i> Breakdown</button></li>
+              <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-charts"><i class="bi bi-bar-chart"></i> Charts</button></li>
+              <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-dynamic"><i class="bi bi-cpu"></i> Dynamic</button></li>
+              <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-json"><i class="bi bi-braces"></i> Raw JSON</button></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="tab-content">
+
+            <!-- OVERVIEW -->
+            <div class="tab-pane fade show active" id="tab-overview">
+              <div class="row g-3 g-lg-4">
+
+                <div class="col-lg-7">
+                  <div class="glass p-4">
+                    <div class="section-title">
+                      <h5 class="fw-bold mb-0"><i class="bi bi-graph-up"></i> Runner Summary</h5>
+                      <span class="badge badge-soft">audited_url • overall_score • grade</span>
+                    </div>
+                    <p class="opacity-75 mb-3">
+                      This section is a clean executive view of the top-level runner attributes.
+                    </p>
+
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <div class="kpi">
+                          <div class="label">audited_url</div>
+                          <div id="ovAuditedUrl" class="value mono text-truncate">—</div>
+                        </div>
+                      </div>
+                      <div class="col-md-3">
+                        <div class="kpi">
+                          <div class="label">overall_score</div>
+                          <div id="ovOverall" class="value mono">—</div>
+                        </div>
+                      </div>
+                      <div class="col-md-3">
+                        <div class="kpi">
+                          <div class="label">grade</div>
+                          <div id="ovGrade" class="value mono">—</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <hr class="my-4 opacity-25">
+
+                    <div class="section-title mb-2">
+                      <h6 class="fw-bold mb-0"><i class="bi bi-ui-checks"></i> Key Metrics</h6>
+                      <span class="badge badge-soft">dynamic.kv</span>
+                    </div>
+
+                    <div class="table-responsive">
+                      <table class="table table-hover align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th style="width:30%">Key</th>
+                            <th>Value</th>
+                          </tr>
+                        </thead>
+                        <tbody id="kvBody"></tbody>
+                      </table>
+                    </div>
+
+                  </div>
+                </div>
+
+                <div class="col-lg-5">
+                  <div class="glass p-4 h-100">
+                    <div class="section-title">
+                      <h5 class="fw-bold mb-0"><i class="bi bi-lightning-charge"></i> Highlights</h5>
+                      <span class="badge badge-soft">dynamic.cards</span>
+                    </div>
+                    <p class="opacity-75 mb-3">Cards are returned from runner output and rendered automatically.</p>
+                    <div id="dynamicCards" class="row g-2"></div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- BREAKDOWN -->
+            <div class="tab-pane fade" id="tab-breakdown">
+              <div class="glass p-4">
+                <div class="section-title">
+                  <h5 class="fw-bold mb-0"><i class="bi bi-clipboard-data"></i> Breakdown (All Categories)</h5>
+                  <span class="badge badge-soft">result.breakdown</span>
+                </div>
+                <p class="opacity-75 mb-3">
+                  Every category (seo, performance, links, security, competitors, ai…) is shown.
+                  Nested <span class="mono">extras</span> are rendered as KPI cards. Any unknown keys are also displayed.
+                </p>
+
+                <div class="accordion" id="breakdownAccordion"></div>
+              </div>
+            </div>
+
+            <!-- CHARTS -->
+            <div class="tab-pane fade" id="tab-charts">
+              <div class="glass p-4">
+                <div class="section-title">
+                  <h5 class="fw-bold mb-0"><i class="bi bi-bar-chart"></i> Charts</h5>
+                  <span class="badge badge-soft">result.chart_data (all)</span>
+                </div>
+                <p class="opacity-75 mb-3">
+                  All Chart.js configs returned by runner are rendered below.
+                </p>
+
+                <div id="chartsWrap" class="row g-3"></div>
+              </div>
+            </div>
+
+            <!-- DYNAMIC -->
+            <div class="tab-pane fade" id="tab-dynamic">
+              <div class="row g-3 g-lg-4">
+
+                <div class="col-lg-6">
+                  <div class="glass p-4">
+                    <div class="section-title">
+                      <h5 class="fw-bold mb-0"><i class="bi bi-cpu"></i> dynamic.cards</h5>
+                      <span class="badge badge-soft">Auto</span>
+                    </div>
+                    <p class="opacity-75 mb-3">Full list of dynamic cards.</p>
+                    <div id="dynamicCardsFull" class="row g-2"></div>
+                  </div>
+                </div>
+
+                <div class="col-lg-6">
+                  <div class="glass p-4">
+                    <div class="section-title">
+                      <h5 class="fw-bold mb-0"><i class="bi bi-table"></i> dynamic.kv</h5>
+                      <span class="badge badge-soft">Auto</span>
+                    </div>
+                    <p class="opacity-75 mb-3">Full key/value list.</p>
+                    <div class="table-responsive">
+                      <table class="table table-hover align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th style="width:30%">Key</th>
+                            <th>Value</th>
+                          </tr>
+                        </thead>
+                        <tbody id="kvBodyFull"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- RAW JSON -->
+            <div class="tab-pane fade" id="tab-json">
+              <div class="glass p-4">
+                <div class="section-title">
+                  <h5 class="fw-bold mb-0"><i class="bi bi-braces"></i> Raw Runner JSON</h5>
+                  <span class="badge badge-soft">Debug / Export</span>
+                </div>
+                <p class="opacity-75 mb-3">
+                  This is the entire runner result object, exactly as received from WebSocket.
+                </p>
+                <pre id="rawJson" class="p-3 glass-soft rounded-3 small mono mb-0" style="max-height:520px; overflow:auto;"></pre>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="text-center opacity-75 small py-2">
+            Built for <strong>FFTech AI Audit</strong> • WebSocket runner output • Professional rendering • Export PDF
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    // Theme Toggle
-    const html = document.documentElement;
-    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      html.classList.add('dark');
+    // ----------------------------
+    // Theme toggle (persist)
+    // ----------------------------
+    const themeBtn = document.getElementById('themeBtn');
+    const root = document.documentElement;
+
+    function setTheme(mode){
+      root.setAttribute('data-bs-theme', mode);
+      localStorage.setItem('theme', mode);
+      themeBtn.innerHTML = mode === 'dark'
+        ? '<i class="bi bi-moon-stars"></i> <span class="ms-1">Dark</span>'
+        : '<i class="bi bi-sun"></i> <span class="ms-1">Light</span>';
     }
-    document.getElementById('theme-toggle').addEventListener('click', () => {
-      html.classList.toggle('dark');
-      localStorage.theme = html.classList.contains('dark') ? 'dark' : 'light';
+    setTheme(localStorage.getItem('theme') || 'dark');
+    themeBtn.addEventListener('click', () => {
+      const cur = root.getAttribute('data-bs-theme') || 'dark';
+      setTheme(cur === 'dark' ? 'light' : 'dark');
+      // re-render charts with updated colors
+      if (window._lastResult) {
+        destroyAllCharts();
+        renderAll(window._lastResult);
+      }
     });
 
-    // Elements
-    const urlInput = document.getElementById('url-input');
-    const auditBtn = document.getElementById('audit-btn');
-    const statusCont = document.getElementById('status-container');
-    const statusText = document.getElementById('status-text');
-    const progressBar = document.getElementById('progress-bar');
-    const progressPct = document.getElementById('progress-percent');
-    const results = document.getElementById('results');
-    const errorBox = document.getElementById('error-message');
-    const errorText = document.getElementById('error-text');
-    const downloadPdfBtn = document.getElementById('download-pdf');
+    // ----------------------------
+    // WebSocket + State
+    // ----------------------------
+    const wsBadge = document.getElementById('wsBadge');
+    const statusText = document.getElementById('statusText');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
 
-    let ws = null;
-    let chart = null;
-    let lastResult = null;
+    const runBtn = document.getElementById('runBtn');
+    const urlInput = document.getElementById('urlInput');
+    const btnExample = document.getElementById('btnExample');
+    const btnReset = document.getElementById('btnReset');
 
-    function connect() {
-      ws = new WebSocket(`wss://${location.host}/ws`);
+    const resultsWrap = document.getElementById('resultsWrap');
 
-      ws.onopen = () => {
-        statusText.textContent = "Connected • Ready";
-      };
+    const pdfBtn = document.getElementById('pdfBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
 
-      ws.onmessage = e => {
-        try {
-          const data = JSON.parse(e.data);
+    // Summary
+    const gradeBadge = document.getElementById('gradeBadge');
+    const scoreBig = document.getElementById('scoreBig');
+    const scoreRing = document.getElementById('scoreRing');
+    const auditedUrlEl = document.getElementById('auditedUrl');
+    const finalStatus = document.getElementById('finalStatus');
 
-          if (data.status === 'completed' && data.result) {
-            lastResult = data.result;
-            renderResult(data.result);
-            statusText.textContent = "Audit Complete";
-            progressBar.style.width = '100%';
-            progressPct.textContent = '100%';
-            downloadPdfBtn.classList.remove('hidden');
-            setTimeout(() => statusCont.classList.add('hidden'), 1500);
-          }
-          else if (data.status === 'error') {
-            errorText.textContent = data.error || "Audit failed.";
-            errorBox.classList.remove('hidden');
-            results.classList.add('hidden');
-            downloadPdfBtn.classList.add('hidden');
-          }
-          else if (data.progress !== undefined) {
-            progressBar.style.width = `${data.progress}%`;
-            progressPct.textContent = `${data.progress}%`;
-            statusText.textContent = data.status?.charAt(0).toUpperCase() + data.status?.slice(1) || "Processing...";
-          }
-        } catch(err) {
-          console.error("WS message error:", err);
-        }
-      };
+    const seoScoreMini = document.getElementById('seoScoreMini');
+    const perfScoreMini = document.getElementById('perfScoreMini');
+    const linksScoreMini = document.getElementById('linksScoreMini');
+    const secScoreMini = document.getElementById('secScoreMini');
 
-      ws.onclose = () => {
-        statusText.textContent = "Disconnected • Reconnecting...";
-        setTimeout(connect, 2000);
-      };
+    // Overview labels
+    const ovAuditedUrl = document.getElementById('ovAuditedUrl');
+    const ovOverall = document.getElementById('ovOverall');
+    const ovGrade = document.getElementById('ovGrade');
+
+    // Dynamic + tables
+    const dynamicCards = document.getElementById('dynamicCards');
+    const dynamicCardsFull = document.getElementById('dynamicCardsFull');
+    const kvBody = document.getElementById('kvBody');
+    const kvBodyFull = document.getElementById('kvBodyFull');
+
+    // Breakdown
+    const breakdownAccordion = document.getElementById('breakdownAccordion');
+
+    // Charts
+    const chartsWrap = document.getElementById('chartsWrap');
+
+    // Raw
+    const rawJson = document.getElementById('rawJson');
+
+    let ws;
+    let reconnectTimer;
+    window._charts = []; // Chart.js instances
+
+    function wsUrl(){
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${proto}//${location.host}/ws`;
     }
 
-    function sendAudit() {
-      const val = urlInput.value.trim();
-      if (!val) return;
-
-      const url = val.startsWith('http') ? val : 'https://' + val;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ url }));
-        statusCont.classList.remove('hidden');
-        results.classList.add('hidden');
-        errorBox.classList.add('hidden');
-        downloadPdfBtn.classList.add('hidden');
-      } else {
-        alert("Connection lost. Refresh the page.");
+    function setWsBadge(state){
+      if(state === 'connected'){
+        wsBadge.className = 'badge text-bg-success glass-soft';
+        wsBadge.innerHTML = '<i class="bi bi-plug"></i> Connected';
+      }else{
+        wsBadge.className = 'badge text-bg-warning glass-soft';
+        wsBadge.innerHTML = '<i class="bi bi-plug"></i> Disconnected';
       }
     }
 
-    auditBtn.onclick = sendAudit;
-    urlInput.onkeypress = e => { if (e.key === 'Enter') sendAudit(); };
+    function connectWS(){
+      try{
+        ws = new WebSocket(wsUrl());
+      }catch(e){
+        setWsBadge('disconnected');
+        scheduleReconnect();
+        return;
+      }
 
-    // PDF Download
-    downloadPdfBtn.onclick = async () => {
-      if (!lastResult) return;
-      downloadPdfBtn.disabled = true;
-      downloadPdfBtn.textContent = "Generating...";
+      ws.onopen = () => setWsBadge('connected');
+      ws.onclose = () => { setWsBadge('disconnected'); scheduleReconnect(); };
+      ws.onerror = () => { setWsBadge('disconnected'); };
 
-      try {
-        const resp = await fetch('/generate-pdf', {
+      ws.onmessage = (event) => {
+        let msg = {};
+        try{ msg = JSON.parse(event.data); } catch(e){ return; }
+
+        const status = msg.status || '—';
+        const progress = Number(msg.progress ?? 0);
+
+        statusText.textContent = status;
+        progressText.textContent = `${progress}%`;
+        progressBar.style.width = `${progress}%`;
+
+        if(status === 'completed' && msg.result){
+          window._lastResult = msg.result;
+          finalStatus.textContent = 'Completed';
+          resultsWrap.classList.remove('d-none');
+          resultsWrap.classList.add('fade-in');
+          pdfBtn.disabled = false;
+          copyBtn.disabled = false;
+          downloadBtn.disabled = false;
+
+          destroyAllCharts();
+          renderAll(msg.result);
+        }
+
+        if(status === 'error'){
+          finalStatus.textContent = msg.error ? `Error: ${msg.error}` : 'Error';
+          pdfBtn.disabled = true;
+          copyBtn.disabled = true;
+          downloadBtn.disabled = true;
+        }
+      };
+    }
+
+    function scheduleReconnect(){
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connectWS, 1500);
+    }
+
+    connectWS();
+
+    // ----------------------------
+    // Actions
+    // ----------------------------
+    btnExample.addEventListener('click', () => {
+      urlInput.value = 'example.com';
+      urlInput.focus();
+    });
+
+    btnReset.addEventListener('click', () => resetUI());
+
+    runBtn.addEventListener('click', () => {
+      const url = (urlInput.value || '').trim();
+      if(!url){
+        toast('Please enter a website URL or domain.', 'warning');
+        return;
+      }
+      if(!ws || ws.readyState !== WebSocket.OPEN){
+        toast('WebSocket not connected. Retrying…', 'danger');
+        connectWS();
+        return;
+      }
+
+      finalStatus.textContent = 'Running…';
+      resultsWrap.classList.add('d-none');
+      pdfBtn.disabled = true;
+      copyBtn.disabled = true;
+      downloadBtn.disabled = true;
+
+      clearOutputs();
+      ws.send(JSON.stringify({url}));
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      if(!window._lastResult) return;
+      const text = JSON.stringify(window._lastResult, null, 2);
+      try{
+        await navigator.clipboard.writeText(text);
+        toast('Runner JSON copied ✅', 'success');
+      }catch(e){
+        toast('Clipboard permission blocked.', 'danger');
+      }
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      if(!window._lastResult) return;
+      const data = JSON.stringify(window._lastResult, null, 2);
+      const blob = new Blob([data], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'runner_result.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // ✅ Integrated with your main.py: POST /generate-pdf
+    pdfBtn.addEventListener('click', async () => {
+      if(!window._lastResult) return;
+
+      try{
+        pdfBtn.disabled = true;
+        pdfBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Generating…';
+
+        const res = await fetch('/generate-pdf', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(lastResult)
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(window._lastResult)
         });
 
-        if (!resp.ok) throw new Error(await resp.text());
-
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = resp.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || "audit-report.pdf";
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch(err) {
-        alert("PDF generation failed: " + err.message);
-      } finally {
-        downloadPdfBtn.disabled = false;
-        downloadPdfBtn.textContent = "Download Professional PDF Report";
-      }
-    };
-
-    function renderResult(r) {
-      results.classList.remove('hidden');
-      errorBox.classList.add('hidden');
-
-      // Basic info
-      document.getElementById('audited-url').textContent = r.audited_url;
-      document.getElementById('overall-score').textContent = r.overall_score;
-      document.getElementById('grade').textContent = r.grade;
-      document.getElementById('score-circle').style.setProperty('--score', r.overall_score + '%');
-
-      const b = r.breakdown || {};
-
-      // Scores
-      document.getElementById('seo-score').textContent = b.seo?.score ?? '—';
-      document.getElementById('perf-score').textContent = b.performance?.score ?? '—';
-      document.getElementById('links-score').textContent = b.links?.score ?? '—';
-      document.getElementById('sec-score').textContent = b.security?.score ?? '—';
-      document.getElementById('competitors-score').textContent = b.competitors?.score ?? '—';
-      document.getElementById('competitors-top').textContent = b.competitors?.top_competitor_score ? `Top competitor: ${b.competitors.top_competitor_score}` : '';
-      document.getElementById('ai-score').textContent = b.ai?.score ?? '—';
-
-      // SEO extras
-      const seoEx = document.getElementById('seo-extras');
-      if (b.seo?.extras) {
-        seoEx.innerHTML = Object.entries(b.seo.extras).map(([k,v]) => 
-          `<div><strong>${k.replace(/_/g,' ')}:</strong> ${v === true ? 'Yes' : v === false ? 'No' : v || '—'}</div>`
-        ).join('');
-      } else {
-        seoEx.innerHTML = '<div class="text-gray-500">No SEO details available</div>';
-      }
-
-      // Performance extras
-      const perfEx = document.getElementById('perf-extras');
-      if (b.performance?.extras) {
-        const ex = b.performance.extras;
-        perfEx.innerHTML = `
-          <div><strong>Load time:</strong> ${ex.load_ms || '—'} ms</div>
-          <div><strong>Size:</strong> ${(ex.bytes / 1024).toFixed(1) || '—'} KB</div>
-          <div><strong>Scripts:</strong> ${ex.scripts || '—'}</div>
-          <div><strong>Stylesheets:</strong> ${ex.styles || '—'}</div>
-          <div><strong>Fetcher:</strong> ${ex.fetcher || '—'}</div>
-        `;
-      }
-
-      // Links
-      const linksEx = document.getElementById('links-extras');
-      if (b.links) {
-        linksEx.innerHTML = `
-          <div><strong>Internal:</strong> ${b.links.internal_links_count || 0}</div>
-          <div><strong>External:</strong> ${b.links.external_links_count || 0}</div>
-          <div><strong>Total:</strong> ${b.links.total_links_count || 0}</div>
-        `;
-      }
-
-      // Security
-      const secEx = document.getElementById('sec-extras');
-      if (b.security) {
-        secEx.innerHTML = `
-          <div><strong>HTTPS:</strong> ${b.security.https ? 'Yes' : 'No'}</div>
-          <div><strong>HSTS:</strong> ${b.security.hsts ? 'Yes' : 'No'}</div>
-          <div><strong>Status:</strong> ${b.security.status_code || '—'}</div>
-          <div><strong>Server:</strong> ${b.security.server || '—'}</div>
-        `;
-      }
-
-      // Dynamic cards
-      const cardsCont = document.getElementById('dynamic-cards');
-      cardsCont.innerHTML = '';
-      (r.dynamic?.cards || []).forEach(c => {
-        const el = document.createElement('div');
-        el.className = "bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6";
-        el.innerHTML = `
-          <h4 class="font-semibold text-lg mb-2">${c.title}</h4>
-          <p class="text-2xl font-bold">${c.body}</p>
-        `;
-        cardsCont.appendChild(el);
-      });
-
-      // KV list
-      const kvList = document.getElementById('kv-list');
-      kvList.innerHTML = '';
-      (r.dynamic?.kv || []).forEach(item => {
-        const div = document.createElement('div');
-        div.className = "px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/40";
-        div.innerHTML = `
-          <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">${item.key.replace(/_/g, ' ')}</dt>
-          <dd class="mt-1 text-sm sm:col-span-2 font-mono text-gray-900 dark:text-gray-200">${item.value}</dd>
-        `;
-        kvList.appendChild(div);
-      });
-
-      // Chart
-      if (chart) chart.destroy();
-      const ctx = document.getElementById('scoreChart').getContext('2d');
-      chart = new Chart(ctx, {
-        type: 'bar',
-        data: r.chart_data?.[0]?.data || {
-          labels: ["SEO", "Performance", "Links", "Security"],
-          datasets: [{ data: [0,0,0,0], backgroundColor: ["#fbbf24","#38bdf8","#22c55e","#ef4444"] }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: { beginAtZero: true, max: 100 }
-          }
+        if(!res.ok){
+          const err = await res.text();
+          throw new Error(err || 'PDF generation failed');
         }
-      });
 
-      // Raw JSON
-      document.getElementById('raw-json').textContent = JSON.stringify(r, null, 2);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        toast('PDF generated ✅', 'success');
+
+      }catch(e){
+        toast(`PDF error: ${e.message}`, 'danger');
+      }finally{
+        pdfBtn.disabled = false;
+        pdfBtn.innerHTML = '<i class="bi bi-filetype-pdf"></i> Export PDF';
+      }
+    });
+
+    function resetUI(){
+      urlInput.value = '';
+      statusText.textContent = 'Idle';
+      progressText.textContent = '0%';
+      progressBar.style.width = '0%';
+      finalStatus.textContent = 'Waiting…';
+
+      auditedUrlEl.textContent = '—';
+      gradeBadge.textContent = '—';
+      scoreBig.textContent = '—';
+      setRing(0);
+
+      resultsWrap.classList.add('d-none');
+      pdfBtn.disabled = true;
+      copyBtn.disabled = true;
+      downloadBtn.disabled = true;
+
+      clearOutputs();
+      destroyAllCharts();
     }
 
-    connect();
-  </script>
-</body>
-</html>
+    // ----------------------------
+    // Rendering Helpers
+    // ----------------------------
+    function gradeColor(grade){
+      const g = (grade || '').toUpperCase();
+      if(g === 'A+' || g === 'A') return 'success';
+      if(g === 'B') return 'info';
+      if(g === 'C') return 'warning';
+      if(g === 'D') return 'danger';
+      return 'secondary';
+    }
+
+    function setRing(score){
+      const s = Math.max(0, Math.min(100, Number(score || 0)));
+      const deg = (s/100) * 360;
+      let color = '#9ca3af';
+      if(s >= 80) color = '#22c55e';
+      else if(s >= 60) color = '#f59e0b';
+      else color = '#ef4444';
+
+      scoreRing.style.setProperty('--ring-color', color);
+      scoreRing.style.setProperty('--ring-deg', `${deg}deg`);
+    }
+
+    function toNiceKey(k){
+      return String(k || '')
+        .replaceAll('_',' ')
+        .replaceAll('-', ' ')
+        .replace(/\b\w/g, m => m.toUpperCase());
+    }
+
+    function fmtValue(v){
+      if(v === null || v === undefined) return `<span class="badge text-bg-secondary">N/A</span>`;
+      if(typeof v === 'boolean'){
+        return v
+          ? `<span class="badge text-bg-success">True</span>`
+          : `<span class="badge text-bg-danger">False</span>`;
+      }
+      if(typeof v === 'number'){
+        return `<span class="mono">${v}</span>`;
+      }
+      if(typeof v === 'string'){
+        const s = v.trim();
+        const isUrl = /^https?:\/\//i.test(s);
+        if(isUrl) return `<a href="${s}" target="_blank" class="mono">${s}</a>`;
+        return `<span class="mono">${escapeHtml(s)}</span>`;
+      }
+      if(Array.isArray(v)){
+        return `<span class="badge text-bg-info">${v.length} items</span>`;
+      }
+      if(typeof v === 'object'){
+        return `<span class="badge text-bg-info">Object</span>`;
+      }
+      return `<span class="mono">${escapeHtml(String(v))}</span>`;
+    }
+
+    function escapeHtml(str){
+      return String(str)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'","&#039;");
+    }
+
+    function clearOutputs(){
+      dynamicCards.innerHTML = '';
+      dynamicCardsFull.innerHTML = '';
+      kvBody.innerHTML = '';
+      kvBodyFull.innerHTML = '';
+      breakdownAccordion.innerHTML = '';
+      chartsWrap.innerHTML = '';
+      rawJson.textContent = '';
+
+      ovAuditedUrl.textContent = '—';
+      ovOverall.textContent = '—';
+      ovGrade.textContent = '—';
+
+      seoScoreMini.textContent = '—';
+      perfScoreMini.textContent = '—';
+      linksScoreMini.textContent = '—';
+      secScoreMini.textContent = '—';
+    }
+
+    function destroyAllCharts(){
+      if(window._charts && window._charts.length){
+        for(const c of window._charts){
+          try{ c.destroy(); }catch(e){}
+        }
+      }
+      window._charts = [];
+    }
+
+    // ----------------------------
+    // Render All Runner Attributes
+    // ----------------------------
+    function renderAll(result){
+      // Raw JSON (entire object)
+      rawJson.textContent = JSON.stringify(result, null, 2);
+
+      // Top-level runner attributes
+      auditedUrlEl.textContent = result.audited_url || '—';
+      scoreBig.textContent = (result.overall_score ?? '—');
+      setRing(result.overall_score);
+
+      const g = result.grade || '—';
+      gradeBadge.className = `badge text-bg-${gradeColor(g)}`;
+      gradeBadge.textContent = `Grade ${g}`;
+
+      ovAuditedUrl.textContent = result.audited_url || '—';
+      ovOverall.textContent = String(result.overall_score ?? '—');
+      ovGrade.textContent = String(result.grade ?? '—');
+
+      // Mini KPI scores from breakdown
+      const b = result.breakdown || {};
+      seoScoreMini.textContent = b.seo?.score ?? '—';
+      perfScoreMini.textContent = b.performance?.score ?? '—';
+      linksScoreMini.textContent = b.links?.score ?? '—';
+      secScoreMini.textContent = b.security?.score ?? '—';
+
+      // Dynamic cards and KV
+      renderCards(result.dynamic?.cards || [], dynamicCards);
+      renderCards(result.dynamic?.cards || [], dynamicCardsFull);
+
+      renderKVTable(result.dynamic?.kv || [], kvBody);
+      renderKVTable(result.dynamic?.kv || [], kvBodyFull);
+
+      // Breakdown accordions (all keys)
+      renderBreakdownAccordion(b);
+
+      // All charts
+      renderAllCharts(result.chart_data || []);
+    }
+
+    function renderCards(cards, container){
+      container.innerHTML = '';
+      if(!cards || !cards.length){
+        container.innerHTML = `<div class="col-12"><div class="kpi"><div class="label">No cards</div><div class="value">dynamic.cards is empty</div></div></div>`;
+        return;
+      }
+      for(const c of cards){
+        container.insertAdjacentHTML('beforeend', `
+          <div class="col-12">
+            <div class="kpi">
+              <div class="label">${escapeHtml(c.title ?? 'Card')}</div>
+              <div class="value">${escapeHtml(c.body ?? '')}</div>
+            </div>
+          </div>
+        `);
+      }
+    }
+
+    function renderKVTable(kv, tbody){
+      tbody.innerHTML = '';
+      if(!kv || !kv.length){
+        tbody.innerHTML = `<tr><td colspan="2" class="opacity-75">No key/values found.</td></tr>`;
+        return;
+      }
+      for(const row of kv){
+        const key = row.key ?? '';
+        const val = row.value;
+        tbody.insertAdjacentHTML('beforeend', `
+          <tr>
+            <td class="mono">${escapeHtml(key)}</td>
+            <td>${fmtValue(val)}</td>
+          </tr>
+        `);
+      }
+    }
+
+    function scoreBadge(score){
+      if(score === null || score === undefined) return `<span class="badge text-bg-secondary ms-2">N/A</span>`;
+      const s = Number(score);
+      if(Number.isNaN(s)) return `<span class="badge text-bg-secondary ms-2">N/A</span>`;
+      const cls = s >= 80 ? 'success' : (s >= 60 ? 'warning' : 'danger');
+      return `<span class="badge text-bg-${cls} ms-2">${s}</span>`;
+    }
+
+    function renderBreakdownAccordion(breakdown){
+      breakdownAccordion.innerHTML = '';
+      const keys = Object.keys(breakdown || {});
+      if(!keys.length){
+        breakdownAccordion.innerHTML = `<div class="opacity-75">No breakdown available.</div>`;
+        return;
+      }
+
+      keys.forEach((key, idx) => {
+        const sec = breakdown[key] || {};
+        const collapseId = `bc_${idx}`;
+        const headerBadge = scoreBadge(sec.score);
+
+        // Separate extras if present
+        const extras = sec.extras && typeof sec.extras === 'object' ? sec.extras : null;
+
+        // Render "other keys" besides score/extras
+        const otherEntries = Object.entries(sec)
+          .filter(([k,_]) => k !== 'score' && k !== 'extras');
+
+        breakdownAccordion.insertAdjacentHTML('beforeend', `
+          <div class="accordion-item glass-soft">
+            <h2 class="accordion-header">
+              <button class="accordion-button ${idx===0?'':'collapsed'}" type="button"
+                      data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                <div class="d-flex align-items-center justify-content-between w-100">
+                  <div class="fw-semibold">
+                    ${escapeHtml(toNiceKey(key))} ${headerBadge}
+                    <span class="opacity-75 small mono ms-2">${escapeHtml(key)}</span>
+                  </div>
+                </div>
+              </button>
+            </h2>
+
+            <div id="${collapseId}" class="accordion-collapse collapse ${idx===0?'show':''}" data-bs-parent="#breakdownAccordion">
+              <div class="accordion-body">
+
+                ${otherEntries.length ? `
+                  <div class="mb-3">
+                    <div class="fw-bold mb-2"><i class="bi bi-list-check"></i> Attributes</div>
+                    <div class="row g-2">
+                      ${otherEntries.map(([k,v]) => `
+                        <div class="col-md-6">
+                          <div class="kpi">
+                            <div class="label">${escapeHtml(toNiceKey(k))} <span class="opacity-75 mono">(${escapeHtml(k)})</span></div>
+                            <div class="value">${fmtValue(v)}</div>
+                          </div>
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                ` : ''}
+
+                ${extras ? `
+                  <div class="fw-bold mb-2"><i class="bi bi-boxes"></i> extras</div>
+                  <div class="row g-2">
+                    ${Object.entries(extras).map(([k,v]) => `
+                      <div class="col-md-6">
+                        <div class="kpi">
+                          <div class="label">${escapeHtml(toNiceKey(k))} <span class="opacity-75 mono">(${escapeHtml(k)})</span></div>
+                          <div class="value">${fmtValue(v)}</div>
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : `<div class="opacity-75">No extras available for this section.</div>`}
+
+              </div>
+            </div>
+          </div>
+        `);
+      });
+    }
+
+    function renderAllCharts(chartData){
+      chartsWrap.innerHTML = '';
+      if(!chartData || !chartData.length){
+        chartsWrap.innerHTML = `<div class="col-12"><div class="kpi"><div class="label">No charts</div><div class="value">chart_data is empty</div></div></div>`;
+        return;
+      }
+
+      const isDark = (root.getAttribute('data-bs-theme') || 'dark') === 'dark';
+      const tickColor = isDark ? 'rgba(226,232,240,.78)' : 'rgba(15,23,42,.75)';
+      const gridColor = isDark ? 'rgba(148,163,184,.18)' : 'rgba(15,23,42,.10)';
+
+      chartData.forEach((ch, idx) => {
+        const title = ch.title || `Chart ${idx+1}`;
+        const type = ch.type || 'bar';
+        const canvasId = `chart_${idx}`;
+
+        chartsWrap.insertAdjacentHTML('beforeend', `
+          <div class="col-12 col-lg-6">
+            <div class="kpi">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="fw-bold"><i class="bi bi-graph-up"></i> ${escapeHtml(title)}</div>
+                <span class="badge badge-soft mono">${escapeHtml(type)}</span>
+              </div>
+              <canvas id="${canvasId}" height="150"></canvas>
+            </div>
+          </div>
+        `);
+
+        const ctx = document.getElementById(canvasId);
+
+        // Render Chart.js using backend-provided config
+        const instance = new Chart(ctx, {
+          type,
+          data: ch.data || {},
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { labels: { color: tickColor } },
+              tooltip: {
+                backgroundColor: isDark ? 'rgba(2,6,23,.9)' : 'rgba(255,255,255,.96)',
+                titleColor: isDark ? '#e2e8f0' : '#0f172a',
+                bodyColor: isDark ? '#e2e8f0' : '#0f172a',
+                borderColor: isDark ? 'rgba(148,163,184,.25)' : 'rgba(15,23,42,.12)',
+                borderWidth: 1
+              }
+            },
+            scales: {
+              x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+              y: { ticks: { color: tickColor }, grid: { color: gridColor }, suggestedMin: 0, suggestedMax: 100 }
+            }
+          }
+        });
+
+        window._charts.push(instance);
+      });
+    }
+
+    // ----------------------------
+    // Toast helper
+    // ----------------------------
+    function toast(message, type='info'){
+      const id = 't_' + Math.random().toString(16).slice(2);
+      const el = document.createElement('div');
+      el.innerHTML = `
+        <div id="${id}" class="toast align-items-center text-bg-${type} border-0 position-fixed bottom-0 end-0 m-3" role="alert" aria-live="assertive" aria-atomic="true">
+          <div class="d-flex">
+            <div class="toast-body">${escapeHtml(message)}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(el);
+      const toastEl = document.getElementById(id);
+      const t = new bootstrap.Toast(toastEl, { delay: 2400 });
+      t.show();
