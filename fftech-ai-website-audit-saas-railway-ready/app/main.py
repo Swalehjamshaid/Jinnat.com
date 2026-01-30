@@ -6,13 +6,13 @@ import logging
 import os
 from typing import Any, Dict, Optional, Tuple, Union
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Body
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Body, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from starlette.websockets import WebSocketState
 
 from app.audit.runner import WebsiteAuditRunner
-from app.audit.pdf_report import generate_audit_pdf   # ← added this import
+from app.audit.pdf_report import generate_audit_pdf
 
 # ------------------------------------------------------------
 # Logging (Railway-friendly)
@@ -75,18 +75,23 @@ async def home(request: Request):
 async def health():
     return {"ok": True}
 
-# ────────────────────────────────────────────────
-# NEW: PDF generation endpoint (called from frontend)
-# ────────────────────────────────────────────────
+# ------------------------------------------------------------
+# PDF Generation Endpoint (FIXED - no more AttributeError)
+# ------------------------------------------------------------
 import tempfile
 
 @app.post("/generate-pdf")
-async def generate_pdf(payload: Dict[str, Any] = Body(...)):
+async def generate_pdf(
+    payload: Dict[str, Any] = Body(...),
+    background_tasks: BackgroundTasks
+):
     """
-    Receives the full audit result from frontend → generates PDF → returns file for download
+    Receives audit result → generates PDF → sends it as download
+    Cleans up temp file automatically after response is sent
     """
+    tmp_path = None
     try:
-        # Prepare data structure that pdf_report.py can understand
+        # Prepare data for pdf_report (adjust keys as needed)
         audit_data = {
             "website": {
                 "url": payload.get("audited_url", "Unknown"),
@@ -94,7 +99,6 @@ async def generate_pdf(payload: Dict[str, Any] = Body(...)):
             "audit": {
                 "overall_score": payload.get("overall_score"),
                 "grade": payload.get("grade"),
-                # You can enrich this later with more context if desired
             },
             "scores": {
                 "seo": payload.get("breakdown", {}).get("seo", {}).get("score"),
@@ -102,50 +106,63 @@ async def generate_pdf(payload: Dict[str, Any] = Body(...)):
                 "links": payload.get("breakdown", {}).get("links", {}).get("score"),
                 "security": payload.get("breakdown", {}).get("security", {}).get("score"),
             },
-            # Optional: add more detailed sections later
         }
 
-        # Create temporary file (Railway has writable /tmp)
+        # Create temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp_path = tmp.name
+
+        logger.info(f"Generating PDF to: {tmp_path}")
 
         # Generate PDF
         generate_audit_pdf(
             audit_data=audit_data,
             output_path=tmp_path,
-            # logo_path="app/assets/logo.png"   # ← uncomment if you have a logo file
+            # logo_path="app/assets/logo.png"  # ← add if you have one
         )
 
-        # Prepare clean filename
-        domain = payload.get("audited_url", "audit").replace("https://", "").replace("http://", "").replace("/", "_").split("?")[0]
+        # Prepare filename
+        domain = (
+            str(payload.get("audited_url", "report"))
+            .replace("https://", "")
+            .replace("http://", "")
+            .replace("/", "_")
+            .replace("www.", "")
+            .split("?")[0]
+            .strip()
+        )
         filename = f"website-audit-report-{domain}.pdf"
 
-        # Return file (FastAPI will handle cleanup after response)
-        response = FileResponse(
+        # Cleanup function (runs after response is sent)
+        def cleanup():
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                    logger.info(f"Cleaned up: {tmp_path}")
+            except Exception as e:
+                logger.warning(f"Cleanup failed for {tmp_path}: {e}")
+
+        background_tasks.add_task(cleanup)
+
+        # Send file to browser
+        return FileResponse(
             path=tmp_path,
             filename=filename,
             media_type="application/pdf"
         )
 
-        # Optional: clean up file after it's sent (best-effort)
-        @response.add_middleware
-        async def cleanup(request, call_next):
-            resp = await call_next(request)
-            try:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-            except Exception:
-                pass
-            return resp
-
-        return response
-
     except Exception as e:
         logger.exception("PDF generation failed")
+        # Emergency cleanup if something went wrong
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
         return {"status": "error", "message": f"Failed to generate PDF: {str(e)}"}, 500
 
 # ------------------------------------------------------------
-# WebSocket: /ws   (unchanged)
+# WebSocket: /ws (unchanged)
 # ------------------------------------------------------------
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
