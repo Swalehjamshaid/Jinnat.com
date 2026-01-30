@@ -1,178 +1,374 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FF Tech Website Audit Dashboard</title>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.3.2/dist/tailwind.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<style>
-  .tab-content { display: none; }
-  .tab-active { display: block; }
-  .progress-bar { transition: width 0.3s; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FF Tech Website Audit • AI-Powered SEO & Performance Scanner</title>
+  <meta name="description" content="Instant professional website audit — SEO, performance, security, links quality."/>
+  
+  <!-- Tailwind via CDN (you can replace with build later) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: { 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' },
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Inter font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .score-circle {
+      background: conic-gradient(#10b981 0% var(--score), #e5e7eb var(--score) 100%);
+    }
+    .dark .score-circle {
+      background: conic-gradient(#10b981 0% var(--score), #374151 var(--score) 100%);
+    }
+  </style>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans">
+<body class="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-300">
 
-<div class="container mx-auto p-6">
-  <h1 class="text-3xl font-bold mb-4">Website Audit Dashboard</h1>
-
-  <!-- URL input -->
-  <div class="mb-4 flex gap-2">
-    <input type="text" id="urlInput" placeholder="Enter website URL" class="flex-grow p-2 border rounded">
-    <button id="auditBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Start Audit</button>
-  </div>
-
-  <!-- Progress Bar -->
-  <div class="w-full bg-gray-300 rounded h-4 mb-4">
-    <div id="progressBar" class="bg-green-500 h-4 rounded progress-bar" style="width:0%"></div>
-  </div>
-  <div id="progressStatus" class="mb-4 text-gray-700">Idle...</div>
-
-  <!-- Metric Cards -->
-  <div id="metricCards" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4"></div>
-
-  <!-- Key-Value Details -->
-  <div id="kvContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-4"></div>
-
-  <!-- Tabs -->
-  <div class="mb-4">
-    <ul class="flex border-b">
-      <li class="mr-2"><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-blue-500" data-tab="seo">SEO</button></li>
-      <li class="mr-2"><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-transparent" data-tab="performance">Performance</button></li>
-      <li class="mr-2"><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-transparent" data-tab="links">Links</button></li>
-      <li class="mr-2"><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-transparent" data-tab="security">Security</button></li>
-      <li><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-transparent" data-tab="competitors">Competitors</button></li>
-    </ul>
-
-    <div id="tabContents" class="mt-4">
-      <div id="seo" class="tab-content">
-        <canvas id="seoChart"></canvas>
+  <!-- Header -->
+  <header class="border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">FF</div>
+        <h1 class="text-xl font-semibold tracking-tight">Website Audit</h1>
       </div>
-      <div id="performance" class="tab-content">
-        <canvas id="performanceChart"></canvas>
-      </div>
-      <div id="links" class="tab-content">
-        <canvas id="linksChart"></canvas>
-      </div>
-      <div id="security" class="tab-content">
-        <canvas id="securityChart"></canvas>
-      </div>
-      <div id="competitors" class="tab-content">
-        <canvas id="competitorsChart"></canvas>
-      </div>
+      <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path id="sun" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707" class="hidden"/>
+          <path id="moon" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+        </svg>
+      </button>
     </div>
-  </div>
+  </header>
 
-  <!-- Export Button -->
-  <button id="exportPdfBtn" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Export to PDF</button>
-</div>
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
 
-<script>
-let ws;
-const charts = {};
+    <!-- Input + Status -->
+    <section class="mb-12">
+      <div class="max-w-2xl mx-auto">
+        <label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Website URL</label>
+        <div class="flex gap-3">
+          <input
+            id="url-input"
+            type="text"
+            placeholder="example.com or https://your-site.com"
+            class="flex-1 px-5 py-3.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+          />
+          <button id="audit-btn" class="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition shadow-sm hover:shadow active:scale-[0.98]">
+            Run Audit
+          </button>
+        </div>
 
-function initTabs() {
-  const buttons = document.querySelectorAll(".tab-btn");
-  buttons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab-content").forEach(tab => tab.classList.remove("tab-active"));
-      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("border-blue-500"));
-      document.getElementById(btn.dataset.tab).classList.add("tab-active");
-      btn.classList.add("border-blue-500");
+        <!-- Status / Progress -->
+        <div id="status-container" class="mt-6 hidden">
+          <div class="flex items-center justify-between mb-2">
+            <span id="status-text" class="text-sm font-medium text-gray-700 dark:text-gray-300">Connecting...</span>
+            <span id="progress-percent" class="text-sm font-medium text-indigo-600 dark:text-indigo-400">0%</span>
+          </div>
+          <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div id="progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-600 w-0 transition-all duration-300"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section id="results" class="hidden space-y-12">
+
+      <!-- Overall Score -->
+      <div class="text-center">
+        <div class="inline-block relative">
+          <div id="score-circle" class="score-circle w-48 h-48 rounded-full flex items-center justify-center mx-auto shadow-xl relative" style="--score: 0%">
+            <div class="text-center">
+              <div id="overall-score" class="text-6xl font-bold">—</div>
+              <div id="grade" class="text-3xl font-semibold mt-1 text-gray-500 dark:text-gray-400">—</div>
+            </div>
+          </div>
+          <div class="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-800 px-5 py-1.5 rounded-full shadow text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+            Audited URL: <span id="audited-url" class="font-mono text-indigo-600 dark:text-indigo-400"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Breakdown Cards -->
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="card bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition">
+          <h3 class="text-lg font-semibold mb-4 text-yellow-600 dark:text-yellow-400">SEO</h3>
+          <div class="text-4xl font-bold mb-1" id="seo-score">—</div>
+          <div class="text-sm text-gray-500 dark:text-gray-400 space-y-1.5 mt-4" id="seo-extras"></div>
+        </div>
+
+        <div class="card bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition">
+          <h3 class="text-lg font-semibold mb-4 text-cyan-600 dark:text-cyan-400">Performance</h3>
+          <div class="text-4xl font-bold mb-1" id="perf-score">—</div>
+          <div class="text-sm text-gray-500 dark:text-gray-400 space-y-1.5 mt-4" id="perf-extras"></div>
+        </div>
+
+        <div class="card bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition">
+          <h3 class="text-lg font-semibold mb-4 text-green-600 dark:text-green-400">Links</h3>
+          <div class="text-4xl font-bold mb-1" id="links-score">—</div>
+          <div class="text-sm text-gray-500 dark:text-gray-400 space-y-1.5 mt-4" id="links-extras"></div>
+        </div>
+
+        <div class="card bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition">
+          <h3 class="text-lg font-semibold mb-4 text-red-600 dark:text-red-400">Security</h3>
+          <div class="text-4xl font-bold mb-1" id="sec-score">—</div>
+          <div class="text-sm text-gray-500 dark:text-gray-400 space-y-1.5 mt-4" id="sec-extras"></div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 lg:p-8">
+        <h3 class="text-xl font-semibold mb-6">Score Breakdown</h3>
+        <div class="h-80">
+          <canvas id="scoreChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Quick Facts / Cards -->
+      <div id="dynamic-cards" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+
+      <!-- Key-Value Summary -->
+      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold">Technical Details</h3>
+        </div>
+        <dl id="kv-list" class="divide-y divide-gray-200 dark:divide-gray-700"></dl>
+      </div>
+
+    </section>
+
+    <!-- Error message -->
+    <div id="error-message" class="hidden max-w-2xl mx-auto mt-8 p-6 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-2xl text-red-800 dark:text-red-300">
+      <p id="error-text" class="font-medium"></p>
+    </div>
+
+  </main>
+
+  <footer class="mt-20 py-8 text-center text-sm text-gray-500 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800">
+    <p>FF Tech Website Audit • Real-time • No login required</p>
+  </footer>
+
+  <script>
+    // Theme toggle
+    const toggle = document.getElementById('theme-toggle');
+    const html = document.documentElement;
+    const isDark = () => html.classList.contains('dark');
+    
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      html.classList.add('dark');
+    } else {
+      html.classList.remove('dark');
+    }
+
+    toggle.addEventListener('click', () => {
+      html.classList.toggle('dark');
+      localStorage.theme = isDark() ? 'dark' : 'light';
     });
-  });
-  buttons[0].click(); // Activate first tab by default
-}
 
-function updateProgress(progress, status) {
-  document.getElementById("progressBar").style.width = progress + "%";
-  document.getElementById("progressStatus").innerText = status;
-}
+    // Elements
+    const urlInput     = document.getElementById('url-input');
+    const auditBtn     = document.getElementById('audit-btn');
+    const statusCont   = document.getElementById('status-container');
+    const statusText   = document.getElementById('status-text');
+    const progressBar  = document.getElementById('progress-bar');
+    const progressPct  = document.getElementById('progress-percent');
+    const results      = document.getElementById('results');
+    const errorBox     = document.getElementById('error-message');
+    const errorText    = document.getElementById('error-text');
 
-function renderCards(cards) {
-  const container = document.getElementById("metricCards");
-  container.innerHTML = "";
-  cards.forEach(c => {
-    const div = document.createElement("div");
-    div.className = "bg-white shadow p-4 rounded";
-    div.innerHTML = `<h3 class="font-bold">${c.title}</h3><p class="text-xl">${c.body}</p>`;
-    container.appendChild(div);
-  });
-}
+    let ws = null;
+    let chart = null;
 
-function renderKV(kv) {
-  const container = document.getElementById("kvContainer");
-  container.innerHTML = "";
-  kv.forEach(item => {
-    const div = document.createElement("div");
-    div.className = "bg-white shadow p-2 rounded";
-    div.innerHTML = `<span class="font-semibold">${item.key}:</span> ${item.value}`;
-    container.appendChild(div);
-  });
-}
+    function connectWebSocket() {
+      if (ws) ws.close();
+      ws = new WebSocket(`wss://${location.host}/ws`);
 
-function renderChart(id, data) {
-  if (charts[id]) charts[id].destroy();
-  const ctx = document.getElementById(id + "Chart").getContext("2d");
-  charts[id] = new Chart(ctx, {
-    type: 'bar',
-    data: data,
-    options: { responsive: true, plugins: { legend: { display: true } } }
-  });
-}
+      ws.onopen = () => {
+        statusText.textContent = "Connected • Ready";
+        progressBar.style.width = '0%';
+        progressPct.textContent = '0%';
+      };
 
-function exportPDF() {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  doc.text("Website Audit Report", 10, 10);
-  let y = 20;
-  document.querySelectorAll("#metricCards div").forEach(card => {
-    doc.text(card.innerText, 10, y);
-    y += 10;
-  });
-  // Capture charts as images
-  Object.keys(charts).forEach(key => {
-    const chartCanvas = document.getElementById(key + "Chart");
-    const imgData = chartCanvas.toDataURL("image/png");
-    doc.addPage();
-    doc.addImage(imgData, "PNG", 10, 10, 180, 100);
-  });
-  doc.save("audit-report.pdf");
-}
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
 
-function connectWebSocket(url) {
-  ws = new WebSocket(url);
-  ws.onopen = () => console.log("WebSocket connected");
-  ws.onmessage = evt => {
-    const msg = JSON.parse(evt.data);
-    if (msg.progress !== undefined) updateProgress(msg.progress, msg.status);
-    if (msg.result) {
-      renderCards(msg.result.dynamic.cards);
-      renderKV(msg.result.dynamic.kv);
+          if (data.status === 'connected') {
+            statusText.textContent = "Connected • Ready";
+          }
+          else if (data.status === 'starting') {
+            statusCont.classList.remove('hidden');
+            statusText.textContent = `Analyzing ${data.url || ''}`;
+            progressBar.style.width = '5%';
+            progressPct.textContent = '5%';
+            results.classList.add('hidden');
+            errorBox.classList.add('hidden');
+          }
+          else if (data.status === 'fetching' || data.status === 'parsing' || data.status === 'scoring' || data.status === 'building_output') {
+            statusText.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+            progressBar.style.width = `${data.progress}%`;
+            progressPct.textContent = `${data.progress}%`;
+          }
+          else if (data.status === 'completed' && data.result) {
+            renderResult(data.result);
+            statusText.textContent = "Audit Complete";
+            progressBar.style.width = '100%';
+            progressPct.textContent = '100%';
+            setTimeout(() => statusCont.classList.add('hidden'), 1200);
+          }
+          else if (data.status === 'error') {
+            statusText.textContent = "Error";
+            progressBar.style.width = '100%';
+            progressPct.textContent = '—';
+            errorText.textContent = data.error || "An unknown error occurred.";
+            errorBox.classList.remove('hidden');
+            results.classList.add('hidden');
+          }
+          else if (data.status === 'busy') {
+            statusText.textContent = data.message || "Please wait...";
+          }
+        } catch(e) {
+          console.error("WS parse error", e);
+        }
+      };
 
-      const breakdown = msg.result.breakdown;
-      Object.keys(breakdown).forEach(key => {
-        if (breakdown[key].chart_data) renderChart(key, breakdown[key].chart_data);
+      ws.onclose = () => {
+        statusText.textContent = "Disconnected • Reconnecting...";
+        setTimeout(connectWebSocket, 2000);
+      };
+    }
+
+    function sendAudit() {
+      const val = urlInput.value.trim();
+      if (!val) return;
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ url: val }));
+      } else {
+        alert("Not connected to server. Please refresh.");
+      }
+    }
+
+    auditBtn.addEventListener('click', sendAudit);
+    urlInput.addEventListener('keypress', e => {
+      if (e.key === 'Enter') sendAudit();
+    });
+
+    function renderResult(r) {
+      results.classList.remove('hidden');
+      errorBox.classList.add('hidden');
+
+      document.getElementById('audited-url').textContent = r.audited_url;
+      document.getElementById('overall-score').textContent = r.overall_score;
+      document.getElementById('grade').textContent = r.grade;
+
+      // Circle gradient
+      document.getElementById('score-circle').style.setProperty('--score', r.overall_score + '%');
+
+      // Breakdown
+      const cat = r.breakdown;
+      document.getElementById('seo-score').textContent  = cat.seo.score;
+      document.getElementById('perf-score').textContent = cat.performance.score;
+      document.getElementById('links-score').textContent = cat.links.score;
+      document.getElementById('sec-score').textContent  = cat.security.score;
+
+      // SEO extras
+      const seoEx = document.getElementById('seo-extras');
+      seoEx.innerHTML = `
+        <div><strong>Title:</strong> ${cat.seo.extras.title || '—'}</div>
+        <div><strong>Meta Description:</strong> ${cat.seo.extras.meta_description_present ? 'Yes' : 'No'}</div>
+        <div><strong>Canonical:</strong> ${cat.seo.extras.canonical || '—'}</div>
+        <div><strong>H1 tags:</strong> ${cat.seo.extras.h1_count}</div>
+        <div><strong>Images missing alt:</strong> ${cat.seo.extras.images_missing_alt} / ${cat.seo.extras.images_total}</div>
+      `;
+
+      // Performance
+      const perfEx = document.getElementById('perf-extras');
+      perfEx.innerHTML = `
+        <div><strong>Load time:</strong> ${cat.performance.extras.load_ms} ms</div>
+        <div><strong>Size:</strong> ${(cat.performance.extras.bytes / 1024).toFixed(1)} KB</div>
+        <div><strong>Scripts:</strong> ${cat.performance.extras.scripts}</div>
+        <div><strong>Stylesheets:</strong> ${cat.performance.extras.styles}</div>
+      `;
+
+      // Links
+      const linksEx = document.getElementById('links-extras');
+      linksEx.innerHTML = `
+        <div><strong>Internal:</strong> ${cat.links.internal_links_count}</div>
+        <div><strong>External:</strong> ${cat.links.external_links_count}</div>
+        <div><strong>Total:</strong> ${cat.links.total_links_count}</div>
+      `;
+
+      // Security
+      const secEx = document.getElementById('sec-extras');
+      secEx.innerHTML = `
+        <div><strong>HTTPS:</strong> ${cat.security.https ? 'Yes' : 'No'}</div>
+        <div><strong>HSTS:</strong> ${cat.security.hsts ? 'Yes' : 'No'}</div>
+        <div><strong>Status:</strong> ${cat.security.status_code}</div>
+        <div><strong>Server:</strong> ${cat.security.server || '—'}</div>
+      `;
+
+      // Dynamic cards
+      const cardsCont = document.getElementById('dynamic-cards');
+      cardsCont.innerHTML = '';
+      r.dynamic.cards.forEach(c => {
+        const el = document.createElement('div');
+        el.className = "bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6";
+        el.innerHTML = `
+          <h4 class="font-semibold text-gray-800 dark:text-gray-200 mb-2">${c.title}</h4>
+          <p class="text-2xl font-bold text-gray-900 dark:text-white">${c.body}</p>
+        `;
+        cardsCont.appendChild(el);
+      });
+
+      // KV list
+      const kvList = document.getElementById('kv-list');
+      kvList.innerHTML = '';
+      r.dynamic.kv.forEach(item => {
+        const div = document.createElement('div');
+        div.className = "px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition";
+        div.innerHTML = `
+          <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">${item.key.replace(/_/g,' ')}</dt>
+          <dd class="mt-1 text-sm text-gray-900 dark:text-gray-200 sm:col-span-2 sm:mt-0 font-mono">${item.value}</dd>
+        `;
+        kvList.appendChild(div);
+      });
+
+      // Chart
+      if (chart) chart.destroy();
+      const ctx = document.getElementById('scoreChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: r.chart_data[0].data,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: 'rgba(100,116,139,0.1)' } },
+            x: { grid: { display: false } }
+          }
+        }
       });
     }
-  };
-  ws.onclose = () => console.log("WebSocket closed");
-}
 
-document.getElementById("auditBtn").addEventListener("click", () => {
-  const url = document.getElementById("urlInput").value;
-  if (!url) return alert("Enter a URL");
-  updateProgress(0, "Connecting...");
-  connectWebSocket(`ws://${location.host}/ws`);
-  ws.onopen = () => ws.send(JSON.stringify({ url }));
-});
-
-document.getElementById("exportPdfBtn").addEventListener("click", exportPDF);
-
-initTabs();
-</script>
-
+    // Auto connect
+    connectWebSocket();
+  </script>
 </body>
 </html>
