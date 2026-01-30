@@ -4,15 +4,22 @@ from __future__ import annotations
 import os
 import time
 import logging
-from typing import Optional, Dict, Any
+from pathlib import Path
+from typing import Any, Dict
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+
+try:
+    # Optional dependency (FastAPI usually has it)
+    from fastapi.staticfiles import StaticFiles
+except Exception:  # pragma: no cover
+    StaticFiles = None  # type: ignore
 
 
 # -----------------------------------------------------------------------------
-# Logging (simple, container-friendly)
+# Logging (container-friendly)
 # -----------------------------------------------------------------------------
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -23,36 +30,50 @@ logger = logging.getLogger("app")
 
 
 # -----------------------------------------------------------------------------
-# Lightweight config (no extra dependency required)
+# Simple settings (env-based; replace with pydantic-settings later if desired)
 # -----------------------------------------------------------------------------
 class Settings:
-    """
-    Flexible settings using env vars.
-    You can later replace this with pydantic-settings if you want.
-    """
     APP_NAME: str = os.getenv("APP_NAME", "FFTech Audit API")
     APP_VERSION: str = os.getenv("APP_VERSION", "1.0.0")
     ENV: str = os.getenv("ENV", "production")  # dev/staging/production
     DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes", "on")
 
+    # Docs exposure
+    ENABLE_DOCS: bool = os.getenv("ENABLE_DOCS", "true").lower() in ("1", "true", "yes", "on")
+
+    # When behind reverse proxy subpath
+    ROOT_PATH: str = os.getenv("ROOT_PATH", "")
+
     # CORS
     CORS_ALLOW_ORIGINS: str = os.getenv("CORS_ALLOW_ORIGINS", "*")  # comma-separated
 
-    # OpenAPI docs toggles (recommended to disable in production if needed)
-    ENABLE_DOCS: bool = os.getenv("ENABLE_DOCS", "true").lower() in ("1", "true", "yes", "on")
-
-    # API base path (helps when running behind reverse proxy)
-    ROOT_PATH: str = os.getenv("ROOT_PATH", "")
+    # API prefix
+    API_PREFIX: str = os.getenv("API_PREFIX", "/api")
+    API_VERSION_PREFIX: str = os.getenv("API_VERSION_PREFIX", "/v1")
 
     # Feature flags
     ENABLE_AUDIT_ROUTES: bool = os.getenv("ENABLE_AUDIT_ROUTES", "true").lower() in ("1", "true", "yes", "on")
+
+    # Static directory
+    STATIC_DIR: str = os.getenv("STATIC_DIR", "app/static")
 
 
 settings = Settings()
 
 
 # -----------------------------------------------------------------------------
-# Application factory (very flexible, testable, avoids circular imports)
+# Helpers
+# -----------------------------------------------------------------------------
+def _truthy(value: Any) -> bool:
+    return str(value).lower() in ("1", "true", "yes", "on")
+
+
+def _split_csv(value: str) -> list[str]:
+    return [x.strip() for x in (value or "").split(",") if x.strip()]
+
+
+# -----------------------------------------------------------------------------
+# App factory (flexible + avoids circular import issues)
 # -----------------------------------------------------------------------------
 def create_app() -> FastAPI:
     docs_url = "/docs" if settings.ENABLE_DOCS else None
@@ -70,10 +91,10 @@ def create_app() -> FastAPI:
     )
 
     # --------------------------
-    # Middleware: CORS
+    # CORS
     # --------------------------
-    origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
-    if origins == ["*"]:
+    origins = _split_csv(settings.CORS_ALLOW_ORIGINS)
+    if not origins or origins == ["*"]:
         allow_origins = ["*"]
     else:
         allow_origins = origins
@@ -93,26 +114,11 @@ def create_app() -> FastAPI:
     async def add_timing_header(request: Request, call_next):
         start = time.time()
         response = await call_next(request)
-        duration_ms = int((time.time() - start) * 1000)
-        response.headers["X-Process-Time-ms"] = str(duration_ms)
+        response.headers["X-Process-Time-ms"] = str(int((time.time() - start) * 1000))
         return response
 
     # --------------------------
-    # Lifecycle events (startup/shutdown)
-    # --------------------------
-    @app.on_event("startup")
-    async def on_startup():
-        logger.info("Starting %s v%s (ENV=%s)", settings.APP_NAME, settings.APP_VERSION, settings.ENV)
-        # Example: init DB connections, load models, warm caches, etc.
-        # Keep it light; avoid importing heavy modules at file import-time.
-
-    @app.on_event("shutdown")
-    async def on_shutdown():
-        logger.info("Shutting down %s", settings.APP_NAME)
-        # Example: close DB connections, cleanup resources
-
-    # --------------------------
-    # Global exception handlers
+    # Global exception handler
     # --------------------------
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -126,49 +132,92 @@ def create_app() -> FastAPI:
         )
 
     # --------------------------
-    # Health endpoints (great for Docker/K8s)
+    # Lifecycle events
     # --------------------------
+    @app.on_event("startup")
+    async def on_startup():
+        logger.info("Starting %s v%s (ENV=%s)", settings.APP_NAME, settings.APP_VERSION, settings.ENV)
+
+        # Mount static files if directory exists and StaticFiles is available
+        static_dir = Path(settings.STATIC_DIR)
+        if StaticFiles is not None and static_dir.exists() and static_dir.is_dir():
+            app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+            logger.info("Static mounted: /static -> %s", static_dir)
+
+        # Lazy-load routers safely (prevents circular import & startup crashes)
+        _include_routers(app)
+
+    @app.on_event("shutdown")
+    async def on_shutdown():
+        logger.info("Shutting down %s", settings.APP_NAME)
+
+    # --------------------------
+    # System endpoints
+    # --------------------------
+    @app.get("/", tags=["system"])
+    async def root():
+        return {
+            "message": f"Welcome to {settings.APP_NAME}",
+            "version": settings.APP_VERSION,
+            "docs": "/docs" if settings.ENABLE_DOCS else None,
+            "health": "/health",
+            "ready": "/ready",
+        }
+
     @app.get("/health", tags=["system"])
     async def health():
         return {"status": "ok", "service": settings.APP_NAME, "version": settings.APP_VERSION}
 
     @app.get("/ready", tags=["system"])
     async def ready():
-        # Add checks here (db reachable, external deps, etc.)
+        # Add real checks here later (db ping, redis, etc.)
         return {"status": "ready"}
 
     # --------------------------
-    # Routes / Routers (lazy import to prevent circular imports)
+    # Favicon handler (prevents browser 404 noise)
     # --------------------------
-    if settings.ENABLE_AUDIT_ROUTES:
-        try:
-            # Import routers only after app creation to avoid circular import issues.
-            # Example: from app.routes.audit import router as audit_router
-            # app.include_router(audit_router, prefix="/api/v1", tags=["audit"])
-
-            # If you don't have routers yet, keep this placeholder.
-            logger.info("Audit routes enabled (ENABLE_AUDIT_ROUTES=true)")
-
-        except Exception as e:
-            logger.exception("Failed to load routes: %s", e)
-            # Don't crash the whole app if routes fail in production
-            # but you may choose to raise e in strict environments.
-
-    # --------------------------
-    # Simple root route
-    # --------------------------
-    @app.get("/", tags=["system"])
-    async def root():
-        return {
-            "message": f"Welcome to {settings.APP_NAME}",
-            "docs": "/docs" if settings.ENABLE_DOCS else None,
-            "health": "/health",
-        }
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        """
+        If app/static/favicon.ico exists -> serve it.
+        Otherwise return 204 (No Content) to avoid 404 log noise.
+        """
+        ico = Path(settings.STATIC_DIR) / "favicon.ico"
+        if ico.exists():
+            return FileResponse(str(ico))
+        return Response(status_code=204)
 
     return app
 
 
+def _include_routers(app: FastAPI) -> None:
+    """
+    Router loader. Keeps main.py stable even if modules aren't present yet.
+    Add your routers here as your project grows.
+
+    IMPORTANT: We import inside the function to avoid circular imports.
+    """
+    api_prefix = settings.API_PREFIX + settings.API_VERSION_PREFIX
+
+    if settings.ENABLE_AUDIT_ROUTES:
+        try:
+            # Example structure (recommended):
+            # app/routes/audit.py -> router = APIRouter()
+            # from app.routes.audit import router as audit_router
+
+            from app.routes.audit import router as audit_router  # type: ignore
+
+            app.include_router(audit_router, prefix=api_prefix, tags=["audit"])
+            logger.info("Audit routes loaded at %s", api_prefix)
+        except ModuleNotFoundError:
+            # Routes module not created yet — not an error.
+            logger.info("Audit routes enabled (ENABLE_AUDIT_ROUTES=true) but app.routes.audit not found (skipping).")
+        except Exception as e:
+            # You can raise here if you want strict behavior
+            logger.exception("Failed to load audit routes: %s", e)
+
+
 # -----------------------------------------------------------------------------
-# ASGI entrypoint: Uvicorn expects `app` here
+# ASGI entrypoint (Uvicorn expects `app`)
 # -----------------------------------------------------------------------------
 app = create_app()
