@@ -5,13 +5,15 @@ app/main.py
 FastAPI entrypoint
 - WebSocket-powered website audit
 - Streams progress + results from WebsiteAuditRunner
-- Compatible with index.html dashboard & PDF export
+- Serves premium index.html UI (static) + PDF export (optional)
 
 Endpoints:
   GET  /health
-  WS   /ws
-  POST /api/audit
-  POST /api/audit/pdf
+  GET  /                 -> serves app/static/index.html
+  GET  /static/*         -> static assets
+  WS   /ws               -> live streaming progress
+  POST /api/audit        -> JSON result
+  POST /api/audit/pdf    -> PDF download
 """
 
 from __future__ import annotations
@@ -22,9 +24,10 @@ import tempfile
 import datetime as _dt
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
 
@@ -40,7 +43,7 @@ app = FastAPI(
 
 
 # --------------------------------------------------
-# CORS (safe default, Railway compatible)
+# CORS (safe default)
 # --------------------------------------------------
 cors_origins = os.getenv("CORS_ORIGINS", "*").strip()
 allow_origins = ["*"] if cors_origins == "*" else [
@@ -57,6 +60,17 @@ app.add_middleware(
 
 
 # --------------------------------------------------
+# Static UI hosting
+# --------------------------------------------------
+STATIC_DIR = os.getenv("STATIC_DIR", "app/static")
+INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
+
+# Mount /static if directory exists (Railway-friendly)
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# --------------------------------------------------
 # Health Check (Railway / LB friendly)
 # --------------------------------------------------
 @app.get("/health")
@@ -65,7 +79,29 @@ async def health():
 
 
 # --------------------------------------------------
-# Helpers (unchanged behavior)
+# Root UI (serves your real index.html)
+# --------------------------------------------------
+@app.get("/")
+async def index():
+    if os.path.isfile(INDEX_PATH):
+        return FileResponse(INDEX_PATH)
+    # fallback message if index.html not found
+    return HTMLResponse(
+        """
+        <h2>FF Tech Website Audit API</h2>
+        <p><strong>UI not found.</strong> Put your dashboard at <code>app/static/index.html</code></p>
+        <ul>
+          <li>WebSocket: <code>/ws</code></li>
+          <li>REST audit: <code>POST /api/audit</code></li>
+          <li>PDF export: <code>POST /api/audit/pdf</code></li>
+        </ul>
+        """,
+        status_code=200,
+    )
+
+
+# --------------------------------------------------
+# Helpers
 # --------------------------------------------------
 def _safe_filename(s: str, default: str = "audit") -> str:
     s = (s or "").strip()
@@ -77,11 +113,31 @@ def _today_stamp() -> str:
     return _dt.date.today().isoformat()
 
 
+def _cleanup_file(path: str) -> None:
+    """Best-effort temp file cleanup (PDF)."""
+    try:
+        if path and os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
 # --------------------------------------------------
 # WebSocket Audit Endpoint
 # --------------------------------------------------
 @app.websocket("/ws")
 async def websocket_audit(ws: WebSocket):
+    """
+    Expects first message:
+      {"url": "https://example.com"}
+
+    Streams:
+      {"progress": 15, "status": "fetching"}
+      {"progress": 60, "status": "scoring"}
+      {"progress": 100, "status": "completed", "payload": {...result...}}
+
+    Note: runner calls progress_cb("completed", 100, result), so final result usually arrives in payload.
+    """
     await ws.accept()
     completed_sent = False
 
@@ -90,44 +146,27 @@ async def websocket_audit(ws: WebSocket):
         url = (payload.get("url") or "").strip()
 
         if not url:
-            await ws.send_json({
-                "progress": 100,
-                "status": "error",
-                "error": "URL is required",
-            })
+            await ws.send_json({"progress": 100, "status": "error", "error": "URL is required"})
             await ws.close()
             return
 
         runner = WebsiteAuditRunner()
 
-        async def progress_cb(
-            status: str,
-            percent: int,
-            data: Optional[Dict[str, Any]] = None
-        ):
+        async def progress_cb(status: str, percent: int, data: Optional[Dict[str, Any]] = None):
             nonlocal completed_sent
-
-            message: Dict[str, Any] = {
-                "progress": int(percent),
-                "status": status,
-            }
-
+            message: Dict[str, Any] = {"progress": int(percent), "status": status}
             if data is not None:
                 message["payload"] = data
-
             await ws.send_json(message)
-
             if status == "completed":
                 completed_sent = True
 
+        # Run audit (streams progress)
         result = await runner.run(url, progress_cb=progress_cb)
 
+        # Safety fallback: if runner didn't send completed payload, send final result
         if not completed_sent:
-            await ws.send_json({
-                "progress": 100,
-                "status": "completed",
-                "result": result,
-            })
+            await ws.send_json({"progress": 100, "status": "completed", "result": result})
 
         await ws.close()
 
@@ -135,11 +174,7 @@ async def websocket_audit(ws: WebSocket):
         return
     except Exception as e:
         try:
-            await ws.send_json({
-                "progress": 100,
-                "status": "error",
-                "error": str(e),
-            })
+            await ws.send_json({"progress": 100, "status": "error", "error": str(e)})
             await ws.close()
         except Exception:
             pass
@@ -153,6 +188,9 @@ async def api_audit(payload: Dict[str, Any]):
     """
     JSON API:
       { "url": "https://example.com" }
+
+    Returns runner output with stable keys:
+      audited_url, overall_score, grade, breakdown, chart_data, dynamic
     """
     url = (payload.get("url") or "").strip()
     if not url:
@@ -167,16 +205,20 @@ async def api_audit(payload: Dict[str, Any]):
 # REST: Generate PDF
 # --------------------------------------------------
 @app.post("/api/audit/pdf")
-async def api_audit_pdf(payload: Dict[str, Any]):
+async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
+    """
+    Expects:
+      { "url": "https://example.com", "client_name": "...", "brand_name": "...", ... }
+
+    Returns: PDF download
+    """
     url = (payload.get("url") or "").strip()
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
 
     client_name = (payload.get("client_name") or "").strip() or os.getenv("PDF_CLIENT_NAME", "N/A")
     brand_name = (payload.get("brand_name") or "").strip() or os.getenv("PDF_BRAND_NAME", "FF Tech")
-    report_title = (payload.get("report_title") or "").strip() or os.getenv(
-        "PDF_REPORT_TITLE", "Website Audit Report"
-    )
+    report_title = (payload.get("report_title") or "").strip() or os.getenv("PDF_REPORT_TITLE", "Website Audit Report")
     website_name = (payload.get("website_name") or "").strip() or None
     logo_path = (payload.get("logo_path") or "").strip() or os.getenv("PDF_LOGO_PATH") or None
 
@@ -199,25 +241,16 @@ async def api_audit_pdf(payload: Dict[str, Any]):
             website_name=website_name,
         )
     except RuntimeError as e:
+        # Most commonly: reportlab not installed
         raise HTTPException(status_code=501, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
+
+    # cleanup after response is sent
+    background.add_task(_cleanup_file, out_path)
 
     return FileResponse(
         out_path,
         media_type="application/pdf",
         filename=filename,
     )
-
-
-# --------------------------------------------------
-# Simple root UI (unchanged)
-# --------------------------------------------------
-@app.get("/")
-async def index():
-    return HTMLResponse("""
-    <h2>FF Tech Website Audit API</h2>
-    <p>WebSocket endpoint: <code>/ws</code></p>
-    <p>REST audit endpoint: <code>POST /api/audit</code></p>
-    <p>PDF export endpoint: <code>POST /api/audit/pdf</code></p>
-    """)
