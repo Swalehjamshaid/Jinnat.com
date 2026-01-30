@@ -1,532 +1,1133 @@
 <!doctype html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>FF Tech — Website Audit Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FF Tech — Website Audit</title>
+  <meta name="description" content="WebSocket-powered website audit dashboard with PDF export." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- Bootstrap 5 -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-    :root {
-      --card-glow: rgba(56, 189, 248, .15);
+    :root{
+      --bg0:#070A14;
+      --bg1:#0B1022;
+      --card: rgba(255,255,255,0.06);
+      --card2: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.10);
+      --text:#EAF0FF;
+      --muted: rgba(234,240,255,.72);
+      --muted2: rgba(234,240,255,.52);
+      --accent:#7C3AED;   /* purple */
+      --accent2:#06B6D4;  /* cyan */
+      --good:#22C55E;
+      --warn:#FBBF24;
+      --bad:#EF4444;
+      --shadow: 0 20px 60px rgba(0,0,0,.45);
+      --glow: 0 0 60px rgba(124,58,237,.28);
+      --radius: 18px;
     }
-    body {
-      background: radial-gradient(1200px 700px at 10% 10%, rgba(34,197,94,.10), transparent 55%),
-                  radial-gradient(1200px 700px at 90% 20%, rgba(56,189,248,.12), transparent 50%),
-                  radial-gradient(900px 600px at 50% 90%, rgba(244,63,94,.10), transparent 50%);
+
+    html[data-theme="light"]{
+      --bg0:#F6F7FB;
+      --bg1:#FFFFFF;
+      --card: rgba(15,23,42,0.05);
+      --card2: rgba(15,23,42,0.07);
+      --border: rgba(15,23,42,0.10);
+      --text:#0B1221;
+      --muted: rgba(11,18,33,.72);
+      --muted2: rgba(11,18,33,.52);
+      --shadow: 0 18px 50px rgba(10,20,40,.12);
+      --glow: 0 0 60px rgba(6,182,212,.18);
+    }
+
+    body{
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 20% 0%, rgba(124,58,237,.25), transparent 55%),
+        radial-gradient(900px 500px at 90% 10%, rgba(6,182,212,.22), transparent 55%),
+        radial-gradient(800px 500px at 60% 100%, rgba(34,197,94,.12), transparent 55%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
       min-height: 100vh;
+      overflow-x: hidden;
     }
-    .glass {
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(255,255,255,.12);
+
+    /* Subtle grid */
+    body:before{
+      content:"";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(to right, rgba(255,255,255,.06) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,.06) 1px, transparent 1px);
+      background-size: 56px 56px;
+      opacity: .08;
+      pointer-events:none;
+      mask-image: radial-gradient(circle at 30% 15%, black 0%, transparent 60%);
+    }
+    html[data-theme="light"] body:before{
+      opacity:.22;
+      mask-image: radial-gradient(circle at 30% 10%, black 0%, transparent 58%);
+    }
+
+    .glass{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
       backdrop-filter: blur(12px);
-      box-shadow: 0 10px 35px rgba(0,0,0,.35);
-      border-radius: 16px;
+      -webkit-backdrop-filter: blur(12px);
     }
-    .metric {
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,.12);
+
+    .glass-soft{
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      backdrop-filter: blur(10px);
+    }
+
+    .pill{
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .brand-dot{
+      width: 10px; height: 10px; border-radius: 99px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: var(--glow);
+    }
+
+    .btn-neo{
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: linear-gradient(135deg, rgba(124,58,237,.22), rgba(6,182,212,.14));
+      color: var(--text);
+      padding: 10px 14px;
+      transition: transform .12s ease, box-shadow .2s ease, background .2s ease;
+    }
+    .btn-neo:hover{
+      transform: translateY(-1px);
+      box-shadow: 0 14px 40px rgba(0,0,0,.25), var(--glow);
+      color: var(--text);
+    }
+    .btn-neo:disabled{
+      opacity:.55;
+      transform:none;
+      box-shadow:none;
+    }
+
+    .btn-ghost{
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 10px 14px;
+    }
+
+    .headline{
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+    }
+
+    .subtle{
+      color: var(--muted);
+    }
+
+    .muted2{ color: var(--muted2); }
+
+    .hr-soft{
+      height: 1px; background: var(--border); border: 0;
+      margin: 18px 0;
+    }
+
+    .progress{
+      height: 10px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .progress-bar{
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+    }
+
+    .score-badge{
+      font-weight: 800;
+      font-size: 44px;
+      letter-spacing: -0.04em;
+      line-height: 1;
+    }
+
+    .grade-badge{
+      font-weight: 800;
+      font-size: 18px;
+      padding: 8px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+    }
+
+    .chip{
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--muted);
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .dot{
+      width: 8px; height: 8px; border-radius: 99px;
+      display:inline-block;
+    }
+
+    .dot.good{ background: var(--good); }
+    .dot.warn{ background: var(--warn); }
+    .dot.bad{  background: var(--bad);  }
+
+    .table{
+      --bs-table-bg: transparent;
+      --bs-table-color: var(--text);
+      --bs-table-border-color: var(--border);
+    }
+    .table td, .table th{
+      padding: 12px 12px;
+      vertical-align: middle;
+    }
+    .table thead th{
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-tabs{
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-tabs .nav-link{
+      color: var(--muted);
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      padding: 10px 12px;
+      font-weight: 600;
+    }
+    .nav-tabs .nav-link.active{
+      color: var(--text);
+      background: transparent;
+      border-bottom-color: rgba(124,58,237,.75);
+    }
+
+    .skeleton{
+      position: relative;
+      overflow: hidden;
       background: rgba(255,255,255,.06);
-      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      border: 1px solid var(--border);
+      border-radius: 14px;
     }
-    .metric:hover {
-      box-shadow: 0 15px 45px rgba(0,0,0,.35), 0 0 0 6px var(--card-glow);
-      transform: translateY(-2px);
-      transition: .18s ease;
+    .skeleton:after{
+      content:"";
+      position:absolute; inset:0;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent);
+      animation: shimmer 1.4s infinite;
     }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    pre {
-      max-height: 360px;
-      overflow: auto;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,.12);
-      background: rgba(0,0,0,.35);
-      padding: 12px;
+    @keyframes shimmer { 100% { transform: translateX(100%); } }
+
+    .toast-container{
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 9999;
     }
-    .badge-soft {
-      background: rgba(56,189,248,.15);
-      border: 1px solid rgba(56,189,248,.35);
-      color: #9ee7ff;
+
+    .kbd{
+      font-size: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 4px 8px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.04);
     }
-    .btn-glow {
-      box-shadow: 0 10px 25px rgba(56,189,248,.15);
+
+    .footer-note{
+      color: var(--muted2);
+      font-size: 12px;
     }
-    .status-dot {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      display: inline-block;
-      margin-right: 8px;
-      background: #6c757d;
-    }
-    .status-dot.running { background: #38bdf8; }
-    .status-dot.ok { background: #22c55e; }
-    .status-dot.err { background: #ef4444; }
   </style>
 </head>
 
 <body>
-  <!-- Top Bar -->
-  <nav class="navbar navbar-expand-lg px-3 py-3">
-    <div class="container-fluid">
+  <div class="container py-4 py-lg-5">
+    <!-- Top Bar -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <div class="d-flex align-items-center gap-3">
+        <div class="brand-dot"></div>
+        <div>
+          <div class="fw-bold" style="letter-spacing:-0.02em;">FF Tech Website Audit</div>
+          <div class="small subtle">WebSocket live scan • PDF export • Premium dashboard</div>
+        </div>
+      </div>
+
       <div class="d-flex align-items-center gap-2">
-        <span class="badge badge-soft rounded-pill px-3 py-2">FF Tech</span>
-        <span class="fw-semibold">Website Audit Dashboard</span>
-      </div>
-
-      <div class="d-flex align-items-center gap-2">
-        <button id="themeBtn" class="btn btn-outline-secondary btn-sm">Toggle Theme</button>
-        <a class="btn btn-outline-secondary btn-sm" href="/health" target="_blank">Health</a>
-      </div>
-    </div>
-  </nav>
-
-  <main class="container pb-5">
-    <!-- Controls -->
-    <div class="glass p-4 mb-4">
-      <div class="row g-3 align-items-end">
-        <div class="col-12 col-lg-7">
-          <label class="form-label">Website URL</label>
-          <input id="urlInput" class="form-control form-control-lg"
-                 placeholder="example.com or https://example.com" />
-          <div class="form-text">Tip: you can enter without https:// — runner normalizes it.</div>
-        </div>
-        <div class="col-12 col-lg-5 d-flex gap-2">
-          <button id="startBtn" class="btn btn-primary btn-lg flex-grow-1 btn-glow">
-            Start Audit
-          </button>
-          <button id="stopBtn" class="btn btn-outline-danger btn-lg" disabled>
-            Stop
-          </button>
-        </div>
-      </div>
-
-      <hr class="my-4"/>
-
-      <!-- Status + Progress -->
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-        <div class="d-flex align-items-center">
-          <span id="statusDot" class="status-dot"></span>
-          <div>
-            <div class="small text-secondary">Status</div>
-            <div id="statusText" class="fw-semibold">Idle</div>
-          </div>
-        </div>
-
-        <div class="flex-grow-1">
-          <div class="d-flex justify-content-between small text-secondary mb-1">
-            <span>Progress</span>
-            <span id="progressPct">0%</span>
-          </div>
-          <div class="progress" style="height: 12px;">
-            <div id="progressBar" class="progress-bar progress-bar-striped" style="width:0%"></div>
-          </div>
-        </div>
-
-        <div class="d-flex gap-2">
-          <button id="downloadJsonBtn" class="btn btn-outline-success" disabled>Download JSON</button>
-          <button id="copyJsonBtn" class="btn btn-outline-secondary" disabled>Copy JSON</button>
-        </div>
+        <span class="chip d-none d-md-inline-flex">
+          <span class="dot good"></span><span>Runner: stable keys</span>
+        </span>
+        <button id="themeBtn" class="btn btn-ghost" type="button" title="Toggle theme">
+          <span id="themeIcon">🌙</span> <span class="d-none d-sm-inline">Theme</span>
+        </button>
       </div>
     </div>
 
-    <!-- Summary row -->
-    <div class="row g-3 mb-4">
-      <div class="col-12 col-lg-4">
-        <div class="metric p-4 h-100">
-          <div class="text-secondary small">Audited URL</div>
-          <div id="auditedUrl" class="fw-semibold mt-1">—</div>
-        </div>
-      </div>
-      <div class="col-12 col-lg-4">
-        <div class="metric p-4 h-100">
-          <div class="text-secondary small">Overall Score</div>
-          <div class="display-6 fw-bold mt-1" id="overallScore">—</div>
-        </div>
-      </div>
-      <div class="col-12 col-lg-4">
-        <div class="metric p-4 h-100">
-          <div class="text-secondary small">Grade</div>
-          <div class="display-6 fw-bold mt-1" id="grade">—</div>
-        </div>
-      </div>
-    </div>
+    <!-- Hero -->
+    <div class="glass p-4 p-lg-5 mb-4">
+      <div class="row g-4 align-items-center">
+        <div class="col-lg-7">
+          <h1 class="headline fw-extrabold mb-2">
+            Audit any website in seconds — <span style="color:var(--accent2)">beautifully</span>.
+          </h1>
+          <p class="subtle mb-4">
+            Get SEO, Performance, Links & Security scores with live progress streaming and instant PDF report.
+          </p>
 
-    <!-- Breakdown cards -->
-    <div class="glass p-4 mb-4">
-      <div class="d-flex align-items-center justify-content-between mb-3">
-        <h5 class="mb-0">Breakdown</h5>
-        <span class="text-secondary small">SEO • Performance • Links • Security</span>
-      </div>
+          <div class="row g-2">
+            <div class="col-12 col-md-8">
+              <div class="pill d-flex align-items-center gap-2">
+                <span class="kbd">URL</span>
+                <input id="urlInput" class="form-control bg-transparent border-0 text-white"
+                       style="color:var(--text)!important; box-shadow:none;"
+                       placeholder="example.com or https://example.com" />
+              </div>
+            </div>
 
-      <div class="row g-3" id="breakdownCards">
-        <!-- injected -->
-      </div>
-    </div>
-
-    <!-- Chart + Dynamic -->
-    <div class="row g-3 mb-4">
-      <div class="col-12 col-lg-7">
-        <div class="glass p-4 h-100">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0">Charts</h5>
-            <span class="text-secondary small">Chart.js from result.chart_data</span>
-          </div>
-          <canvas id="scoreChart" height="120"></canvas>
-          <div id="chartHint" class="text-secondary small mt-3">No chart yet.</div>
-        </div>
-      </div>
-
-      <div class="col-12 col-lg-5">
-        <div class="glass p-4 h-100">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0">Highlights</h5>
-            <span class="text-secondary small">From result.dynamic</span>
-          </div>
-
-          <div id="dynamicCards" class="d-grid gap-2 mb-3"></div>
-
-          <div class="border-top pt-3">
-            <div class="text-secondary small mb-2">Key Values</div>
-            <div class="table-responsive">
-              <table class="table table-sm table-hover align-middle mb-0">
-                <tbody id="dynamicKv"></tbody>
-              </table>
+            <div class="col-12 col-md-4">
+              <div class="d-grid d-sm-flex gap-2">
+                <button id="startBtn" class="btn btn-neo w-100" type="button">
+                  <span class="me-1">✨</span> Start Audit
+                </button>
+                <button id="stopBtn" class="btn btn-ghost w-100" type="button" disabled>
+                  Stop
+                </button>
+              </div>
             </div>
           </div>
 
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <span class="chip"><span class="dot warn"></span> SEO: title/meta/h1/canonical/alt</span>
+            <span class="chip"><span class="dot good"></span> Perf: load/bytes/scripts/styles</span>
+            <span class="chip"><span class="dot bad"></span> Security: https/hsts/status</span>
+          </div>
+
+          <hr class="hr-soft" />
+
+          <!-- Progress -->
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div>
+              <div class="fw-semibold">Live Progress</div>
+              <div id="statusText" class="small subtle">Waiting to start…</div>
+            </div>
+            <div class="text-end">
+              <div id="progressPct" class="fw-bold">0%</div>
+              <div id="wsState" class="small muted2">Socket: idle</div>
+            </div>
+          </div>
+
+          <div class="progress">
+            <div id="progressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
+          </div>
+        </div>
+
+        <div class="col-lg-5">
+          <!-- Summary Panel -->
+          <div class="glass-soft p-4">
+            <div class="d-flex align-items-start justify-content-between">
+              <div>
+                <div class="small subtle">Overall Score</div>
+                <div class="score-badge" id="scoreBig">—</div>
+              </div>
+              <div class="text-end">
+                <div class="small subtle">Grade</div>
+                <div class="grade-badge" id="gradeBadge">—</div>
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <div class="small subtle mb-2">Audit Target</div>
+              <div class="fw-semibold" id="auditedUrl">—</div>
+              <div class="small muted2 mt-1" id="metaLine">Ready when you are.</div>
+            </div>
+
+            <hr class="hr-soft" />
+
+            <div class="row g-3">
+              <div class="col-6">
+                <div class="small subtle">Donut (Overall)</div>
+                <div class="glass-soft p-2">
+                  <canvas id="donutChart" height="180"></canvas>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="small subtle">Export</div>
+                <div class="d-grid gap-2">
+                  <input id="clientInput" class="form-control"
+                         style="background:rgba(255,255,255,0.04); border:1px solid var(--border); color:var(--text);"
+                         placeholder="Client name (optional)">
+                  <input id="brandInput" class="form-control"
+                         style="background:rgba(255,255,255,0.04); border:1px solid var(--border); color:var(--text);"
+                         placeholder="Brand name (optional)">
+                  <button id="pdfBtn" class="btn btn-neo" type="button" disabled>
+                    ⬇️ Download PDF
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Raw JSON -->
-    <div class="glass p-4">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">Raw Result JSON</h5>
-        <span class="text-secondary small mono">result (from runner.run)</span>
-      </div>
-      <pre id="rawJson" class="mono">—</pre>
-    </div>
-  </main>
+    <!-- Main Results -->
+    <div class="row g-4">
+      <!-- Left: Chart + Category cards -->
+      <div class="col-lg-8">
+        <div class="glass p-4 mb-4">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div>
+              <div class="fw-bold">Score Breakdown</div>
+              <div class="small subtle">Chart.js-ready data from <code>chart_data</code></div>
+            </div>
+            <span class="chip"><span class="dot good"></span> Real-time updates</span>
+          </div>
 
+          <div class="glass-soft p-3">
+            <canvas id="barChart" height="120"></canvas>
+          </div>
+        </div>
+
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="glass p-4 h-100">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="fw-bold">SEO</div>
+                <span id="seoScore" class="chip">—</span>
+              </div>
+              <div class="small subtle mt-1">Title, meta description, canonical, headings, image ALT.</div>
+              <hr class="hr-soft" />
+              <div id="seoExtras" class="small muted2">—</div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="glass p-4 h-100">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="fw-bold">Performance</div>
+                <span id="perfScore" class="chip">—</span>
+              </div>
+              <div class="small subtle mt-1">Load time, page size, scripts & styles.</div>
+              <hr class="hr-soft" />
+              <div id="perfExtras" class="small muted2">—</div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="glass p-4 h-100">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="fw-bold">Links</div>
+                <span id="linkScore" class="chip">—</span>
+              </div>
+              <div class="small subtle mt-1">Internal vs external link structure.</div>
+              <hr class="hr-soft" />
+              <div id="linkExtras" class="small muted2">—</div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="glass p-4 h-100">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="fw-bold">Security</div>
+                <span id="secScore" class="chip">—</span>
+              </div>
+              <div class="small subtle mt-1">HTTPS, HSTS, status codes, server header.</div>
+              <hr class="hr-soft" />
+              <div id="secExtras" class="small muted2">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Dynamic Cards + KV -->
+      <div class="col-lg-4">
+        <div class="glass p-4 mb-4">
+          <div class="fw-bold">Highlights</div>
+          <div class="small subtle mb-3">From <code>dynamic.cards</code></div>
+          <div id="dynamicCards" class="d-grid gap-3">
+            <div class="skeleton p-3" style="height:72px;"></div>
+            <div class="skeleton p-3" style="height:72px;"></div>
+            <div class="skeleton p-3" style="height:72px;"></div>
+          </div>
+        </div>
+
+        <div class="glass p-4">
+          <div class="fw-bold">Technical Details</div>
+          <div class="small subtle mb-3">From <code>dynamic.kv</code></div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th class="text-end">Value</th>
+                </tr>
+              </thead>
+              <tbody id="kvTable">
+                <tr><td colspan="2" class="muted2">Run an audit to see details…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deep Dive Tabs -->
+    <div class="glass p-4 mt-4">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div>
+          <div class="fw-bold">Deep Dive</div>
+          <div class="small subtle">Full breakdown object rendered into readable tables.</div>
+        </div>
+        <span class="chip"><span class="dot warn"></span> Extras mapped 1:1 from runner.py</span>
+      </div>
+
+      <ul class="nav nav-tabs mt-3" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabSeo" type="button" role="tab">SEO</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabPerf" type="button" role="tab">Performance</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabLinks" type="button" role="tab">Links</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabSec" type="button" role="tab">Security</button>
+        </li>
+      </ul>
+
+      <div class="tab-content pt-3">
+        <div class="tab-pane fade show active" id="tabSeo" role="tabpanel">
+          <div id="seoTableWrap"></div>
+        </div>
+        <div class="tab-pane fade" id="tabPerf" role="tabpanel">
+          <div id="perfTableWrap"></div>
+        </div>
+        <div class="tab-pane fade" id="tabLinks" role="tabpanel">
+          <div id="linksTableWrap"></div>
+        </div>
+        <div class="tab-pane fade" id="tabSec" role="tabpanel">
+          <div id="secTableWrap"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 d-flex justify-content-between align-items-center">
+      <div class="footer-note">
+        © <span id="year"></span> FF Tech — Audit Engine. Built for Railway-ready deployment.
+      </div>
+      <div class="footer-note">
+        Tip: Press <span class="kbd">Enter</span> to start audit quickly.
+      </div>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     // -----------------------------
-    // Theme toggle (dark/light)
+    // Theme
     // -----------------------------
-    const themeBtn = document.getElementById("themeBtn");
-    themeBtn.addEventListener("click", () => {
-      const html = document.documentElement;
-      const current = html.getAttribute("data-bs-theme") || "dark";
-      html.setAttribute("data-bs-theme", current === "dark" ? "light" : "dark");
+    const themeBtn = document.getElementById('themeBtn');
+    const themeIcon = document.getElementById('themeIcon');
+    const root = document.documentElement;
+
+    function setTheme(theme){
+      root.setAttribute('data-theme', theme);
+      localStorage.setItem('ff_theme', theme);
+      themeIcon.textContent = theme === 'dark' ? '🌙' : '☀️';
+      // Chart colors refreshed on next render
+      renderCharts(lastResult);
+    }
+
+    const savedTheme = localStorage.getItem('ff_theme');
+    if(savedTheme) setTheme(savedTheme);
+
+    themeBtn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme') || 'dark';
+      setTheme(current === 'dark' ? 'light' : 'dark');
     });
 
     // -----------------------------
-    // UI elements
+    // UI refs
     // -----------------------------
-    const urlInput = document.getElementById("urlInput");
-    const startBtn = document.getElementById("startBtn");
-    const stopBtn = document.getElementById("stopBtn");
+    const urlInput = document.getElementById('urlInput');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn  = document.getElementById('stopBtn');
+    const pdfBtn   = document.getElementById('pdfBtn');
 
-    const statusDot = document.getElementById("statusDot");
-    const statusText = document.getElementById("statusText");
-    const progressBar = document.getElementById("progressBar");
-    const progressPct = document.getElementById("progressPct");
+    const clientInput = document.getElementById('clientInput');
+    const brandInput  = document.getElementById('brandInput');
 
-    const auditedUrlEl = document.getElementById("auditedUrl");
-    const overallScoreEl = document.getElementById("overallScore");
-    const gradeEl = document.getElementById("grade");
+    const progressBar = document.getElementById('progressBar');
+    const progressPct = document.getElementById('progressPct');
+    const statusText  = document.getElementById('statusText');
+    const wsState     = document.getElementById('wsState');
 
-    const breakdownCards = document.getElementById("breakdownCards");
-    const dynamicCards = document.getElementById("dynamicCards");
-    const dynamicKv = document.getElementById("dynamicKv");
+    const auditedUrl  = document.getElementById('auditedUrl');
+    const scoreBig    = document.getElementById('scoreBig');
+    const gradeBadge  = document.getElementById('gradeBadge');
+    const metaLine    = document.getElementById('metaLine');
 
-    const rawJson = document.getElementById("rawJson");
-    const downloadJsonBtn = document.getElementById("downloadJsonBtn");
-    const copyJsonBtn = document.getElementById("copyJsonBtn");
+    const seoScore  = document.getElementById('seoScore');
+    const perfScore = document.getElementById('perfScore');
+    const linkScore = document.getElementById('linkScore');
+    const secScore  = document.getElementById('secScore');
 
-    const chartHint = document.getElementById("chartHint");
-    const chartCanvas = document.getElementById("scoreChart");
+    const seoExtras  = document.getElementById('seoExtras');
+    const perfExtras = document.getElementById('perfExtras');
+    const linkExtras = document.getElementById('linkExtras');
+    const secExtras  = document.getElementById('secExtras');
 
-    let ws = null;
-    let lastResult = null;
-    let chart = null;
+    const dynamicCards = document.getElementById('dynamicCards');
+    const kvTable = document.getElementById('kvTable');
 
-    function setStatus(type, text) {
-      statusDot.classList.remove("running","ok","err");
-      if (type === "running") statusDot.classList.add("running");
-      if (type === "ok") statusDot.classList.add("ok");
-      if (type === "err") statusDot.classList.add("err");
-      statusText.textContent = text;
-    }
+    const seoTableWrap   = document.getElementById('seoTableWrap');
+    const perfTableWrap  = document.getElementById('perfTableWrap');
+    const linksTableWrap = document.getElementById('linksTableWrap');
+    const secTableWrap   = document.getElementById('secTableWrap');
 
-    function setProgress(pct) {
-      const p = Math.max(0, Math.min(100, Number(pct || 0)));
-      progressBar.style.width = p + "%";
-      progressPct.textContent = p + "%";
-      progressBar.classList.toggle("progress-bar-striped", p < 100);
-      progressBar.classList.toggle("progress-bar-animated", p < 100);
-    }
+    document.getElementById('year').textContent = new Date().getFullYear();
 
-    function resetUI() {
-      setStatus("", "Idle");
-      setProgress(0);
-      auditedUrlEl.textContent = "—";
-      overallScoreEl.textContent = "—";
-      gradeEl.textContent = "—";
-      breakdownCards.innerHTML = "";
-      dynamicCards.innerHTML = "";
-      dynamicKv.innerHTML = "";
-      rawJson.textContent = "—";
-      chartHint.textContent = "No chart yet.";
-      downloadJsonBtn.disabled = true;
-      copyJsonBtn.disabled = true;
-      lastResult = null;
-      if (chart) { chart.destroy(); chart = null; }
-    }
-
-    function renderBreakdown(result) {
-      const breakdown = (result && result.breakdown) ? result.breakdown : {};
-      const items = [
-        { key: "seo", label: "SEO", color: "warning" },
-        { key: "performance", label: "Performance", color: "info" },
-        { key: "links", label: "Links", color: "success" },
-        { key: "security", label: "Security", color: "danger" },
-      ];
-
-      breakdownCards.innerHTML = items.map(it => {
-        const score = breakdown?.[it.key]?.score ?? breakdown?.[it.key]?.score ?? null;
-        const extras = breakdown?.[it.key]?.extras ?? breakdown?.[it.key] ?? {};
-        const scoreText = (score === null || score === undefined) ? "—" : score;
-
-        // show a few extras quickly
-        const extrasKeys = Object.keys(extras || {}).slice(0, 4);
-        const extrasHtml = extrasKeys.map(k => {
-          const v = extras[k];
-          return `<div class="small text-secondary"><span class="mono">${k}</span>: <span class="text-body">${String(v)}</span></div>`;
-        }).join("");
-
-        return `
-          <div class="col-12 col-md-6 col-xl-3">
-            <div class="metric p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="fw-semibold">${it.label}</div>
-                <span class="badge text-bg-${it.color}">${scoreText}</span>
-              </div>
-              <div class="text-secondary small">Top signals</div>
-              <div class="mt-2">${extrasHtml || `<div class="small text-secondary">No extras</div>`}</div>
-            </div>
+    // -----------------------------
+    // Toast helper
+    // -----------------------------
+    function toast(msg, type='info'){
+      const id = 't' + Math.random().toString(16).slice(2);
+      const colors = {
+        info:  'linear-gradient(135deg, rgba(124,58,237,.22), rgba(6,182,212,.18))',
+        ok:    'linear-gradient(135deg, rgba(34,197,94,.22), rgba(6,182,212,.12))',
+        warn:  'linear-gradient(135deg, rgba(251,191,36,.25), rgba(124,58,237,.12))',
+        err:   'linear-gradient(135deg, rgba(239,68,68,.22), rgba(124,58,237,.10))',
+      };
+      const el = document.createElement('div');
+      el.className = 'toast align-items-center text-white border-0 show';
+      el.style.cssText = `
+        background:${colors[type]||colors.info};
+        border:1px solid var(--border);
+        border-radius:16px;
+        box-shadow: var(--shadow);
+        margin-bottom:10px;
+        backdrop-filter: blur(10px);
+      `;
+      el.id = id;
+      el.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body" style="color:var(--text);">
+            ${msg}
           </div>
-        `;
-      }).join("");
-    }
-
-    function renderDynamic(result) {
-      const dyn = result?.dynamic || {};
-      const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
-      const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
-
-      dynamicCards.innerHTML = cards.slice(0, 6).map(c => `
-        <div class="metric p-3">
-          <div class="fw-semibold">${escapeHtml(c.title || "Card")}</div>
-          <div class="text-secondary small mt-1">${escapeHtml(c.body || "")}</div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="Close"></button>
         </div>
-      `).join("");
-
-      dynamicKv.innerHTML = kv.slice(0, 20).map(row => `
-        <tr>
-          <td class="text-secondary mono" style="width:45%;">${escapeHtml(String(row.key || ""))}</td>
-          <td class="mono">${escapeHtml(String(row.value ?? ""))}</td>
-        </tr>
-      `).join("");
+      `;
+      el.querySelector('button').addEventListener('click', () => el.remove());
+      document.getElementById('toastContainer').appendChild(el);
+      setTimeout(() => { if(document.getElementById(id)) el.remove(); }, 4200);
     }
 
-    function renderChart(result) {
-      const chartDataArr = result?.chart_data;
-      if (!Array.isArray(chartDataArr) || chartDataArr.length === 0) {
-        chartHint.textContent = "No chart data found in result.chart_data.";
-        if (chart) { chart.destroy(); chart = null; }
-        return;
-      }
+    // -----------------------------
+    // Charts
+    // -----------------------------
+    let barChart, donutChart;
+    let lastResult = null;
 
-      // Your runner provides a Chart.js-ready object in chart_data[0]
-      const config = chartDataArr[0];
-      if (!config?.data) {
-        chartHint.textContent = "Chart config missing data.";
-        return;
-      }
+    function themeAwareTextColor(){
+      return (root.getAttribute('data-theme') === 'light') ? '#0B1221' : '#EAF0FF';
+    }
+    function themeAwareGrid(){
+      return (root.getAttribute('data-theme') === 'light') ? 'rgba(11,18,33,0.10)' : 'rgba(234,240,255,0.12)';
+    }
 
-      chartHint.textContent = "";
-      if (chart) chart.destroy();
+    function renderCharts(result){
+      if(!result) return;
 
-      chart = new Chart(chartCanvas, {
-        type: config.type || "bar",
-        data: config.data,
+      // BAR (from chart_data if present)
+      const chart = (result.chart_data && result.chart_data[0] && result.chart_data[0].data) ? result.chart_data[0].data : null;
+      const labels = chart?.labels || ['SEO','Performance','Links','Security'];
+
+      // fallback from breakdown
+      const b = result.breakdown || {};
+      const seo = b.seo?.score ?? 0;
+      const perf = b.performance?.score ?? 0;
+      const links = b.links?.score ?? 0;
+d('barChart');
+      const ctxDonut = document.getElementById('donutChart');
+
+      const textColor = themeAwareTextColor();
+      const gridColor = themeAwareGrid();
+
+      // BAR
+      if(barChart) barChart.destroy();
+      barChart = new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Score',
+            data: dataValues,
+            backgroundColor: chart?.datasets?.[0]?.backgroundColor || ['#fbbf24','#38bdf8','#22c55e','#ef4444'],
+            borderRadius: 12,
+            borderSkipped: false
+          }]
+        },
         options: {
           responsive: true,
           plugins: {
-            legend: { display: true },
-            title: { display: !!config.title, text: config.title || "" }
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(0,0,0,.75)',
+              titleColor: '#fff',
+              bodyColor: '#fff',
+              padding: 12
+            }
           },
           scales: {
-            y: { beginAtZero: true, max: 100 }
+            x: {
+              ticks: { color: textColor, font: { weight: 600 } },
+              grid: { color: 'transparent' }
+            },
+            y: {
+              min: 0,
+              max: 100,
+              ticks: { color: textColor },
+              grid: { color: gridColor }
+            }
           }
+        }
+      });
+
+      // DONUT (overall)
+      const overall = result.overall_score ?? 0;
+      const remain = Math.max(0, 100 - overall);
+
+      if(donutChart) donutChart.destroy();
+      donutChart = new Chart(ctxDonut, {
+        type: 'doughnut',
+        data: {
+          labels: ['Score','Remaining'],
+          datasets: [{
+            data: [overall, remain],
+            backgroundColor: [
+              'rgba(124,58,237,.95)',
+              (root.getAttribute('data-theme') === 'light') ? 'rgba(11,18,33,.10)' : 'rgba(234,240,255,.10)'
+            ],
+            borderWidth: 0,
+            hoverOffset: 6,
+            cutout: '74%'
+          }]
+        },
+        options: {
+          plugins: { legend: { display: false } }
         }
       });
     }
 
-    function renderResult(result) {
+    // -----------------------------
+    // Render helpers
+    // -----------------------------
+    function scoreChip(score){
+      if(score === null || score === undefined) return '—';
+      let cls = 'warn';
+      if(score >= 80) cls = 'good';
+      else if(score < 55) cls = 'bad';
+      return `<span class="dot ${cls}"></span><span>${score}</span>`;
+    }
+
+    function setProgress(percent, status){
+      const p = Math.max(0, Math.min(100, parseInt(percent||0)));
+      progressBar.style.width = p + '%';
+      progressPct.textContent = p + '%';
+
+      const map = {
+        starting: 'Starting audit…',
+        fetching: 'Fetching HTML & headers…',
+        parsing: 'Parsing content signals…',
+        scoring: 'Scoring categories…',
+        building_output: 'Building final output…',
+        completed: 'Completed ✅',
+        error: 'Error ❌'
+      };
+      statusText.textContent = map[status] || (status ? status : 'Working…');
+    }
+
+    function safe(v){ return (v === null || v === undefined) ? '—' : String(v); }
+
+    function renderDynamicCards(cards){
+      dynamicCards.innerHTML = '';
+      if(!cards || !cards.length){
+        dynamicCards.innerHTML = `<div class="muted2">No highlight cards returned.</div>`;
+        return;
+      }
+      for(const c of cards){
+        const el = document.createElement('div');
+        el.className = 'glass-soft p-3';
+        el.innerHTML = `
+          <div class="fw-semibold">${safe(c.title)}</div>
+          <div class="small muted2 mt-1">${safe(c.body)}</div>
+        `;
+        dynamicCards.appendChild(el);
+      }
+    }
+
+    function renderKV(kv){
+      kvTable.innerHTML = '';
+      if(!kv || !kv.length){
+        kvTable.innerHTML = `<tr><td colspan="2" class="muted2">No KV data returned.</td></tr>`;
+        return;
+      }
+      for(const row of kv){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="small">${safe(row.key)}</td>
+          <td class="text-end"><span class="chip">${safe(row.value)}</span></td>
+        `;
+        kvTable.appendChild(tr);
+      }
+    }
+
+    function renderTableFromObject(obj){
+      if(!obj) return `<div class="muted2">No data available.</div>`;
+      const rows = Object.entries(obj).map(([k,v]) => {
+        let val = v;
+        if(typeof v === 'object') val = JSON.stringify(v);
+        return `<tr><td>${k}</td><td class="text-end"><span class="chip">${safe(val)}</span></td></tr>`;
+      }).join('');
+      return `
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Field</th><th class="text-end">Value</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="2" class="muted2">Empty</td></tr>`}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderAll(result){
       lastResult = result;
 
-      auditedUrlEl.textContent = result?.audited_url || "—";
-      overallScoreEl.textContent = (result?.overall_score ?? "—");
-      gradeEl.textContent = result?.grade || "—";
+      auditedUrl.textContent = safe(result.audited_url);
+      scoreBig.textContent = safe(result.overall_score);
+      gradeBadge.textContent = safe(result.grade);
 
-      renderBreakdown(result);
-      renderDynamic(result);
-      renderChart(result);
+      const bd = result.breakdown || {};
+      const seo = bd.seo?.score ?? null;
+      const perf = bd.performance?.score ?? null;
+      const links = bd.links?.score ?? null;
+      const sec = bd.security?.score ?? null;
 
-      rawJson.textContent = JSON.stringify(result, null, 2);
-      downloadJsonBtn.disabled = false;
-      copyJsonBtn.disabled = false;
-    }
+      seoScore.innerHTML  = scoreChip(seo);
+      perfScore.innerHTML = scoreChip(perf);
+      linkScore.innerHTML = scoreChip(links);
+      secScore.innerHTML  = scoreChip(sec);
 
-    function downloadJson() {
-      if (!lastResult) return;
-      const blob = new Blob([JSON.stringify(lastResult, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "audit_result.json";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
+      // Extras summary blocks
+      const seoX = bd.seo?.extras || {};
+      const perfX = bd.performance?.extras || {};
+      const secX = bd.security || {};
+      const linkX = bd.links || {};
 
-    function copyJson() {
-      if (!lastResult) return;
-      navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2))
-        .then(() => setStatus("ok", "Copied JSON to clipboard"))
-        .catch(() => setStatus("err", "Failed to copy JSON"));
-    }
+      seoExtras.innerHTML = `
+        <div>Title: <span class="chip">${safe(seoX.title)}</span></div>
+        <div class="mt-2">Meta description: <span class="chip">${safe(seoX.meta_description_present)}</span></div>
+        <div class="mt-2">Canonical: <span class="chip">${safe(seoX.canonical)}</span></div>
+        <div class="mt-2">H1 count: <span class="chip">${safe(seoX.h1_count)}</span></div>
+        <div class="mt-2">Images missing ALT: <span class="chip">${safe(seoX.images_missing_alt)}</span></div>
+      `;
 
-    downloadJsonBtn.addEventListener("click", downloadJson);
-    copyJsonBtn.addEventListener("click", copyJson);
+      perfExtras.innerHTML = `
+        <div>Load time: <span class="chip">${safe(perfX.load_ms)} ms</span></div>
+        <div class="mt-2">Page size: <span class="chip">${safe(perfX.bytes)} bytes</span></div>
+        <div class="mt-2">Scripts: <span class="chip">${safe(perfX.scripts)}</span></div>
+        <div class="mt-2">Styles: <span class="chip">${safe(perfX.styles)}</span></div>
+        <div class="mt-2">Fetcher: <span class="chip">${safe(perfX.fetcher)}</span></div>
+      `;
 
-    function escapeHtml(str) {
-      return (str || "").replace(/[&<>"']/g, (m) => ({
-        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;"
-      }[m]));
+      linkExtras.innerHTML = `
+        <div>Internal links: <span class="chip">${safe(linkX.internal_links_count)}</span></div>
+        <div class="mt-2">External links: <span class="chip">${safe(linkX.external_links_count)}</span></div>
+        <div class="mt-2">Total links: <span class="chip">${safe(linkX.total_links_count)}</span></div>
+      `;
+
+      secExtras.innerHTML = `
+        <div>HTTPS: <span class="chip">${safe(secX.https)}</span></div>
+        <div class="mt-2">HSTS: <span class="chip">${safe(secX.hsts)}</span></div>
+        <div class="mt-2">Status code: <span class="chip">${safe(secX.status_code)}</span></div>
+        <div class="mt-2">Server: <span class="chip">${safe(secX.server)}</span></div>
+      `;
+
+      // meta line
+      metaLine.textContent = `Fetched & scored successfully.`;
+
+      // dynamic
+      renderDynamicCards(result.dynamic?.cards || []);
+      renderKV(result.dynamic?.kv || []);
+
+      // deep tables
+      seoTableWrap.innerHTML = renderTableFromObject({ score: bd.seo?.score, ...seoX });
+      perfTableWrap.innerHTML = renderTableFromObject({ score: bd.performance?.score, ...perfX });
+      linksTableWrap.innerHTML = renderTableFromObject({
+        score: bd.links?.score,
+        internal_links_count: bd.links?.internal_links_count,
+        external_links_count: bd.links?.external_links_count,
+        total_links_count: bd.links?.total_links_count
+      });
+      secTableWrap.innerHTML = renderTableFromObject({
+        score: bd.security?.score,
+        https: bd.security?.https,
+        hsts: bd.security?.hsts,
+        status_code: bd.security?.status_code,
+        server: bd.security?.server
+      });
+
+      // charts
+      renderCharts(result);
+
+      // enable PDF
+      pdfBtn.disabled = false;
     }
 
     // -----------------------------
-    // WebSocket: connect + run audit
+    // WebSocket audit flow
     // -----------------------------
-    function wsUrl(path = "/ws") {
-      const proto = (location.protocol === "https:") ? "wss" : "ws";
-      return `${proto}://${location.host}${path}`;
+    let ws = null;
+    let latestUrl = '';
+
+    function wsUrl(){
+      const loc = window.location;
+      // Works for Railway + local: ws:// or wss://
+      const scheme = (loc.protocol === 'https:') ? 'wss' : 'ws';
+      return `${scheme}://${loc.host}/ws`;
     }
 
-    function startAudit() {
-      const url = (urlInput.value || "").trim();
-      if (!url) {
-        setStatus("err", "Please enter a URL");
+    function resetUI(){
+      setProgress(0, '');
+      wsState.textContent = 'Socket: idle';
+      statusText.textContent = 'Waiting to start…';
+
+      auditedUrl.textContent = '—';
+      scoreBig.textContent = '—';
+      gradeBadge.textContent = '—';
+      metaLine.textContent = 'Ready when you are.';
+
+      seoScore.textContent = '—';
+      perfScore.textContent = '—';
+      linkScore.textContent = '—';
+      secScore.textContent = '—';
+
+      seoExtras.textContent = '—';
+      perfExtras.textContent = '—';
+      linkExtras.textContent = '—';
+      secExtras.textContent = '—';
+
+      dynamicCards.innerHTML = `
+        <div class="skeleton p-3" style="height:72px;"></div>
+        <div class="skeleton p-3" style="height:72px;"></div>
+        <div class="skeleton p-3" style="height:72px;"></div>
+      `;
+
+      kvTable.innerHTML = `<tr><td colspan="2" class="muted2">Run an audit to see details…</td></tr>`;
+
+      seoTableWrap.innerHTML = `<div class="muted2">—</div>`;
+      perfTableWrap.innerHTML = `<div class="muted2">—</div>`;
+      linksTableWrap.innerHTML = `<div class="muted2">—</div>`;
+      secTableWrap.innerHTML = `<div class="muted2">—</div>`;
+
+      pdfBtn.disabled = true;
+
+      lastResult = null;
+
+      // clear charts
+      if(barChart){ barChart.destroy(); barChart=null; }
+      if(donutChart){ donutChart.destroy(); donutChart=null; }
+    }
+
+    async function startAudit(){
+      const url = (urlInput.value || '').trim();
+      if(!url){
+        toast('Please enter a URL to audit.', 'warn');
         return;
       }
 
       resetUI();
-      setStatus("running", "Connecting...");
-      setProgress(1);
 
       startBtn.disabled = true;
       stopBtn.disabled = false;
+      pdfBtn.disabled = true;
 
-      ws = new WebSocket(wsUrl("/ws"));
+      latestUrl = url;
 
-      ws.onopen = () => {
-        setStatus("running", "Running audit...");
-        ws.send(JSON.stringify({ url }));
-      };
+      try{
+        ws = new WebSocket(wsUrl());
+        wsState.textContent = 'Socket: connecting…';
 
-      ws.onmessage = (event) => {
-        let msg = null;
-        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        ws.onopen = () => {
+          wsState.textContent = 'Socket: connected';
+          setProgress(5, 'starting');
+          ws.send(JSON.stringify({ url }));
+          toast('Audit started. Streaming progress…', 'info');
+        };
 
-        // expected shapes:
-        // {progress, status, payload?}
-        // final: {progress: 100, status:"completed", result:{...}}
-        const prog = msg.progress ?? 0;
-        setProgress(prog);
+        ws.onmessage = (evt) => {
+          let msg;
+          try{ msg = JSON.parse(evt.data); } catch(e){ return; }
 
-        if (msg.status === "error") {
-          setStatus("err", msg.error || "Error");
+          // main.py sends: {progress,status,payload?} or final {progress,status,result}
+          const p = msg.progress ?? 0;
+          const st = msg.status ?? '';
+          setProgress(p, st);
+
+          if(st === 'error'){
+            const err = msg.error || msg.payload?.error || 'Unknown error';
+            toast(err, 'err');
+            metaLine.textContent = `Error: ${err}`;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            pdfBtn.disabled = true;
+            if(ws) ws.close();
+            return;
+          }
+
+          // Completed may come as payload or result
+          if(st === 'completed'){
+            const result = msg.payload && msg.payload.audited_url ? msg.payload : (msg.result || msg.payload);
+            if(result && result.audited_url){
+              renderAll(result);
+              toast('Audit completed successfully.', 'ok');
+            }
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+          }
+        };
+
+        ws.onerror = () => {
+          toast('WebSocket error. Check server / CORS / deployment.', 'err');
+          wsState.textContent = 'Socket: error';
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+        };
+
+        ws.onclose = () => {
+          wsState.textContent = 'Socket: closed';
           stopBtn.disabled = true;
           startBtn.disabled = false;
-          safeClose();
-          return;
-        }
+        };
 
-        if (msg.status === "completed") {
-          setStatus("ok", "Completed");
-          setProgress(100);
-          if (msg.result) renderResult(msg.result);
-
-          stopBtn.disabled = true;
-          startBtn.disabled = false;
-          safeClose();
-          return;
-        }
-
-        // normal progress update
-        setStatus("running", String(msg.status || "Working..."));
-      };
-
-      ws.onerror = () => {
-        setStatus("err", "WebSocket error");
-        stopBtn.disabled = true;
+      } catch(e){
+        toast(String(e), 'err');
         startBtn.disabled = false;
-        safeClose();
-      };
-
-      ws.onclose = () => {
-        // if not completed, show neutral state
-        if (!lastResult) setStatus("", "Disconnected");
         stopBtn.disabled = true;
-        startBtn.disabled = false;
-      };
-    }
-
-    function safeClose() {
-      if (ws) {
-        try { ws.close(); } catch (e) {}
-        ws = null;
       }
     }
 
-    function stopAudit() {
-      setStatus("err", "Stopped by user");
+    function stopAudit(){
+      if(ws){
+        ws.close();
+        ws = null;
+      }
       stopBtn.disabled = true;
       startBtn.disabled = false;
-      safeClose();
+      toast('Audit stopped.', 'warn');
     }
 
-    startBtn.addEventListener("click", startAudit);
-    stopBtn.addEventListener("click", stopAudit);
-
-    // Allow pressing Enter to start
-    urlInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") startAudit();
+    startBtn.addEventListener('click', startAudit);
+    stopBtn.addEventListener('click', stopAudit);
+    urlInput.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter') startAudit();
     });
 
-    // Start clean
+    // -----------------------------
+    // PDF download
+    // -----------------------------
+    pdfBtn.addEventListener('click', async () => {
+      if(!lastResult || !latestUrl){
+        toast('Run an audit first.', 'warn');
+        return;
+      }
+
+      pdfBtn.disabled = true;
+      pdfBtn.textContent = 'Generating PDF…';
+
+      try{
+        const payload = {
+          url: latestUrl,
+          client_name: (clientInput.value || '').trim() || undefined,
+          brand_name: (brandInput.value || '').trim() || undefined,
+          // You can add report_title, website_name, logo_path if you want
+        };
+
+        const res = await fetch('/api/audit/pdf', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+
+        if(!res.ok){
+          const txt = await res.text();
+          throw new Error(txt || 'PDF generation failed');
+        }
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+
+        // filename from header if present
+        const cd = res.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename="?([^"]+)"?/i);
+        const filename = match ? match[1] : 'audit_report.pdf';
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+
+        toast('PDF downloaded.', 'ok');
+      } catch(e){
+        toast('PDF error: ' + String(e.message || e), 'err');
+      } finally{
+        pdfBtn.disabled = false;
+        pdfBtn.textContent = '⬇️ Download PDF';
+      }
+    });
+
+    // Initial UI state
     resetUI();
   </script>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-``
