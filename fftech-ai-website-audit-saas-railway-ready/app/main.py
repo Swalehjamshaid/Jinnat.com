@@ -25,18 +25,11 @@ import os
 import re
 import tempfile
 import datetime as _dt
-import traceback
 import logging
+import traceback
 from typing import Any, Dict, Optional
 
-from fastapi import (
-    FastAPI,
-    WebSocket,
-    WebSocketDisconnect,
-    HTTPException,
-    BackgroundTasks,
-    Request,
-)
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -58,13 +51,10 @@ logger = logging.getLogger("app.main")
 # --------------------------------------------------
 # Matplotlib safety (PDF charts on Railway)
 # --------------------------------------------------
-# Many container environments have read-only home dirs; matplotlib tries to write cache there.
-# Force it into /tmp and ensure directory exists.
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 try:
     os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
 except Exception:
-    # If this fails, PDF might still work but charts can fail depending on matplotlib usage.
     logger.warning("Could not create MPLCONFIGDIR directory; charts may fail.")
 
 
@@ -111,7 +101,6 @@ INDEX_PATH = os.path.join(TEMPLATES_DIR, INDEX_TEMPLATE)
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# Helpful logs for Railway
 logger.info("✅ BASE_DIR      : %s", BASE_DIR)
 logger.info("✅ TEMPLATES_DIR : %s", TEMPLATES_DIR)
 logger.info("✅ INDEX_PATH    : %s", INDEX_PATH)
@@ -132,7 +121,6 @@ async def health():
 # --------------------------------------------------
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    # If you have /static/favicon.ico, serve it. Otherwise return 204.
     ico = os.path.join(STATIC_DIR, "favicon.ico")
     if os.path.isfile(ico):
         return FileResponse(ico)
@@ -144,14 +132,9 @@ async def favicon():
 # --------------------------------------------------
 @app.get("/")
 async def index(request: Request):
-    """
-    Serves: app/templates/index.html
-    """
     if os.path.isfile(INDEX_PATH):
-        # Jinja2 requires 'request' in context even if not used in template
         return templates.TemplateResponse(INDEX_TEMPLATE, {"request": request})
 
-    # fallback message if index.html not found
     return HTMLResponse(
         f"""
         <h2>FF Tech Website Audit API</h2>
@@ -180,7 +163,6 @@ def _today_stamp() -> str:
 
 
 def _cleanup_file(path: str) -> None:
-    """Best-effort temp file cleanup (PDF)."""
     try:
         if path and os.path.isfile(path):
             os.remove(path)
@@ -189,11 +171,6 @@ def _cleanup_file(path: str) -> None:
 
 
 def _looks_like_missing_dependency(msg: str) -> bool:
-    """
-    Identify true 'Not Implemented' cases:
-    - reportlab missing
-    - PDF engine not available
-    """
     m = (msg or "").lower()
     needles = [
         "no module named 'reportlab'",
@@ -209,15 +186,6 @@ def _looks_like_missing_dependency(msg: str) -> bool:
 # --------------------------------------------------
 @app.websocket("/ws")
 async def websocket_audit(ws: WebSocket):
-    """
-    Expects first message:
-      {"url": "https://example.com"}
-
-    Streams:
-      {"progress": 15, "status": "fetching"}
-      {"progress": 60, "status": "scoring"}
-      {"progress": 100, "status": "completed", "payload": {...result...}}
-    """
     await ws.accept()
     completed_sent = False
 
@@ -243,7 +211,6 @@ async def websocket_audit(ws: WebSocket):
 
         result = await runner.run(url, progress_cb=progress_cb)
 
-        # Safety fallback: if runner didn't send completed payload, send final result
         if not completed_sent:
             await ws.send_json({"progress": 100, "status": "completed", "result": result})
 
@@ -265,13 +232,6 @@ async def websocket_audit(ws: WebSocket):
 # --------------------------------------------------
 @app.post("/api/audit")
 async def api_audit(payload: Dict[str, Any]):
-    """
-    JSON API:
-      { "url": "https://example.com" }
-
-    Returns runner output with stable keys:
-      audited_url, overall_score, grade, breakdown, chart_data, dynamic
-    """
     url = (payload.get("url") or "").strip()
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
@@ -286,12 +246,6 @@ async def api_audit(payload: Dict[str, Any]):
 # --------------------------------------------------
 @app.post("/api/audit/pdf")
 async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
-    """
-    Expects:
-      { "url": "https://example.com", "client_name": "...", "brand_name": "...", ... }
-
-    Returns: PDF download
-    """
     url = (payload.get("url") or "").strip()
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
@@ -302,7 +256,6 @@ async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
     website_name = (payload.get("website_name") or "").strip() or None
     logo_path = (payload.get("logo_path") or "").strip() or os.getenv("PDF_LOGO_PATH") or None
 
-    # Safety: only use logo if file exists
     if logo_path and not os.path.isfile(logo_path):
         logger.warning("PDF logo_path not found, skipping: %s", logo_path)
         logo_path = None
@@ -326,29 +279,22 @@ async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
             website_name=website_name,
         )
 
-        # Validate file actually created
         if not os.path.isfile(out_path) or os.path.getsize(out_path) < 1024:
             raise RuntimeError("PDF generation did not produce a valid output file.")
 
     except RuntimeError as e:
         msg = str(e)
-        # ✅ Only return 501 for true missing dependency cases
         if _looks_like_missing_dependency(msg):
             logger.error("PDF dependency missing: %s", msg)
             raise HTTPException(status_code=501, detail=msg)
 
-        # Otherwise it's a real runtime failure -> 500, with logs
         logger.error("PDF runtime failure: %s\n%s", msg, traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {msg}",
-        )
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {msg}")
 
     except Exception as e:
         logger.error("PDF exception: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
 
-    # cleanup after response is sent
     background.add_task(_cleanup_file, out_path)
 
     return FileResponse(
@@ -356,4 +302,3 @@ async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
         media_type="application/pdf",
         filename=filename,
     )
-``
