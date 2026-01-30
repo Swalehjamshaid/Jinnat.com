@@ -1,411 +1,178 @@
-<!doctype html>
-<html lang="en" data-bs-theme="dark">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FF Tech Audit – Next-Gen Dashboard</title>
-
-  <!-- Bootstrap 5 & Icons -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous"/>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
-
-  <!-- Google Font: Inter (modern & excellent readability) -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-  <style>
-    :root {
-      --primary:     #facc15;        /* vivid amber-gold */
-      --primary-dark:#eab308;
-      --accent1:     #a78bfa;        /* soft violet */
-      --accent2:     #60a5fa;        /* bright blue */
-      --accent3:     #34d399;        /* emerald */
-      --bg:          #0b0e17;
-      --bg-soft:     #111827;
-      --card:        rgba(17, 24, 39, 0.68);
-      --card-glass:  rgba(17, 24, 39, 0.42);
-      --border:      rgba(165, 180, 252, 0.18);
-      --muted:       #94a3b8;
-      --text:        #f1f5f9;
-      --success:     #10b981;
-      --warning:     #f59e0b;
-      --danger:      #f87171;
-      --info:        #60a5fa;
-
-      --gradient-primary: linear-gradient(135deg, #facc15, #ea580c);
-      --gradient-violet:  linear-gradient(135deg, #a78bfa, #7c3aed);
-      --gradient-blue:    linear-gradient(135deg, #60a5fa, #3b82f6);
-      --gradient-emerald: linear-gradient(135deg, #34d399, #059669);
-
-      --shadow-sm:   0 8px 32px rgba(0,0,0,0.42);
-      --shadow:      0 12px 42px rgba(0,0,0,0.55);
-      --shadow-glow: 0 0 28px rgba(250,204,21,0.22);
-      --focus-ring:  0 0 0 4px rgba(250,204,21,0.28);
-
-      --glass-blur:  blur(16px);
-    }
-
-    [data-bs-theme="light"] {
-      --bg:          #f8fafc;
-      --bg-soft:     #ffffff;
-      --card:        rgba(255,255,255,0.92);
-      --card-glass:  rgba(255,255,255,0.65);
-      --border:      rgba(165,180,252,0.22);
-      --muted:       #64748b;
-      --text:        #0f172a;
-      --shadow:      0 10px 38px rgba(0,0,0,0.09);
-      --shadow-glow: 0 0 24px rgba(59,130,246,0.16);
-      --focus-ring:  0 0 0 4px rgba(59,130,246,0.25);
-    }
-
-    html, body { height: 100%; scroll-behavior: smooth; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: "Inter", system-ui, sans-serif;
-      background-image:
-        radial-gradient(circle at 8% 12%, rgba(250,204,21,0.14) 0%, transparent 50%),
-        radial-gradient(circle at 92% 18%, rgba(96,165,250,0.11) 0%, transparent 50%),
-        radial-gradient(circle at 50% 95%, rgba(167,139,250,0.09) 0%, transparent 45%);
-      background-attachment: fixed;
-    }
-
-    .container-narrow { max-width: 1180px; }
-
-    .navbar {
-      background: rgba(11,14,23,0.68);
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .brand-badge {
-      color: var(--primary) !important;
-      font-weight: 900;
-      letter-spacing: 0.4px;
-      background: linear-gradient(90deg, var(--primary), var(--accent2));
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .theme-toggle {
-      border: 1px solid var(--border);
-      background: var(--card-glass);
-      backdrop-filter: var(--glass-blur);
-      color: var(--text);
-      border-radius: 1rem;
-      padding: 0.5rem 1rem;
-      transition: all 0.28s ease;
-    }
-    .theme-toggle:hover { transform: scale(1.08); box-shadow: var(--shadow-glow); }
-
-    .card, .metric-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 1.5rem;
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      box-shadow: var(--shadow);
-      transition: all 0.4s cubic-bezier(0.34,1.6,0.7,1);
-    }
-
-    .card:hover, .metric-card:hover {
-      transform: translateY(-12px);
-      box-shadow: var(--shadow-glow);
-      border-color: rgba(250,204,21,0.38);
-    }
-
-    .title-gradient {
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      font-weight: 900;
-    }
-
-    .section-header {
-      color: var(--primary);
-      font-weight: 900;
-      letter-spacing: 0.5px;
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.8rem;
-      margin: 3rem 0 1.6rem;
-    }
-    .section-header:after {
-      content: '';
-      position: absolute;
-      bottom: -10px;
-      left: 0;
-      width: 90px;
-      height: 4px;
-      background: var(--gradient-primary);
-      border-radius: 4px;
-    }
-
-    .form-control {
-      background: rgba(15,23,42,0.65) !important;
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 1rem;
-      height: 52px;
-      transition: all 0.28s ease;
-    }
-    .form-control:focus {
-      border-color: var(--primary);
-      box-shadow: var(--focus-ring);
-      background: rgba(15,23,42,0.85) !important;
-    }
-
-    .btn-run {
-      background: var(--gradient-primary);
-      border: none;
-      font-weight: 900;
-      color: #0f172a;
-      border-radius: 1.1rem;
-      padding: 0.75rem 1.5rem;
-      box-shadow: 0 12px 32px rgba(250,204,21,0.28);
-      transition: all 0.3s ease;
-    }
-    .btn-run:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 18px 44px rgba(250,204,21,0.38);
-    }
-
-    .progress {
-      height: 16px;
-      background: rgba(30,41,59,0.55);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .progress-bar {
-      background: var(--gradient-primary);
-      box-shadow: inset 0 0 18px rgba(255,255,255,0.22);
-    }
-    .progress-bar::after {
-      content: "";
-      position: absolute; inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
-      animation: shine 2.2s linear infinite;
-    }
-    @keyframes shine { 0%{transform:translateX(-120%)} 100%{transform:translateX(120%)} }
-
-    .score-ring {
-      width: 280px; height: 280px;
-      margin: 2rem auto;
-      filter: drop-shadow(0 14px 40px rgba(250,204,21,0.18));
-    }
-    .circle-bg { stroke: rgba(165,180,252,0.09); stroke-width: 24; }
-    .circle { stroke-width: 24; stroke-linecap: round; transition: all 1.4s ease; }
-
-    .metric-card {
-      background: linear-gradient(145deg, rgba(17,24,39,0.82), rgba(11,14,23,0.82));
-      position: relative;
-      overflow: hidden;
-    }
-    .metric-card::before {
-      content:"";
-      position:absolute; inset:-1px;
-      background: conic-gradient(from 120deg at 30% 30%, rgba(250,204,21,0.14), rgba(96,165,250,0.11), rgba(167,139,250,0.09), transparent 70%);
-      filter: blur(18px);
-      opacity: 0.9;
-      z-index: -1;
-      transition: opacity 0.5s ease;
-    }
-    .metric-card:hover::before { opacity: 1; }
-
-    .metric-icon {
-      width: 56px; height: 56px;
-      background: rgba(250,204,21,0.12);
-      border: 1px solid rgba(250,204,21,0.32);
-      color: var(--primary);
-      border-radius: 1.1rem;
-      margin: 0 auto 1rem;
-      display: grid; place-items: center;
-      font-size: 1.6rem;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
-    }
-
-    .metric-value {
-      font-size: 2.8rem;
-      font-weight: 900;
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      line-height: 1;
-    }
-
-    .nav-tabs .nav-link {
-      color: var(--muted);
-      font-weight: 700;
-      border-radius: 1rem 1rem 0 0;
-      border: none;
-      padding: 0.75rem 1.5rem;
-    }
-    .nav-tabs .nav-link.active {
-      background: rgba(250,204,21,0.09);
-      color: var(--text);
-      border-bottom: 3px solid var(--primary);
-    }
-
-    .code-block {
-      background: #0d111c;
-      border: 1px solid var(--border);
-      color: #c7d2fe;
-      border-radius: 1.25rem;
-      padding: 1.5rem;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
-    }
-
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 3rem 0 2rem;
-      color: var(--muted);
-      font-size: 0.92rem;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      * { transition: none !important; animation: none !important; }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FF Tech Website Audit Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.3.2/dist/tailwind.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  .tab-content { display: none; }
+  .tab-active { display: block; }
+  .progress-bar { transition: width 0.3s; }
+</style>
 </head>
-<body>
+<body class="bg-gray-100 text-gray-800 font-sans">
 
-  <!-- Navbar ──────────────────────────────────────────────── -->
-  <nav class="navbar navbar-expand-lg sticky-top">
-    <div class="container container-narrow py-3 d-flex align-items-center justify-content-between">
-      <a class="navbar-brand brand-badge fs-3" href="/">
-        <i class="bi bi-cpu-fill me-2"></i>FF Tech Audit
-      </a>
-      <button id="themeToggle" class="btn theme-toggle" type="button" aria-label="Toggle theme">
-        <i class="bi bi-sun-fill d-none" id="sunIcon"></i>
-        <i class="bi bi-moon-stars-fill" id="moonIcon"></i>
-      </button>
-    </div>
-  </nav>
+<div class="container mx-auto p-6">
+  <h1 class="text-3xl font-bold mb-4">Website Audit Dashboard</h1>
 
-  <div class="container container-narrow py-5">
-
-    <header class="text-center mb-5 pb-4">
-      <h1 class="display-3 fw-black title-gradient mb-3">FF Tech Audit Dashboard</h1>
-      <p class="lead text-muted fs-4">Next-generation visual insights • Fast • Beautiful • Precise</p>
-    </header>
-
-    <!-- Input Section -->
-    <section class="card p-4 p-md-5 mb-5 shadow">
-      <div class="row g-4 align-items-end">
-        <div class="col-md-8">
-          <label class="form-label fw-bold fs-5" for="urlInput">Target Website</label>
-          <input id="urlInput" type="text" class="form-control fs-5" placeholder="https://example.com" autofocus />
-          <div class="form-text text-muted mt-2">Domain or full URL • Press <kbd>Enter</kbd></div>
-        </div>
-        <div class="col-md-4 d-flex gap-3 flex-column flex-sm-row">
-          <button id="runBtn" class="btn btn-run w-100 py-3 fs-5">
-            <i class="bi bi-rocket-takeoff-fill me-2"></i>RUN AUDIT
-          </button>
-          <button id="resetBtn" class="btn btn-outline-danger w-100 py-3 fs-5">
-            <i class="bi bi-arrow-counterclockwise me-2"></i>RESET
-          </button>
-        </div>
-      </div>
-      <div id="statusLine" class="mt-4 fs-5 fw-semibold text-info" role="status">Status: Ready</div>
-      <div class="progress mt-3" role="progressbar" aria-label="Audit progress">
-        <div id="progressBar" class="progress-bar" style="width:0%"></div>
-      </div>
-    </section>
-
-    <!-- Error -->
-    <div id="errorBox" class="alert alert-danger border-danger d-none p-4 rounded-4" role="alert"></div>
-
-    <!-- Results -->
-    <div id="resultsArea" class="d-none">
-
-      <!-- Overall Score -->
-      <section class="text-center mb-5 pb-5">
-        <h6 class="text-muted mb-3 fs-5">Audited</h6>
-        <h4 id="auditUrl" class="text-info fw-semibold text-break mb-4">—</h4>
-        <div class="score-ring position-relative">
-          <svg viewBox="0 0 260 260">
-            <circle class="circle-bg" cx="130" cy="130" r="118"></circle>
-            <circle id="scoreCircle" class="circle" cx="130" cy="130" r="118"
-                    stroke-dasharray="742" stroke-dashoffset="742"></circle>
-          </svg>
-          <div class="position-absolute top-50 start-50 translate-middle text-center">
-            <div id="ovScore" class="display-1 fw-black title-gradient">—</div>
-            <small class="fs-4 text-muted">/ 100</small>
-          </div>
-        </div>
-        <div id="grade" class="mt-4 badge rounded-pill fs-4 px-5 py-3 bg-primary text-dark fw-bold">—</div>
-      </section>
-
-      <!-- Key Metrics -->
-      <h5 class="section-header"><i class="bi bi-grid-1x2-fill fs-4"></i> Core Metrics</h5>
-      <div class="row g-4 mb-5" id="kpiSection">
-        <!-- skeletons generated by JS -->
-      </div>
-
-      <!-- Dynamic Cards -->
-      <h5 class="section-header"><i class="bi bi-collection-fill fs-4"></i> Detailed Breakdown</h5>
-      <div class="row g-4 mb-5" id="dynamicCards"></div>
-
-      <!-- Charts -->
-      <h5 class="section-header"><i class="bi bi-bar-chart-line-fill fs-4"></i> Visual Analytics</h5>
-      <div class="row g-4 mb-5" id="chartsSection"></div>
-
-      <!-- Insights -->
-      <h5 class="section-header"><i class="bi bi-diagram-3-fill fs-4"></i> Actionable Insights</h5>
-      <section class="card p-4 p-md-5">
-        <ul class="nav nav-tabs mb-4" id="insightTabs" role="tablist">
-          <li class="nav-item"><button class="nav-link active" id="structured-tab" data-bs-toggle="tab" data-bs-target="#structuredView">Structured View</button></li>
-          <li class="nav-item"><button class="nav-link" id="raw-tab" data-bs-toggle="tab" data-bs-target="#rawView">Raw JSON</button></li>
-        </ul>
-        <div class="tab-content">
-          <div class="tab-pane fade show active" id="structuredView">
-            <div class="d-flex flex-wrap gap-3 mb-4">
-              <button id="expandAllBtn" class="btn btn-outline-light"><i class="bi bi-arrows-expand"></i> Expand All</button>
-              <button id="collapseAllBtn" class="btn btn-outline-light"><i class="bi bi-arrows-collapse"></i> Collapse All</button>
-              <div class="ms-auto d-flex gap-3">
-                <button id="copyJsonBtn"   class="btn btn-outline-light"><i class="bi bi-clipboard"></i> Copy</button>
-                <button id="downloadJsonBtn" class="btn btn-outline-light"><i class="bi bi-download"></i> Download</button>
-              </div>
-            </div>
-            <div id="structuredInsights"></div>
-          </div>
-          <div class="tab-pane fade" id="rawView">
-            <pre id="auditJson" class="code-block"></pre>
-          </div>
-        </div>
-      </section>
-
-    </div>
-
-    <footer class="text-center mt-5">
-      <p>© 2026 FF Tech Audit – Crafted with precision & passion</p>
-    </footer>
-
+  <!-- URL input -->
+  <div class="mb-4 flex gap-2">
+    <input type="text" id="urlInput" placeholder="Enter website URL" class="flex-grow p-2 border rounded">
+    <button id="auditBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Start Audit</button>
   </div>
 
-  <!-- Bootstrap JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Progress Bar -->
+  <div class="w-full bg-gray-300 rounded h-4 mb-4">
+    <div id="progressBar" class="bg-green-500 h-4 rounded progress-bar" style="width:0%"></div>
+  </div>
+  <div id="progressStatus" class="mb-4 text-gray-700">Idle...</div>
 
-  <!-- ────────────────────────────────────────────────────────────── -->
-  <!--  The rest of your JavaScript remains 100% unchanged             -->
-  <!--  (only visual classes, sizes, shadows, gradients were updated)  -->
-  <!-- ────────────────────────────────────────────────────────────── -->
+  <!-- Metric Cards -->
+  <div id="metricCards" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4"></div>
 
-  <script>
-    // ……………… your original JavaScript code here (unchanged) ………………
-    /* ============================================================
-       Utilities, resetUI, theme toggle, charts, structured insights,
-       score ring, render functions, WebSocket logic – all untouched
-    ============================================================ */
-    // Paste your complete <script> content here
-    // (I omitted it to keep the answer shorter – just keep your original script)
-  </script>
+  <!-- Key-Value Details -->
+  <div id="kvContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-4"></div>
+
+  <!-- Tabs -->
+  <div class="mb-4">
+    <ul class="flex border-b">
+      <li class="mr-2"><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-blue-500" data-tab="seo">SEO</button></li>
+      <li class="mr-2"><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-transparent" data-tab="performance">Performance</button></li>
+      <li class="mr-2"><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-transparent" data-tab="links">Links</button></li>
+      <li class="mr-2"><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-transparent" data-tab="security">Security</button></li>
+      <li><button class="tab-btn py-2 px-4 font-semibold border-b-2 border-transparent" data-tab="competitors">Competitors</button></li>
+    </ul>
+
+    <div id="tabContents" class="mt-4">
+      <div id="seo" class="tab-content">
+        <canvas id="seoChart"></canvas>
+      </div>
+      <div id="performance" class="tab-content">
+        <canvas id="performanceChart"></canvas>
+      </div>
+      <div id="links" class="tab-content">
+        <canvas id="linksChart"></canvas>
+      </div>
+      <div id="security" class="tab-content">
+        <canvas id="securityChart"></canvas>
+      </div>
+      <div id="competitors" class="tab-content">
+        <canvas id="competitorsChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Button -->
+  <button id="exportPdfBtn" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Export to PDF</button>
+</div>
+
+<script>
+let ws;
+const charts = {};
+
+function initTabs() {
+  const buttons = document.querySelectorAll(".tab-btn");
+  buttons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-content").forEach(tab => tab.classList.remove("tab-active"));
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("border-blue-500"));
+      document.getElementById(btn.dataset.tab).classList.add("tab-active");
+      btn.classList.add("border-blue-500");
+    });
+  });
+  buttons[0].click(); // Activate first tab by default
+}
+
+function updateProgress(progress, status) {
+  document.getElementById("progressBar").style.width = progress + "%";
+  document.getElementById("progressStatus").innerText = status;
+}
+
+function renderCards(cards) {
+  const container = document.getElementById("metricCards");
+  container.innerHTML = "";
+  cards.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "bg-white shadow p-4 rounded";
+    div.innerHTML = `<h3 class="font-bold">${c.title}</h3><p class="text-xl">${c.body}</p>`;
+    container.appendChild(div);
+  });
+}
+
+function renderKV(kv) {
+  const container = document.getElementById("kvContainer");
+  container.innerHTML = "";
+  kv.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "bg-white shadow p-2 rounded";
+    div.innerHTML = `<span class="font-semibold">${item.key}:</span> ${item.value}`;
+    container.appendChild(div);
+  });
+}
+
+function renderChart(id, data) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id + "Chart").getContext("2d");
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: data,
+    options: { responsive: true, plugins: { legend: { display: true } } }
+  });
+}
+
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.text("Website Audit Report", 10, 10);
+  let y = 20;
+  document.querySelectorAll("#metricCards div").forEach(card => {
+    doc.text(card.innerText, 10, y);
+    y += 10;
+  });
+  // Capture charts as images
+  Object.keys(charts).forEach(key => {
+    const chartCanvas = document.getElementById(key + "Chart");
+    const imgData = chartCanvas.toDataURL("image/png");
+    doc.addPage();
+    doc.addImage(imgData, "PNG", 10, 10, 180, 100);
+  });
+  doc.save("audit-report.pdf");
+}
+
+function connectWebSocket(url) {
+  ws = new WebSocket(url);
+  ws.onopen = () => console.log("WebSocket connected");
+  ws.onmessage = evt => {
+    const msg = JSON.parse(evt.data);
+    if (msg.progress !== undefined) updateProgress(msg.progress, msg.status);
+    if (msg.result) {
+      renderCards(msg.result.dynamic.cards);
+      renderKV(msg.result.dynamic.kv);
+
+      const breakdown = msg.result.breakdown;
+      Object.keys(breakdown).forEach(key => {
+        if (breakdown[key].chart_data) renderChart(key, breakdown[key].chart_data);
+      });
+    }
+  };
+  ws.onclose = () => console.log("WebSocket closed");
+}
+
+document.getElementById("auditBtn").addEventListener("click", () => {
+  const url = document.getElementById("urlInput").value;
+  if (!url) return alert("Enter a URL");
+  updateProgress(0, "Connecting...");
+  connectWebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => ws.send(JSON.stringify({ url }));
+});
+
+document.getElementById("exportPdfBtn").addEventListener("click", exportPDF);
+
+initTabs();
+</script>
+
 </body>
 </html>
