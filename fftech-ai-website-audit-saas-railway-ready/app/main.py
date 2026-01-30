@@ -13,6 +13,7 @@ Endpoints:
   GET  /health
   GET  /                 -> serves app/templates/index.html
   GET  /static/*         -> static assets (optional)
+  GET  /favicon.ico      -> optional (avoids noisy 404)
   WS   /ws               -> live streaming progress
   POST /api/audit        -> JSON result
   POST /api/audit/pdf    -> PDF download
@@ -24,15 +25,47 @@ import os
 import re
 import tempfile
 import datetime as _dt
+import traceback
+import logging
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    HTTPException,
+    BackgroundTasks,
+    Request,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
+
+
+# --------------------------------------------------
+# Logging (Railway-friendly)
+# --------------------------------------------------
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(levelname)s | %(asctime)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("app.main")
+
+
+# --------------------------------------------------
+# Matplotlib safety (PDF charts on Railway)
+# --------------------------------------------------
+# Many container environments have read-only home dirs; matplotlib tries to write cache there.
+# Force it into /tmp and ensure directory exists.
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+try:
+    os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
+except Exception:
+    # If this fails, PDF might still work but charts can fail depending on matplotlib usage.
+    logger.warning("Could not create MPLCONFIGDIR directory; charts may fail.")
 
 
 # --------------------------------------------------
@@ -79,10 +112,11 @@ if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Helpful logs for Railway
-print("✅ BASE_DIR      :", BASE_DIR)
-print("✅ TEMPLATES_DIR :", TEMPLATES_DIR)
-print("✅ INDEX_PATH    :", INDEX_PATH)
-print("✅ STATIC_DIR    :", STATIC_DIR)
+logger.info("✅ BASE_DIR      : %s", BASE_DIR)
+logger.info("✅ TEMPLATES_DIR : %s", TEMPLATES_DIR)
+logger.info("✅ INDEX_PATH    : %s", INDEX_PATH)
+logger.info("✅ STATIC_DIR    : %s", STATIC_DIR)
+logger.info("✅ MPLCONFIGDIR  : %s", os.getenv("MPLCONFIGDIR"))
 
 
 # --------------------------------------------------
@@ -91,6 +125,18 @@ print("✅ STATIC_DIR    :", STATIC_DIR)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# --------------------------------------------------
+# Favicon (optional: stops noisy 404 in logs)
+# --------------------------------------------------
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    # If you have /static/favicon.ico, serve it. Otherwise return 204.
+    ico = os.path.join(STATIC_DIR, "favicon.ico")
+    if os.path.isfile(ico):
+        return FileResponse(ico)
+    return Response(status_code=204)
 
 
 # --------------------------------------------------
@@ -142,6 +188,22 @@ def _cleanup_file(path: str) -> None:
         pass
 
 
+def _looks_like_missing_dependency(msg: str) -> bool:
+    """
+    Identify true 'Not Implemented' cases:
+    - reportlab missing
+    - PDF engine not available
+    """
+    m = (msg or "").lower()
+    needles = [
+        "no module named 'reportlab'",
+        "reportlab not installed",
+        "reportlab is required",
+        "pdf export requires reportlab",
+    ]
+    return any(n in m for n in needles)
+
+
 # --------------------------------------------------
 # WebSocket Audit Endpoint
 # --------------------------------------------------
@@ -155,8 +217,6 @@ async def websocket_audit(ws: WebSocket):
       {"progress": 15, "status": "fetching"}
       {"progress": 60, "status": "scoring"}
       {"progress": 100, "status": "completed", "payload": {...result...}}
-
-    Note: runner calls progress_cb("completed", 100, result), so final result usually arrives in payload.
     """
     await ws.accept()
     completed_sent = False
@@ -181,7 +241,6 @@ async def websocket_audit(ws: WebSocket):
             if status == "completed":
                 completed_sent = True
 
-        # Run audit (streams progress)
         result = await runner.run(url, progress_cb=progress_cb)
 
         # Safety fallback: if runner didn't send completed payload, send final result
@@ -193,6 +252,7 @@ async def websocket_audit(ws: WebSocket):
     except WebSocketDisconnect:
         return
     except Exception as e:
+        logger.exception("WebSocket error: %s", e)
         try:
             await ws.send_json({"progress": 100, "status": "error", "error": str(e)})
             await ws.close()
@@ -242,6 +302,11 @@ async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
     website_name = (payload.get("website_name") or "").strip() or None
     logo_path = (payload.get("logo_path") or "").strip() or os.getenv("PDF_LOGO_PATH") or None
 
+    # Safety: only use logo if file exists
+    if logo_path and not os.path.isfile(logo_path):
+        logger.warning("PDF logo_path not found, skipping: %s", logo_path)
+        logo_path = None
+
     runner = WebsiteAuditRunner()
     result = await runner.run(url, progress_cb=None)
 
@@ -260,10 +325,27 @@ async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
             audit_date=_today_stamp(),
             website_name=website_name,
         )
+
+        # Validate file actually created
+        if not os.path.isfile(out_path) or os.path.getsize(out_path) < 1024:
+            raise RuntimeError("PDF generation did not produce a valid output file.")
+
     except RuntimeError as e:
-        # Most commonly: reportlab not installed
-        raise HTTPException(status_code=501, detail=str(e))
+        msg = str(e)
+        # ✅ Only return 501 for true missing dependency cases
+        if _looks_like_missing_dependency(msg):
+            logger.error("PDF dependency missing: %s", msg)
+            raise HTTPException(status_code=501, detail=msg)
+
+        # Otherwise it's a real runtime failure -> 500, with logs
+        logger.error("PDF runtime failure: %s\n%s", msg, traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"PDF generation failed: {msg}",
+        )
+
     except Exception as e:
+        logger.error("PDF exception: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
 
     # cleanup after response is sent
@@ -274,3 +356,4 @@ async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
         media_type="application/pdf",
         filename=filename,
     )
+``
