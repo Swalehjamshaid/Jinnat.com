@@ -4,19 +4,26 @@ app/audit/runner.py
 
 MOST FLEXIBLE WebsiteAuditRunner
 - Pure Python compatible (stdlib fallback)
-- Optional use of requests/httpx + bs4 if installed
+- Optional use of requests + bs4 if installed
 - Keeps stable IO:
     Input : await WebsiteAuditRunner().run(url, progress_cb=None)
     Output: dict with keys:
         audited_url, overall_score, grade, breakdown, chart_data, dynamic
+
+PDF integration (SAFE ADDITION):
+- Does NOT change run() input/output
+- Adds helper functions to convert runner result -> audit_data for pdf_report.py
+- Adds optional helper to generate PDF using app/audit/pdf_report.py
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import ssl
 import time
+import datetime as _dt
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse, urljoin
@@ -25,6 +32,16 @@ from urllib.request import Request, urlopen
 # Progress callback type:
 # progress_cb(status: str, percent: int, payload: dict|None) -> None|awaitable
 ProgressCB = Optional[Callable[[str, int, Optional[dict]], Union[None, Any]]]
+
+
+# ============================================================
+# PDF CONFIG (SAFE ADDITION — does not affect runner output)
+# ============================================================
+# These configs are OPTIONAL and used only if you call helper functions below.
+PDF_REPORT_TITLE: str = os.getenv("PDF_REPORT_TITLE", "Website Audit Report")
+PDF_BRAND_NAME: str = os.getenv("PDF_BRAND_NAME", "FF Tech")
+PDF_CLIENT_NAME: str = os.getenv("PDF_CLIENT_NAME", "N/A")
+PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")  # e.g. "app/assets/logo.png"
 
 
 # -------------------------------
@@ -348,6 +365,218 @@ def _resource_counts(html: str, soup: Any = None) -> Dict[str, int]:
     scripts = len(re.findall(r"<script\b", html or "", flags=re.I))
     styles = len(re.findall(r'rel\s*=\s*["\']stylesheet["\']', html or "", flags=re.I))
     return {"scripts": scripts, "styles": styles}
+
+
+# ============================================================
+# PDF HELPERS (SAFE ADDITION — optional, not used by run())
+# ============================================================
+
+def _today_str() -> str:
+    return _dt.date.today().isoformat()
+
+
+def runner_result_to_audit_data(
+    runner_result: Dict[str, Any],
+    *,
+    client_name: str = PDF_CLIENT_NAME,
+    brand_name: str = PDF_BRAND_NAME,
+    audit_date: Optional[str] = None,
+    website_name: Optional[str] = None,
+    industry: str = "N/A",
+    audience: str = "N/A",
+    goals: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Convert runner.py output (stable keys) into the audit_data structure
+    expected by app/audit/pdf_report.py generate_audit_pdf().
+
+    IMPORTANT: This does not change runner_result at all.
+    """
+    goals = goals or []
+    audit_date = audit_date or _today_str()
+
+    audited_url = runner_result.get("audited_url") or "N/A"
+    overall_score = runner_result.get("overall_score")
+    grade = runner_result.get("grade") or "N/A"
+    breakdown = runner_result.get("breakdown") or {}
+
+    # Map available scores into pdf dashboard
+    scores = {
+        "seo": (breakdown.get("seo") or {}).get("score"),
+        "performance": (breakdown.get("performance") or {}).get("score"),
+        "security": (breakdown.get("security") or {}).get("score"),
+        "ux_ui": None,
+        "accessibility": None,
+        "content_quality": None,
+    }
+
+    # Build a basic risk/opportunity list from runner extras (no runner changes)
+    risks: List[str] = []
+    opportunities: List[str] = []
+
+    seo_extras = ((breakdown.get("seo") or {}).get("extras") or {})
+    perf_extras = ((breakdown.get("performance") or {}).get("extras") or {})
+    sec = (breakdown.get("security") or {})
+
+    if seo_extras.get("meta_description_present") is False:
+        risks.append("Meta description missing (may reduce search click-through rate).")
+        opportunities.append("Add compelling meta descriptions across key pages.")
+
+    h1_count = seo_extras.get("h1_count")
+    if h1_count == 0:
+        risks.append("No H1 found (page topic clarity may be reduced).")
+        opportunities.append("Add a clear H1 aligned with primary keyword.")
+    elif isinstance(h1_count, int) and h1_count > 1:
+        risks.append("Multiple H1 tags found (heading hierarchy may be inconsistent).")
+        opportunities.append("Use one H1 per page and structure headings with H2/H3.")
+
+    if (seo_extras.get("images_missing_alt") or 0) > 0:
+        risks.append("Some images missing ALT text (accessibility and SEO impact).")
+        opportunities.append("Add descriptive ALT text for important images.")
+
+    load_ms = perf_extras.get("load_ms")
+    if isinstance(load_ms, int) and load_ms > 3000:
+        risks.append(f"Slow load time detected ({load_ms} ms) can hurt conversions.")
+        opportunities.append("Optimize images, reduce JS/CSS, and enable caching/CDN.")
+
+    bytes_ = perf_extras.get("bytes")
+    if isinstance(bytes_, int) and bytes_ > 1_500_000:
+        risks.append("Large page size may impact mobile performance.")
+        opportunities.append("Compress assets and use modern image formats (WebP/AVIF).")
+
+    if sec.get("https") is False:
+        risks.append("HTTPS is not enabled (trust and security risk).")
+        opportunities.append("Enable SSL/TLS to improve security and trust.")
+
+    if sec.get("https") is True and sec.get("hsts") is False:
+        risks.append("HSTS header missing (weaker HTTPS enforcement).")
+        opportunities.append("Enable HSTS to strengthen transport security.")
+
+    # Basic SEO issue lists (derived)
+    on_page_issues: List[str] = []
+    if not seo_extras.get("title"):
+        on_page_issues.append("Missing <title> tag.")
+    if seo_extras.get("meta_description_present") is False:
+        on_page_issues.append("Missing meta description.")
+    if seo_extras.get("h1_count") == 0:
+        on_page_issues.append("No H1 heading found.")
+    if (seo_extras.get("images_missing_alt") or 0) > 0:
+        on_page_issues.append("Images missing ALT attributes detected.")
+
+    technical_issues: List[str] = []
+    if not seo_extras.get("canonical"):
+        technical_issues.append("Canonical link not detected.")
+
+    page_size_issues: List[str] = []
+    if isinstance(load_ms, int) and load_ms > 3000:
+        page_size_issues.append(f"Slow load time: {load_ms} ms.")
+    if isinstance(bytes_, int) and bytes_ > 1_500_000:
+        page_size_issues.append(f"Large page size: {bytes_} bytes.")
+    if (perf_extras.get("scripts") or 0) > 25:
+        page_size_issues.append("High script count may increase JS execution time.")
+    if (perf_extras.get("styles") or 0) > 12:
+        page_size_issues.append("High stylesheet count may increase render-blocking resources.")
+
+    verdict = "Healthy" if isinstance(overall_score, int) and overall_score >= 80 else "Needs Improvement"
+
+    audit_data: Dict[str, Any] = {
+        "website": {
+            "name": website_name or audited_url,
+            "url": audited_url,
+            "industry": industry,
+            "audience": audience,
+            "goals": goals,
+        },
+        "client": {"name": client_name},
+        "brand": {"name": brand_name},
+        "audit": {
+            "date": audit_date,
+            "overall_score": overall_score,
+            "grade": grade,
+            "verdict": verdict,
+            "executive_summary": (
+                "This report summarizes the website’s health based on automated checks "
+                "across SEO, performance, links, and security."
+            ),
+            "key_risks": risks,
+            "opportunities": opportunities,
+        },
+        "scores": scores,
+        "scope": {
+            "what": [
+                "SEO signals (title/meta/h1/canonical/image ALT)",
+                "Performance heuristics (load time, bytes, scripts/styles)",
+                "Link structure (internal/external link counts)",
+                "Security basics (HTTPS, HSTS, status code)",
+            ],
+            "why": "These factors influence search visibility, user experience, trust, and conversion performance.",
+            "tools": [
+                "FFTechAuditBot runner.py (urllib/requests + optional bs4 parsing)",
+                "Heuristic scoring model (weighted categories)",
+            ],
+        },
+        "seo": {
+            "on_page_issues": on_page_issues,
+            "technical_issues": technical_issues,
+            "content_gaps": [],
+            "keyword_optimization_level": "N/A",
+        },
+        "performance": {
+            "core_web_vitals": {
+                "lcp": "N/A", "cls": "N/A", "inp": "N/A",
+                "lcp_notes": "", "cls_notes": "", "inp_notes": ""
+            },
+            "mobile_vs_desktop": "N/A",
+            "page_size_issues": page_size_issues,
+        },
+        "mobile": {
+            "responsive_issues": [],
+            "usability_problems": [],
+            "mobile_score": None,
+        },
+    }
+
+    return audit_data
+
+
+def generate_pdf_from_runner_result(
+    runner_result: Dict[str, Any],
+    output_path: str,
+    *,
+    logo_path: Optional[str] = None,
+    report_title: str = PDF_REPORT_TITLE,
+    client_name: str = PDF_CLIENT_NAME,
+    brand_name: str = PDF_BRAND_NAME,
+    audit_date: Optional[str] = None,
+    website_name: Optional[str] = None,
+) -> str:
+    """
+    Optional helper to generate PDF directly using app/audit/pdf_report.py.
+
+    NOTE:
+      - This does NOT affect runner output.
+      - Only call this from your /generate-pdf endpoint or background task.
+    """
+    audit_data = runner_result_to_audit_data(
+        runner_result,
+        client_name=client_name,
+        brand_name=brand_name,
+        audit_date=audit_date,
+        website_name=website_name,
+    )
+
+    # Lazy import so runner can still run even if reportlab isn't installed
+    try:
+        from app.audit.pdf_report import generate_audit_pdf  # local import
+    except Exception as e:
+        raise RuntimeError("PDF dependencies missing. Install reportlab to enable PDF export.") from e
+
+    return generate_audit_pdf(
+        audit_data=audit_data,
+        output_path=output_path,
+        logo_path=logo_path or (PDF_LOGO_PATH if PDF_LOGO_PATH else None),
+        report_title=report_title,
+    )
 
 
 # -------------------------------
