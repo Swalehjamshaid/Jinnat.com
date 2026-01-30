@@ -5,12 +5,14 @@ app/main.py
 FastAPI entrypoint
 - WebSocket-powered website audit
 - Streams progress + results from WebsiteAuditRunner
-- Serves premium index.html UI (static) + PDF export (optional)
+- Serves UI from app/templates/index.html (Jinja2Templates)
+- Static mount optional (/static)
+- PDF export endpoint
 
 Endpoints:
   GET  /health
-  GET  /                 -> serves app/static/index.html
-  GET  /static/*         -> static assets
+  GET  /                 -> serves app/templates/index.html
+  GET  /static/*         -> static assets (optional)
   WS   /ws               -> live streaming progress
   POST /api/audit        -> JSON result
   POST /api/audit/pdf    -> PDF download
@@ -24,10 +26,11 @@ import tempfile
 import datetime as _dt
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
 
@@ -60,14 +63,26 @@ app.add_middleware(
 
 
 # --------------------------------------------------
-# Static UI hosting
+# UI Hosting (Templates: app/templates/index.html)
 # --------------------------------------------------
-STATIC_DIR = os.getenv("STATIC_DIR", "app/static")
-INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # .../app
+TEMPLATES_DIR = os.getenv("TEMPLATES_DIR") or os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.getenv("STATIC_DIR") or os.path.join(BASE_DIR, "static")
 
-# Mount /static if directory exists (Railway-friendly)
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+INDEX_TEMPLATE = "index.html"
+INDEX_PATH = os.path.join(TEMPLATES_DIR, INDEX_TEMPLATE)
+
+# Mount /static if directory exists (optional)
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Helpful logs for Railway
+print("✅ BASE_DIR      :", BASE_DIR)
+print("✅ TEMPLATES_DIR :", TEMPLATES_DIR)
+print("✅ INDEX_PATH    :", INDEX_PATH)
+print("✅ STATIC_DIR    :", STATIC_DIR)
 
 
 # --------------------------------------------------
@@ -79,17 +94,22 @@ async def health():
 
 
 # --------------------------------------------------
-# Root UI (serves your real index.html)
+# Root UI (serves templates/index.html)
 # --------------------------------------------------
 @app.get("/")
-async def index():
+async def index(request: Request):
+    """
+    Serves: app/templates/index.html
+    """
     if os.path.isfile(INDEX_PATH):
-        return FileResponse(INDEX_PATH)
+        # Jinja2 requires 'request' in context even if not used in template
+        return templates.TemplateResponse(INDEX_TEMPLATE, {"request": request})
+
     # fallback message if index.html not found
     return HTMLResponse(
-        """
+        f"""
         <h2>FF Tech Website Audit API</h2>
-        <p><strong>UI not found.</strong> Put your dashboard at <code>app/static/index.html</code></p>
+        <p><strong>UI not found.</strong> Put your dashboard at <code>{INDEX_PATH}</code></p>
         <ul>
           <li>WebSocket: <code>/ws</code></li>
           <li>REST audit: <code>POST /api/audit</code></li>
