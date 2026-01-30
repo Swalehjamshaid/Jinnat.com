@@ -1,312 +1,889 @@
-<!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FF Tech Website Audit • Professional SEO & Performance Tool</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: { extend: { colors: { primary: { 500: '#6366f1', 600: '#4f46e5' } } } }
-    }
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FF Tech — AI Website Audit</title>
+
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
   <style>
-    body { font-family: 'Inter', system-ui, sans-serif; }
-    .score-circle {
-      background: conic-gradient(#10b981 0% var(--score,0%), #e5e7eb var(--score,0%) 100%);
+    :root{
+      --glass: rgba(255,255,255,.06);
+      --glass2: rgba(255,255,255,.10);
+      --border: rgba(255,255,255,.10);
+      --shadow: 0 10px 30px rgba(0,0,0,.25);
+      --grad1: radial-gradient(1200px 600px at 20% 0%, rgba(56,189,248,.25), transparent 60%),
+               radial-gradient(900px 500px at 100% 10%, rgba(244,63,94,.18), transparent 60%),
+               radial-gradient(900px 500px at 0% 90%, rgba(34,197,94,.18), transparent 60%);
     }
-    .dark .score-circle { background: conic-gradient(#10b981 0% var(--score,0%), #374151 var(--score,0%) 100%); }
+    [data-bs-theme="light"]{
+      --glass: rgba(0,0,0,.04);
+      --glass2: rgba(0,0,0,.06);
+      --border: rgba(0,0,0,.08);
+      --shadow: 0 10px 30px rgba(0,0,0,.10);
+      --grad1: radial-gradient(1200px 600px at 20% 0%, rgba(56,189,248,.22), transparent 60%),
+               radial-gradient(900px 500px at 100% 10%, rgba(244,63,94,.14), transparent 60%),
+               radial-gradient(900px 500px at 0% 90%, rgba(34,197,94,.14), transparent 60%);
+    }
+
+    body{
+      background: var(--grad1);
+      min-height: 100vh;
+    }
+    .glass{
+      background: var(--glass);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 18px;
+    }
+    .glass-soft{
+      background: var(--glass2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    .brand-badge{
+      display:inline-flex; align-items:center; gap:.55rem;
+      padding:.55rem .8rem;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background: rgba(15,23,42,.35);
+    }
+    [data-bs-theme="light"] .brand-badge{ background: rgba(255,255,255,.6); }
+
+    .score-ring{
+      width:140px;height:140px;border-radius:50%;
+      display:grid;place-items:center;
+      background:
+        radial-gradient(circle at center, rgba(0,0,0,.22) 58%, transparent 60%),
+        conic-gradient(var(--ring-color) var(--ring-deg), rgba(148,163,184,.22) 0);
+      border: 1px solid var(--border);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    [data-bs-theme="light"] .score-ring{
+      background:
+        radial-gradient(circle at center, rgba(255,255,255,.55) 58%, transparent 60%),
+        conic-gradient(var(--ring-color) var(--ring-deg), rgba(148,163,184,.25) 0);
+    }
+    .score-big{ font-size: 2.2rem; font-weight: 800; line-height: 1; }
+    .score-sub{ font-size: .9rem; opacity: .75; }
+
+    .kpi{
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      padding: 14px;
+      height: 100%;
+    }
+    [data-bs-theme="light"] .kpi{
+      background: linear-gradient(180deg, rgba(0,0,0,.03), rgba(0,0,0,.02));
+    }
+    .kpi .label{ font-size: .85rem; opacity: .75; }
+    .kpi .value{ font-size: 1.15rem; font-weight: 700; }
+
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .pointer{ cursor:pointer; }
+
+    .sticky-actions{
+      position: sticky;
+      top: 14px;
+      z-index: 10;
+    }
+
+    .fade-in{
+      animation: fadeIn .35s ease-out;
+    }
+    @keyframes fadeIn{
+      from{ opacity:0; transform: translateY(8px); }
+      to{ opacity:1; transform: translateY(0); }
+    }
   </style>
 </head>
-<body class="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors">
 
-  <header class="sticky top-0 z-30 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-bold text-xl flex items-center justify-center">FF</div>
-        <h1 class="text-xl font-semibold">Website Audit Pro</h1>
+<body>
+  <div class="container py-4 py-lg-5">
+    <!-- Top Bar -->
+    <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-4">
+      <div class="d-flex align-items-center gap-2">
+        <div class="brand-badge glass">
+          <i class="bi bi-stars text-info"></i>
+          <strong>FF Tech Audit</strong>
+          <span class="opacity-75">AI Website Health</span>
+        </div>
+        <span class="badge text-bg-secondary glass-soft">Railway-ready</span>
+        <span id="wsBadge" class="badge text-bg-warning glass-soft"><i class="bi bi-plug"></i> Disconnected</span>
       </div>
-      <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path id="sun" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707"/>
-          <path id="moon" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-        </svg>
-      </button>
+
+      <div class="d-flex align-items-center gap-2">
+        <button id="themeBtn" class="btn btn-outline-secondary btn-sm glass-soft">
+          <i class="bi bi-moon-stars"></i> <span class="ms-1">Theme</span>
+        </button>
+        <a class="btn btn-outline-secondary btn-sm glass-soft" href="/health" target="_blank">
+          <i class="bi bi-heart-pulse"></i> Health
+        </a>
+      </div>
     </div>
-  </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-
-    <!-- URL Input -->
-    <section class="mb-12">
-      <div class="max-w-2xl mx-auto">
-        <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Enter Website URL</label>
-        <div class="flex gap-3">
-          <input id="url-input" type="text" placeholder="https://example.com" class="flex-1 px-5 py-3.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none"/>
-          <button id="audit-btn" class="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow transition active:scale-95">Start Audit</button>
-        </div>
-
-        <div id="status-container" class="mt-6 hidden">
-          <div class="flex justify-between mb-2 text-sm font-medium">
-            <span id="status-text">Connecting...</span>
-            <span id="progress-percent" class="text-indigo-600 dark:text-indigo-400">0%</span>
-          </div>
-          <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div id="progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-600 w-0 transition-all duration-500"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Results -->
-    <section id="results" class="hidden space-y-12">
-
-      <!-- Overall Score Hero -->
-      <div class="text-center">
-        <div class="inline-block relative">
-          <div id="score-circle" class="score-circle w-56 h-56 rounded-full flex items-center justify-center shadow-2xl mx-auto" style="--score: 0%">
-            <div class="text-center">
-              <div id="overall-score" class="text-7xl font-extrabold">—</div>
-              <div id="grade" class="text-4xl font-bold mt-2 text-gray-600 dark:text-gray-400">—</div>
+    <!-- Hero + Input -->
+    <div class="row g-3 g-lg-4">
+      <div class="col-lg-8">
+        <div class="glass p-4 p-lg-4 h-100">
+          <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
+            <div>
+              <h1 class="mb-2 fw-bold">AI Website Audit Dashboard</h1>
+              <p class="mb-0 opacity-75">
+                Enter a domain, run audit in real-time, visualize SEO/Performance/Links/Security, and export a PDF report.
+              </p>
+            </div>
+            <div class="sticky-actions d-flex gap-2">
+              <button id="btnExample" class="btn btn-outline-info btn-sm glass-soft">
+                <i class="bi bi-magic"></i> Example
+              </button>
+              <button id="btnReset" class="btn btn-outline-secondary btn-sm glass-soft">
+                <i class="bi bi-arrow-counterclockwise"></i> Reset
+              </button>
             </div>
           </div>
-          <div class="mt-6 text-lg">
-            Audited: <span id="audited-url" class="font-mono font-medium text-indigo-600 dark:text-indigo-400"></span>
+
+          <hr class="my-4 opacity-25"/>
+
+          <div class="row g-3 align-items-end">
+            <div class="col-md-7">
+              <label class="form-label">Website URL / Domain</label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text glass-soft"><i class="bi bi-globe2"></i></span>
+                <input id="urlInput" class="form-control glass-soft" placeholder="e.g. example.com or https://example.com" />
+              </div>
+              <div class="form-text opacity-75">
+                Works with <span class="mono">example.com</span> or full URL.
+              </div>
+            </div>
+            <div class="col-md-5">
+              <div class="d-grid gap-2">
+                <button id="runBtn" class="btn btn-primary btn-lg">
+                  <i class="bi bi-play-fill"></i> Run Audit
+                </button>
+
+                <div class="d-flex gap-2">
+                  <button id="pdfBtn" class="btn btn-outline-success w-100 glass-soft" disabled>
+                    <i class="bi bi-filetype-pdf"></i> Export PDF
+                  </button>
+                  <button id="copyBtn" class="btn btn-outline-secondary w-100 glass-soft" disabled>
+                    <i class="bi bi-clipboard"></i> Copy JSON
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
+
+          <!-- Progress -->
+          <div class="mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge text-bg-info glass-soft">Live</span>
+                <span id="statusText" class="opacity-75">Idle</span>
+              </div>
+              <span id="progressText" class="mono opacity-75">0%</span>
+            </div>
+            <div class="progress" role="progressbar" aria-label="Progress">
+              <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      <!-- Download PDF Button -->
-      <div class="text-center">
-        <button id="download-pdf" class="hidden px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105 active:scale-100">
-          Download Full PDF Report
-        </button>
+      <!-- Summary Panel -->
+      <div class="col-lg-4">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h5 class="mb-0 fw-bold">Executive Summary</h5>
+            <span id="gradeBadge" class="badge text-bg-secondary">—</span>
+          </div>
+
+          <div class="d-flex align-items-center gap-3">
+            <div id="scoreRing" class="score-ring" style="--ring-color:#9ca3af; --ring-deg: 0deg;">
+              <div class="text-center">
+                <div id="scoreBig" class="score-big">—</div>
+                <div class="score-sub">Overall Score</div>
+              </div>
+            </div>
+
+            <div class="flex-grow-1">
+              <div class="kpi mb-2">
+                <div class="label">Audited URL</div>
+                <div id="auditedUrl" class="value text-truncate">—</div>
+              </div>
+              <div class="kpi">
+                <div class="label">Status</div>
+                <div id="finalStatus" class="value">Waiting…</div>
+              </div>
+            </div>
+          </div>
+
+          <hr class="my-4 opacity-25"/>
+
+          <div class="row g-2">
+            <div class="col-6">
+              <div class="kpi">
+                <div class="label"><i class="bi bi-shield-check"></i> Security</div>
+                <div id="secScoreMini" class="value">—</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="kpi">
+                <div class="label"><i class="bi bi-speedometer2"></i> Performance</div>
+                <div id="perfScoreMini" class="value">—</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="kpi">
+                <div class="label"><i class="bi bi-search"></i> SEO</div>
+                <div id="seoScoreMini" class="value">—</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="kpi">
+                <div class="label"><i class="bi bi-link-45deg"></i> Links</div>
+                <div id="linksScoreMini" class="value">—</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
-
-      <!-- Breakdown Grid -->
-      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-6">
-          <h3 class="text-lg font-semibold mb-4 text-yellow-600 dark:text-yellow-400">SEO</h3>
-          <div class="text-5xl font-bold mb-4" id="seo-score">—</div>
-          <div id="seo-extras" class="text-sm space-y-2 text-gray-600 dark:text-gray-400"></div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-6">
-          <h3 class="text-lg font-semibold mb-4 text-cyan-600 dark:text-cyan-400">Performance</h3>
-          <div class="text-5xl font-bold mb-4" id="perf-score">—</div>
-          <div id="perf-extras" class="text-sm space-y-2 text-gray-600 dark:text-gray-400"></div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-6">
-          <h3 class="text-lg font-semibold mb-4 text-green-600 dark:text-green-400">Links</h3>
-          <div class="text-5xl font-bold mb-4" id="links-score">—</div>
-          <div id="links-extras" class="text-sm space-y-2 text-gray-600 dark:text-gray-400"></div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-6">
-          <h3 class="text-lg font-semibold mb-4 text-red-600 dark:text-red-400">Security</h3>
-          <div class="text-5xl font-bold mb-4" id="sec-score">—</div>
-          <div id="sec-extras" class="text-sm space-y-2 text-gray-600 dark:text-gray-400"></div>
-        </div>
-      </div>
-
-      <!-- Competitors & AI (placeholders from runner) -->
-      <div class="grid md:grid-cols-2 gap-6">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-6">
-          <h3 class="text-lg font-semibold mb-4 text-purple-600 dark:text-purple-400">Competitors</h3>
-          <div class="text-5xl font-bold" id="competitors-score">—</div>
-          <p id="competitors-top" class="mt-2 text-sm text-gray-600 dark:text-gray-400"></p>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-6">
-          <h3 class="text-lg font-semibold mb-4 text-blue-600 dark:text-blue-400">AI Readiness</h3>
-          <div class="text-5xl font-bold" id="ai-score">—</div>
-        </div>
-      </div>
-
-      <!-- Chart -->
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-8">
-        <h3 class="text-xl font-semibold mb-6">Category Score Breakdown</h3>
-        <div class="h-80"><canvas id="scoreChart"></canvas></div>
-      </div>
-
-      <!-- Dynamic Cards -->
-      <div id="dynamic-cards" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6"></div>
-
-      <!-- All Key-Value Details -->
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold">Complete Technical Details</h3>
-        </div>
-        <dl id="kv-list" class="divide-y divide-gray-200 dark:divide-gray-700"></dl>
-      </div>
-
-      <!-- Raw JSON (for debugging / completeness) -->
-      <details class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <summary class="px-6 py-5 font-medium cursor-pointer">View Raw Audit JSON</summary>
-        <pre id="raw-json" class="p-6 text-sm overflow-auto bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700"></pre>
-      </details>
-
-    </section>
-
-    <!-- Error -->
-    <div id="error-message" class="hidden max-w-3xl mx-auto mt-10 p-6 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-2xl text-red-800 dark:text-red-300">
-      <p id="error-text" class="font-medium"></p>
     </div>
 
-  </main>
+    <!-- Results -->
+    <div id="resultsWrap" class="mt-4 mt-lg-5 d-none">
+      <div class="row g-3 g-lg-4">
 
-  <footer class="mt-20 py-8 text-center text-sm text-gray-500 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800">
-    FF Tech Audit • Real-time • Professional Reports • © 2026
-  </footer>
+        <!-- Charts -->
+        <div class="col-lg-7">
+          <div class="glass p-4">
+            <div class="d-flex align-items-center justify-content-between">
+              <h5 class="mb-0 fw-bold"><i class="bi bi-bar-chart"></i> Score Breakdown</h5>
+              <span class="badge text-bg-secondary glass-soft">Chart.js</span>
+            </div>
+            <p class="mb-3 opacity-75">Visualize the runner’s <span class="mono">chart_data</span> output.</p>
+            <canvas id="breakdownChart" height="140"></canvas>
+          </div>
+        </div>
+
+        <!-- Dynamic Cards -->
+        <div class="col-lg-5">
+          <div class="glass p-4 h-100">
+            <div class="d-flex align-items-center justify-content-between">
+              <h5 class="mb-0 fw-bold"><i class="bi bi-cpu"></i> Highlights</h5>
+              <span class="badge text-bg-info glass-soft">dynamic.cards</span>
+            </div>
+            <p class="mb-3 opacity-75">Auto-generated cards from your backend.</p>
+
+            <div id="dynamicCards" class="row g-2"></div>
+          </div>
+        </div>
+
+        <!-- KV Table -->
+        <div class="col-12">
+          <div class="glass p-4">
+            <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+              <div>
+                <h5 class="mb-0 fw-bold"><i class="bi bi-table"></i> Key Metrics</h5>
+                <div class="opacity-75">Rendered from <span class="mono">dynamic.kv</span></div>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary btn-sm glass-soft" id="toggleRawBtn">
+                  <i class="bi bi-braces"></i> Toggle Raw JSON
+                </button>
+              </div>
+            </div>
+
+            <div class="table-responsive mt-3">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr>
+                    <th style="width: 28%">Key</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody id="kvBody"></tbody>
+              </table>
+            </div>
+
+            <div id="rawJsonWrap" class="d-none">
+              <hr class="opacity-25"/>
+              <pre id="rawJson" class="p-3 glass-soft rounded-3 small mono mb-0" style="max-height:340px; overflow:auto;"></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Breakdown Accordions -->
+        <div class="col-12">
+          <div class="glass p-4">
+            <div class="d-flex align-items-center justify-content-between">
+              <h5 class="mb-0 fw-bold"><i class="bi bi-clipboard-data"></i> Detailed Breakdown</h5>
+              <span class="badge text-bg-warning glass-soft">breakdown</span>
+            </div>
+            <p class="mb-3 opacity-75">
+              Every section from <span class="mono">result.breakdown</span> is displayed here (scores + extras).
+            </p>
+
+            <div class="accordion" id="breakdownAccordion"></div>
+          </div>
+        </div>
+
+        <!-- Footer Note -->
+        <div class="col-12">
+          <div class="text-center opacity-75 small py-2">
+            Built for <strong>FFTech AI Audit</strong> • Dark/Light theme • WebSocket live updates • Export-ready UI
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    // Theme
-    const html = document.documentElement;
-    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) html.classList.add('dark');
-    document.getElementById('theme-toggle').addEventListener('click', () => {
-      html.classList.toggle('dark');
-      localStorage.theme = html.classList.contains('dark') ? 'dark' : 'light';
+    // ----------------------------
+    // Theme toggle (persist)
+    // ----------------------------
+    const themeBtn = document.getElementById('themeBtn');
+    const root = document.documentElement;
+
+    function setTheme(mode){
+      root.setAttribute('data-bs-theme', mode);
+      localStorage.setItem('theme', mode);
+      themeBtn.innerHTML = mode === 'dark'
+        ? '<i class="bi bi-moon-stars"></i> <span class="ms-1">Dark</span>'
+        : '<i class="bi bi-sun"></i> <span class="ms-1">Light</span>';
+    }
+    setTheme(localStorage.getItem('theme') || 'dark');
+    themeBtn.addEventListener('click', () => {
+      const cur = root.getAttribute('data-bs-theme') || 'dark';
+      setTheme(cur === 'dark' ? 'light' : 'dark');
+      // re-render chart colors if needed
+      if (window._chart) {
+        window._chart.destroy();
+        if (window._lastResult) renderAll(window._lastResult);
+      }
     });
 
-    // Elements
-    const urlInput = document.getElementById('url-input');
-    const auditBtn = document.getElementById('audit-btn');
-    const statusCont = document.getElementById('status-container');
-    const statusText = document.getElementById('status-text');
-    const progressBar = document.getElementById('progress-bar');
-    const progressPct = document.getElementById('progress-percent');
-    const results = document.getElementById('results');
-    const errorBox = document.getElementById('error-message');
-    const errorText = document.getElementById('error-text');
-    const downloadPdfBtn = document.getElementById('download-pdf');
+    // ----------------------------
+    // WebSocket Setup
+    // ----------------------------
+    const wsBadge = document.getElementById('wsBadge');
+    const statusText = document.getElementById('statusText');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
 
-    let ws = null;
-    let chart = null;
-    let lastResult = null;
+    const runBtn = document.getElementById('runBtn');
+    const urlInput = document.getElementById('urlInput');
+    const btnExample = document.getElementById('btnExample');
+    const btnReset = document.getElementById('btnReset');
 
-    function connect() {
-      ws = new WebSocket(`wss://${location.host}/ws`);
-      ws.onopen = () => statusText.textContent = "Connected • Ready";
-      ws.onmessage = e => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.status === 'completed' && data.result) {
-            lastResult = data.result;
-            renderResult(data.result);
-            statusText.textContent = "Audit Complete";
-            progressBar.style.width = '100%';
-            progressPct.textContent = '100%';
-            downloadPdfBtn.classList.remove('hidden');
-            setTimeout(() => statusCont.classList.add('hidden'), 1500);
-          } else if (data.status === 'error') {
-            errorText.textContent = data.error || "Audit failed.";
-            errorBox.classList.remove('hidden');
-            results.classList.add('hidden');
-            downloadPdfBtn.classList.add('hidden');
-          } else if (data.progress !== undefined) {
-            progressBar.style.width = `${data.progress}%`;
-            progressPct.textContent = `${data.progress}%`;
-            statusText.textContent = data.status?.charAt(0).toUpperCase() + data.status?.slice(1) || "Processing...";
-          }
-        } catch(err) { console.error(err); }
-      };
-      ws.onclose = () => {
-        statusText.textContent = "Disconnected • reconnecting...";
-        setTimeout(connect, 2000);
-      };
+    const resultsWrap = document.getElementById('resultsWrap');
+    const rawJsonWrap = document.getElementById('rawJsonWrap');
+    const toggleRawBtn = document.getElementById('toggleRawBtn');
+
+    const pdfBtn = document.getElementById('pdfBtn');
+    const copyBtn = document.getElementById('copyBtn');
+
+    // Summary
+    const gradeBadge = document.getElementById('gradeBadge');
+    const scoreBig = document.getElementById('scoreBig');
+    const scoreRing = document.getElementById('scoreRing');
+    const auditedUrlEl = document.getElementById('auditedUrl');
+    const finalStatus = document.getElementById('finalStatus');
+
+    // Mini KPIs
+    const secScoreMini = document.getElementById('secScoreMini');
+    const perfScoreMini = document.getElementById('perfScoreMini');
+    const seoScoreMini = document.getElementById('seoScoreMini');
+    const linksScoreMini = document.getElementById('linksScoreMini');
+
+    // Result containers
+    const dynamicCards = document.getElementById('dynamicCards');
+    const kvBody = document.getElementById('kvBody');
+    const breakdownAccordion = document.getElementById('breakdownAccordion');
+    const rawJson = document.getElementById('rawJson');
+
+    let ws;
+    let reconnectTimer;
+
+    function wsUrl(){
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${proto}//${location.host}/ws`;
     }
 
-    function send() {
-      const val = urlInput.value.trim();
-      if (!val || !ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ url: val.startsWith('http') ? val : 'https://' + val }));
-      statusCont.classList.remove('hidden');
-      results.classList.add('hidden');
-      errorBox.classList.add('hidden');
-      downloadPdfBtn.classList.add('hidden');
-    }
-
-    auditBtn.onclick = send;
-    urlInput.onkeypress = e => { if (e.key === 'Enter') send(); };
-
-    downloadPdfBtn.onclick = async () => {
-      if (!lastResult) return;
-      downloadPdfBtn.disabled = true;
-      downloadPdfBtn.textContent = "Generating PDF...";
-      try {
-        const resp = await fetch('/generate-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(lastResult)
-        });
-        if (!resp.ok) throw new Error("PDF generation failed");
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = resp.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || "audit-report.pdf";
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch(err) {
-        alert("Could not generate PDF: " + err.message);
-      } finally {
-        downloadPdfBtn.disabled = false;
-        downloadPdfBtn.textContent = "Download Full PDF Report";
+    function setWsBadge(state){
+      if(state === 'connected'){
+        wsBadge.className = 'badge text-bg-success glass-soft';
+        wsBadge.innerHTML = '<i class="bi bi-plug"></i> Connected';
+      }else{
+        wsBadge.className = 'badge text-bg-warning glass-soft';
+        wsBadge.innerHTML = '<i class="bi bi-plug"></i> Disconnected';
       }
-    };
-
-    function renderResult(r) {
-      results.classList.remove('hidden');
-      document.getElementById('audited-url').textContent = r.audited_url;
-      document.getElementById('overall-score').textContent = r.overall_score;
-      document.getElementById('grade').textContent = r.grade;
-      document.getElementById('score-circle').style.setProperty('--score', r.overall_score + '%');
-
-      const b = r.breakdown;
-      document.getElementById('seo-score').textContent = b.seo.score;
-      document.getElementById('perf-score').textContent = b.performance.score;
-      document.getElementById('links-score').textContent = b.links.score;
-      document.getElementById('sec-score').textContent = b.security.score;
-      document.getElementById('competitors-score').textContent = b.competitors.score;
-      document.getElementById('competitors-top').textContent = b.competitors.top_competitor_score ? `Top: ${b.competitors.top_competitor_score}` : '';
-      document.getElementById('ai-score').textContent = b.ai.score;
-
-      // Extras rendering (full content)
-      document.getElementById('seo-extras').innerHTML = Object.entries(b.seo.extras || {}).map(([k,v]) => `<div><strong>${k.replace(/_/g,' ')}:</strong> ${v}</div>`).join('');
-      document.getElementById('perf-extras').innerHTML = Object.entries(b.performance.extras || {}).map(([k,v]) => `<div><strong>${k.replace(/_/g,' ')}:</strong> ${v}</div>`).join('');
-      document.getElementById('links-extras').innerHTML = Object.entries(b.links || {}).filter(([k])=>!['score'].includes(k)).map(([k,v]) => `<div><strong>${k.replace(/_/g,' ')}:</strong> ${v}</div>`).join('');
-      document.getElementById('sec-extras').innerHTML = Object.entries(b.security || {}).filter(([k])=>!['score'].includes(k)).map(([k,v]) => `<div><strong>${k.replace(/_/g,' ')}:</strong> ${v}</div>`).join('');
-
-      // Dynamic cards & kv
-      const cards = document.getElementById('dynamic-cards');
-      cards.innerHTML = (r.dynamic?.cards || []).map(c => `
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-6">
-          <h4 class="font-semibold mb-2">${c.title}</h4>
-          <p class="text-2xl font-bold">${c.body}</p>
-        </div>
-      `).join('');
-
-      const kv = document.getElementById('kv-list');
-      kv.innerHTML = (r.dynamic?.kv || []).map(item => `
-        <div class="px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/40">
-          <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">${item.key.replace(/_/g,' ')}</dt>
-          <dd class="mt-1 text-sm sm:col-span-2 font-mono">${item.value}</dd>
-        </div>
-      `).join('');
-
-      // Chart
-      if (chart) chart.destroy();
-      chart = new Chart(document.getElementById('scoreChart'), {
-        type: 'bar',
-        data: r.chart_data?.[0]?.data || { labels: ["SEO","Performance","Links","Security"], datasets: [{ data: [0,0,0,0] }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100 } } }
-      });
-
-      // Raw JSON
-      document.getElementById('raw-json').textContent = JSON.stringify(r, null, 2);
     }
 
-    connect();
+    function connectWS(){
+      try{
+        ws = new WebSocket(wsUrl());
+      }catch(e){
+        setWsBadge('disconnected');
+        scheduleReconnect();
+        return;
+      }
+
+      ws.onopen = () => setWsBadge('connected');
+      ws.onclose = () => { setWsBadge('disconnected'); scheduleReconnect(); };
+      ws.onerror = () => { setWsBadge('disconnected'); };
+
+      ws.onmessage = (event) => {
+        let msg = {};
+        try{ msg = JSON.parse(event.data); } catch(e){ return; }
+
+        const status = msg.status || '—';
+        const progress = Number(msg.progress ?? 0);
+
+        statusText.textContent = status;
+        progressText.textContent = `${progress}%`;
+        progressBar.style.width = `${progress}%`;
+
+        if(status === 'completed' && msg.result){
+          window._lastResult = msg.result;
+          finalStatus.textContent = 'Completed';
+          resultsWrap.classList.remove('d-none');
+          resultsWrap.classList.add('fade-in');
+          pdfBtn.disabled = false;
+          copyBtn.disabled = false;
+          renderAll(msg.result);
+        }
+
+        if(status === 'error'){
+          finalStatus.textContent = msg.error ? `Error: ${msg.error}` : 'Error';
+          pdfBtn.disabled = true;
+          copyBtn.disabled = true;
+        }
+      };
+    }
+
+    function scheduleReconnect(){
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connectWS, 1500);
+    }
+
+    connectWS();
+
+    // ----------------------------
+    // Actions
+    // ----------------------------
+    btnExample.addEventListener('click', () => {
+      urlInput.value = 'example.com';
+      urlInput.focus();
+    });
+
+    btnReset.addEventListener('click', () => {
+      urlInput.value = '';
+      statusText.textContent = 'Idle';
+      progressText.textContent = '0%';
+      progressBar.style.width = '0%';
+      finalStatus.textContent = 'Waiting…';
+      auditedUrlEl.textContent = '—';
+      gradeBadge.textContent = '—';
+      scoreBig.textContent = '—';
+      setRing(0, null);
+      resultsWrap.classList.add('d-none');
+      pdfBtn.disabled = true;
+      copyBtn.disabled = true;
+      clearOutputs();
+    });
+
+    runBtn.addEventListener('click', () => {
+      const url = (urlInput.value || '').trim();
+      if(!url){
+        toast('Please enter a website URL or domain.', 'warning');
+        return;
+      }
+      if(!ws || ws.readyState !== WebSocket.OPEN){
+        toast('WebSocket not connected. Retrying…', 'danger');
+        connectWS();
+        return;
+      }
+
+      // reset view
+      finalStatus.textContent = 'Running…';
+      resultsWrap.classList.add('d-none');
+      pdfBtn.disabled = true;
+      copyBtn.disabled = true;
+      clearOutputs();
+
+      ws.send(JSON.stringify({url}));
+    });
+
+    toggleRawBtn.addEventListener('click', () => rawJsonWrap.classList.toggle('d-none'));
+
+    copyBtn.addEventListener('click', async () => {
+      if(!window._lastResult) return;
+      const text = JSON.stringify(window._lastResult, null, 2);
+      try{
+        await navigator.clipboard.writeText(text);
+        toast('JSON copied to clipboard ✅', 'success');
+      }catch(e){
+        toast('Clipboard permission blocked.', 'danger');
+      }
+    });
+
+    // PDF Export (requires a backend endpoint - see section 2 below)
+    pdfBtn.addEventListener('click', async () => {
+      if(!window._lastResult) return;
+
+      // cover inputs (you can add your own UI fields if you want)
+      const payload = {
+        client_name: "Client",           // optional
+        audit_date: new Date().toISOString().slice(0,10),
+        brand_name: "FF Tech",
+        website_name: (window._lastResult.audited_url || 'Website'),
+        result: window._lastResult
+      };
+
+      try{
+        pdfBtn.disabled = true;
+        pdfBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Generating…';
+
+        const res = await fetch('/pdf', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+
+        if(!res.ok){
+          const err = await res.text();
+          throw new Error(err || 'PDF generation failed');
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank'); // open PDF in new tab
+        toast('PDF generated successfully ✅', 'success');
+      }catch(e){
+        toast(`PDF error: ${e.message}`, 'danger');
+      }finally{
+        pdfBtn.disabled = false;
+        pdfBtn.innerHTML = '<i class="bi bi-filetype-pdf"></i> Export PDF';
+      }
+    });
+
+    // ----------------------------
+    // Render Functions
+    // ----------------------------
+    function clearOutputs(){
+      dynamicCards.innerHTML = '';
+      kvBody.innerHTML = '';
+      breakdownAccordion.innerHTML = '';
+      rawJson.textContent = '';
+      if(window._chart){ window._chart.destroy(); window._chart = null; }
+      // mini scores
+      secScoreMini.textContent = '—';
+      perfScoreMini.textContent = '—';
+      seoScoreMini.textContent = '—';
+      linksScoreMini.textContent = '—';
+    }
+
+    function gradeColor(grade){
+      const g = (grade || '').toUpperCase();
+      if(g === 'A+' || g === 'A') return 'success';
+      if(g === 'B') return 'info';
+      if(g === 'C') return 'warning';
+      return 'danger';
+    }
+
+    function setRing(score, grade){
+      const s = Math.max(0, Math.min(100, Number(score || 0)));
+      const deg = (s/100) * 360;
+
+      let color = '#9ca3af';
+      if(s >= 80) color = '#22c55e';
+      else if(s >= 60) color = '#f59e0b';
+      else color = '#ef4444';
+
+      scoreRing.style.setProperty('--ring-color', color);
+      scoreRing.style.setProperty('--ring-deg', `${deg}deg`);
+    }
+
+    function toNiceKey(k){
+      return String(k || '').replaceAll('_',' ').replaceAll('-', ' ').replace(/\b\w/g, m => m.toUpperCase());
+    }
+
+    function badgeBool(v){
+      const ok = !!v;
+      const cls = ok ? 'text-bg-success' : 'text-bg-danger';
+      const txt = ok ? 'Yes' : 'No';
+      return `<span class="badge ${cls}">${txt}</span>`;
+    }
+
+    function renderAll(result){
+      // raw
+      rawJson.textContent = JSON.stringify(result, null, 2);
+
+      // summary
+      auditedUrlEl.textContent = result.audited_url || '—';
+      scoreBig.textContent = (result.overall_score ?? '—');
+      setRing(result.overall_score, result.grade);
+
+      const g = result.grade || '—';
+      gradeBadge.className = `badge text-bg-${gradeColor(g)}`;
+      gradeBadge.textContent = `Grade ${g}`;
+
+      // minis from breakdown
+      const b = result.breakdown || {};
+      seoScoreMini.textContent = b.seo?.score ?? '—';
+      perfScoreMini.textContent = b.performance?.score ?? '—';
+      linksScoreMini.textContent = b.links?.score ?? '—';
+      secScoreMini.textContent = b.security?.score ?? '—';
+
+      // dynamic cards
+      renderCards(result.dynamic?.cards || []);
+
+      // kv table
+      renderKV(result.dynamic?.kv || []);
+
+      // accordion breakdown
+      renderBreakdown(b);
+
+      // charts
+      renderCharts(result.chart_data || []);
+    }
+
+    function renderCards(cards){
+      dynamicCards.innerHTML = '';
+      if(!cards || !cards.length){
+        dynamicCards.innerHTML = `<div class="col-12"><div class="kpi">No cards.</div></div>`;
+        return;
+      }
+      for(const c of cards){
+        dynamicCards.insertAdjacentHTML('beforeend', `
+          <div class="col-12">
+            <div class="kpi">
+              <div class="label">${c.title ?? 'Card'}</div>
+              <div class="value">${c.body ?? ''}</div>
+            </div>
+          </div>
+        `);
+      }
+    }
+
+    function renderKV(kv){
+      kvBody.innerHTML = '';
+      if(!kv || !kv.length){
+        kvBody.innerHTML = `<tr><td colspan="2" class="opacity-75">No key/values.</td></tr>`;
+        return;
+      }
+      for(const row of kv){
+        const key = row.key ?? '';
+        const val = row.value;
+
+        let prettyVal = '';
+        if(typeof val === 'boolean') prettyVal = badgeBool(val);
+        else prettyVal = `<span class="mono">${String(val)}</span>`;
+
+        kvBody.insertAdjacentHTML('beforeend', `
+          <tr>
+            <td class="mono">${key}</td>
+            <td>${prettyVal}</td>
+          </tr>
+        `);
+      }
+    }
+
+    function renderBreakdown(breakdown){
+      breakdownAccordion.innerHTML = '';
+      const keys = Object.keys(breakdown || {});
+      if(!keys.length){
+        breakdownAccordion.innerHTML = `<div class="opacity-75">No breakdown data.</div>`;
+        return;
+      }
+
+      keys.forEach((k, idx) => {
+        const sec = breakdown[k] || {};
+        const score = sec.score;
+        const extras = sec.extras || {};
+
+        const headerId = `bh_${idx}`;
+        const collapseId = `bc_${idx}`;
+
+        const badge = (score !== undefined)
+          ? `<span class="badge text-bg-${score>=80?'success':score>=60?'warning':'danger'} ms-2">${score}</span>`
+          : `<span class="badge text-bg-secondary ms-2">N/A</span>`;
+
+        breakdownAccordion.insertAdjacentHTML('beforeend', `
+          <div class="accordion-item glass-soft">
+            <h2 class="accordion-header">
+              <button class="accordion-button ${idx===0?'':'collapsed'}" type="button"
+                      data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                <div class="d-flex align-items-center justify-content-between w-100">
+                  <div class="fw-semibold">${toNiceKey(k)} ${badge}</div>
+                  <div class="opacity-75 small mono">${k}</div>
+                </div>
+              </button>
+            </h2>
+            <div id="${collapseId}" class="accordion-collapse collapse ${idx===0?'show':''}" data-bs-parent="#breakdownAccordion">
+              <div class="accordion-body">
+
+                ${renderSectionDetails(k, sec)}
+
+                <hr class="opacity-25"/>
+                <div class="row g-2">
+                  ${Object.entries(extras).map(([ek, ev]) => {
+                    const v = (typeof ev === 'boolean') ? badgeBool(ev) : `<span class="mono">${String(ev)}</span>`;
+                    return `
+                      <div class="col-md-6">
+                        <div class="kpi">
+                          <div class="label">${toNiceKey(ek)}</div>
+                          <div class="value">${v}</div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+
+              </div>
+            </div>
+          </div>
+        `);
+      });
+    }
+
+    function renderSectionDetails(key, sec){
+      // Special rendering for known sections (cleaner UX)
+      if(key === 'security'){
+        return `
+          <div class="row g-2 mb-2">
+            <div class="col-md-4">
+              <div class="kpi">
+                <div class="label">HTTPS</div>
+                <div class="value">${badgeBool(sec.https)}</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="kpi">
+                <div class="label">HSTS</div>
+                <div class="value">${badgeBool(sec.hsts)}</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="kpi">
+                <div class="label">Status Code</div>
+                <div class="value mono">${sec.status_code ?? '—'}</div>
+              </div>
+            </div>
+          </div>
+          <div class="kpi">
+            <div class="label">Server</div>
+            <div class="value mono">${sec.server ?? '—'}</div>
+          </div>
+        `;
+      }
+
+      if(key === 'links'){
+        return `
+          <div class="row g-2 mb-2">
+            <div class="col-md-4">
+              <div class="kpi">
+                <div class="label">Internal Links</div>
+                <div class="value mono">${sec.internal_links_count ?? '—'}</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="kpi">
+                <div class="label">External Links</div>
+                <div class="value mono">${sec.external_links_count ?? '—'}</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="kpi">
+                <div class="label">Total Links</div>
+                <div class="value mono">${sec.total_links_count ?? '—'}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      return `<div class="opacity-75">Details and extras shown below.</div>`;
+    }
+
+    function renderCharts(chartData){
+      // Uses runner.chart_data (already Chart.js compatible)
+      if(!chartData || !chartData.length){
+        return;
+      }
+      const first = chartData[0];
+      const ctx = document.getElementById('breakdownChart');
+
+      // theme-aware ticks
+      const isDark = (root.getAttribute('data-bs-theme') || 'dark') === 'dark';
+      const tickColor = isDark ? 'rgba(226,232,240,.75)' : 'rgba(15,23,42,.75)';
+      const gridColor = isDark ? 'rgba(148,163,184,.18)' : 'rgba(15,23,42,.10)';
+
+      window._chart = new Chart(ctx, {
+        type: first.type || 'bar',
+        data: first.data,
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              labels: { color: tickColor }
+            },
+            title: {
+              display: false
+            },
+            tooltip: {
+              backgroundColor: isDark ? 'rgba(2,6,23,.9)' : 'rgba(255,255,255,.95)',
+              titleColor: isDark ? '#e2e8f0' : '#0f172a',
+              bodyColor: isDark ? '#e2e8f0' : '#0f172a',
+              borderColor: isDark ? 'rgba(148,163,184,.25)' : 'rgba(15,23,42,.12)',
+              borderWidth: 1
+            }
+          },
+          scales: {
+            x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+            y: { ticks: { color: tickColor }, grid: { color: gridColor }, suggestedMin: 0, suggestedMax: 100 }
+          }
+        }
+      });
+    }
+
+    // ----------------------------
+    // Toast helper
+    // ----------------------------
+    function toast(message, type='info'){
+      const id = 't_' + Math.random().toString(16).slice(2);
+      const el = document.createElement('div');
+      el.innerHTML = `
+        <div id="${id}" class="toast align-items-center text-bg-${type} border-0 position-fixed bottom-0 end-0 m-3" role="alert" aria-live="assertive" aria-atomic="true">
+          <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(el);
+      const toastEl = document.getElementById(id);
+      const t = new bootstrap.Toast(toastEl, { delay: 2400 });
+      t.show();
+      toastEl.addEventListener('hidden.bs.toast', () => el.remove());
+    }
   </script>
 </body>
 </html>
