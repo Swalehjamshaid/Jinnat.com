@@ -1,257 +1,261 @@
 # -*- coding: utf-8 -*-
 """
-app/audit/pdf_service.py
+app/audit/pdf_report.py
 
-Adapter (Best Practice):
-- Accepts runner.py result dict (audited_url, overall_score, grade, breakdown, chart_data, dynamic)
-- Converts it into audit_data required by pdf_report.generate_audit_pdf
-- Generates PDF
+PDF Generator:
+- Pure PDF generation ONLY (no imports from pdf_service/runner to avoid circular imports)
+- Exposes: generate_audit_pdf(audit_data, output_path, logo_path, report_title)
 
-This keeps runner.py I/O unchanged and makes PDF generation stable.
+This module must NOT import itself.
 """
 
 from __future__ import annotations
 
 import os
-import datetime as dt
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, List
 
-from app.audit.pdf_report import generate_audit_pdf
-
-
-def _safe_get(d: Dict[str, Any], *path: str, default=None):
-    cur: Any = d
-    for p in path:
-        if not isinstance(cur, dict) or p not in cur:
-            return default
-        cur = cur[p]
-    return cur
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.pdfgen import canvas
 
 
-def _today_iso() -> str:
-    return dt.date.today().isoformat()
-
-
-def _as_list(x) -> List[Any]:
+def _safe_str(x: Any) -> str:
     if x is None:
-        return []
-    return x if isinstance(x, list) else [x]
+        return ""
+    try:
+        return str(x)
+    except Exception:
+        return ""
 
 
-def _derive_risks_and_opps(runner_result: Dict[str, Any]) -> Tuple[List[str], List[str]]:
-    """Derive human-readable risks/opportunities from runner output (no runner changes needed)."""
-    risks: List[str] = []
-    opps: List[str] = []
-
-    breakdown = runner_result.get("breakdown") or {}
-    seo_extras = _safe_get(breakdown, "seo", "extras", default={}) or {}
-    perf_extras = _safe_get(breakdown, "performance", "extras", default={}) or {}
-    sec = breakdown.get("security") or {}
-    links = breakdown.get("links") or {}
-
-    # SEO
-    if not seo_extras.get("title"):
-        risks.append("Missing <title> tag may reduce search visibility.")
-        opps.append("Add a clear, keyword-focused title tag (50–60 chars).")
-
-    if seo_extras.get("meta_description_present") is False:
-        risks.append("Missing meta description can reduce click-through rate from Google.")
-        opps.append("Write compelling meta descriptions to improve CTR.")
-
-    h1 = seo_extras.get("h1_count")
-    if isinstance(h1, int) and h1 == 0:
-        risks.append("No H1 found; page topic may be unclear to users/search engines.")
-        opps.append("Add a single strong H1 that matches page intent.")
-    elif isinstance(h1, int) and h1 > 1:
-        risks.append("Multiple H1s found; heading structure may be unclear.")
-        opps.append("Use one H1 per page and use H2/H3 for sections.")
-
-    imgs_total = seo_extras.get("images_total")
-    missing_alt = seo_extras.get("images_missing_alt")
-    if isinstance(imgs_total, int) and isinstance(missing_alt, int) and imgs_total >= 5 and missing_alt > 0:
-        risks.append("Images missing ALT attributes reduce accessibility and SEO value.")
-        opps.append("Add descriptive ALT text to key images.")
-
-    if not seo_extras.get("canonical"):
-        risks.append("Canonical link not detected; risk of duplicate content signals.")
-        opps.append("Add rel=canonical on important pages.")
-
-    # Performance
-    load_ms = perf_extras.get("load_ms")
-    size_bytes = perf_extras.get("bytes")
-    if isinstance(load_ms, int) and load_ms > 3000:
-        risks.append(f"Slow load time detected ({load_ms} ms) can reduce conversions.")
-        opps.append("Optimize images, reduce JS/CSS, enable caching/CDN.")
-
-    if isinstance(size_bytes, int) and size_bytes > 1_500_000:
-        risks.append("Large page size can hurt mobile performance.")
-        opps.append("Compress images, minify assets, use WebP/AVIF.")
-
-    # Security
-    if sec.get("https") is False:
-        risks.append("HTTPS is disabled; users may see security warnings.")
-        opps.append("Enable SSL/TLS to improve trust and SEO.")
-    elif sec.get("https") is True and sec.get("hsts") is False:
-        risks.append("HSTS header missing; HTTPS enforcement can be improved.")
-        opps.append("Enable HSTS for stronger security.")
-
-    # Links
-    if (links.get("internal_links_count") or 0) == 0:
-        risks.append("No internal links detected; poor crawl/navigation structure.")
-        opps.append("Add internal links to key pages (services, product, contact).")
-
-    # Limit to keep PDF clean
-    return risks[:10], opps[:10]
+def _draw_heading(c: canvas.Canvas, text: str, x: float, y: float) -> float:
+    c.setFont("Helvetica-Bold", 16)
+    c.setFillColor(colors.black)
+    c.drawString(x, y, text)
+    return y - 18
 
 
-def map_runner_result_to_audit_data(
-    runner_result: Dict[str, Any],
-    client_name: str = "N/A",
-    brand_name: str = "FF Tech",
-    audit_date: Optional[str] = None,
-    website_name: Optional[str] = None,
-    industry: str = "N/A",
-    audience: str = "N/A",
-    goals: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """Convert runner output into audit_data structure expected by pdf_report.py."""
-    audit_date = audit_date or _today_iso()
-    goals = goals or []
-
-    audited_url = runner_result.get("audited_url") or "N/A"
-    overall_score = runner_result.get("overall_score")
-    grade = runner_result.get("grade") or "N/A"
-
-    breakdown = runner_result.get("breakdown") or {}
-    seo_extras = _safe_get(breakdown, "seo", "extras", default={}) or {}
-    perf_extras = _safe_get(breakdown, "performance", "extras", default={}) or {}
-
-    risks, opps = _derive_risks_and_opps(runner_result)
-
-    # Build scores
-    scores = {
-        "seo": _safe_get(breakdown, "seo", "score", default=None),
-        "performance": _safe_get(breakdown, "performance", "score", default=None),
-        "ux_ui": None,
-        "accessibility": None,
-        "security": _safe_get(breakdown, "security", "score", default=None),
-        "content_quality": None,
-    }
-
-    # Derive simple lists
-    on_page_issues = []
-    if not seo_extras.get("title"):
-        on_page_issues.append("Missing <title> tag.")
-    if seo_extras.get("meta_description_present") is False:
-        on_page_issues.append("Missing meta description.")
-    if seo_extras.get("h1_count") == 0:
-        on_page_issues.append("No H1 heading found.")
-    if isinstance(seo_extras.get("images_missing_alt"), int) and seo_extras.get("images_missing_alt", 0) > 0:
-        on_page_issues.append("Some images missing ALT attributes.")
-
-    technical_issues = []
-    if not seo_extras.get("canonical"):
-        technical_issues.append("Canonical link not detected.")
-
-    perf_issues = []
-    if isinstance(perf_extras.get("load_ms"), int) and perf_extras["load_ms"] > 3000:
-        perf_issues.append(f"Slow load time: {perf_extras['load_ms']} ms.")
-    if isinstance(perf_extras.get("bytes"), int) and perf_extras["bytes"] > 1_500_000:
-        perf_issues.append(f"Large page size: {perf_extras['bytes']} bytes.")
-    if isinstance(perf_extras.get("scripts"), int) and perf_extras["scripts"] > 25:
-        perf_issues.append("High number of scripts may impact performance.")
-    if isinstance(perf_extras.get("styles"), int) and perf_extras["styles"] > 12:
-        perf_issues.append("High number of stylesheets may impact rendering performance.")
-
-    verdict = "Healthy" if isinstance(overall_score, int) and overall_score >= 80 else "Needs Improvement"
-
-    audit_data: Dict[str, Any] = {
-        "website": {
-            "name": website_name or audited_url,
-            "url": audited_url,
-            "industry": industry,
-            "audience": audience,
-            "goals": goals,
-        },
-        "client": {"name": client_name},
-        "brand": {"name": brand_name},
-        "audit": {
-            "date": audit_date,
-            "overall_score": overall_score,
-            "grade": grade,
-            "verdict": verdict,
-            "executive_summary": (
-                "This report summarizes the website’s current health based on automated checks across "
-                "SEO, performance, links, and security."
-            ),
-            "key_risks": risks,
-            "opportunities": opps,
-        },
-        "scope": {
-            "what": [
-                "SEO signals (title, meta description, canonical, headings, image ALT)",
-                "Performance heuristics (load time, bytes, scripts, styles)",
-                "Links (internal/external counts)",
-                "Security basics (HTTPS, HSTS, HTTP status)",
-            ],
-            "why": "These elements influence visibility, usability, trust, and conversion performance.",
-            "tools": ["FFTechAuditBot runner.py", "ReportLab PDF generator"],
-        },
-        "scores": scores,
-        "seo": {
-            "on_page_issues": on_page_issues,
-            "technical_issues": technical_issues,
-            "content_gaps": [],
-            "keyword_optimization_level": "N/A",
-        },
-        "performance": {
-            "core_web_vitals": {
-                "lcp": "N/A",
-                "cls": "N/A",
-                "inp": "N/A",
-                "lcp_notes": "",
-                "cls_notes": "",
-                "inp_notes": "",
-            },
-            "mobile_vs_desktop": "N/A",
-            "page_size_issues": perf_issues,
-        },
-        "mobile": {
-            "responsive_issues": [],
-            "mobile_usability_problems": [],
-            "mobile_score": None,
-        },
-    }
-
-    return audit_data
+def _draw_subheading(c: canvas.Canvas, text: str, x: float, y: float) -> float:
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(colors.black)
+    c.drawString(x, y, text)
+    return y - 14
 
 
-def generate_pdf_from_runner_result(
-    runner_result: Dict[str, Any],
+def _draw_paragraph(c: canvas.Canvas, text: str, x: float, y: float, max_width: int = 95) -> float:
+    """
+    Very lightweight line-wrapping (no platypus) to keep dependencies minimal.
+    """
+    c.setFont("Helvetica", 10.5)
+    c.setFillColor(colors.black)
+
+    words = _safe_str(text).split()
+    line = ""
+    lines: List[str] = []
+
+    for w in words:
+        if len(line) + len(w) + 1 <= max_width:
+            line = (line + " " + w).strip()
+        else:
+            if line:
+                lines.append(line)
+            line = w
+    if line:
+        lines.append(line)
+
+    for ln in lines:
+        c.drawString(x, y, ln)
+        y -= 12
+
+    return y
+
+
+def _draw_bullets(c: canvas.Canvas, items: List[str], x: float, y: float, max_items: int = 12) -> float:
+    c.setFont("Helvetica", 10.5)
+    c.setFillColor(colors.black)
+
+    for i, item in enumerate(items[:max_items]):
+        c.drawString(x, y, u"\u2022 " + _safe_str(item))
+        y -= 12
+
+    return y
+
+
+def _new_page_if_needed(c: canvas.Canvas, y: float, min_y: float = 72) -> float:
+    if y < min_y:
+        c.showPage()
+        return A4[1] - 72
+    return y
+
+
+def generate_audit_pdf(
+    audit_data: Dict[str, Any],
     output_path: str,
     logo_path: Optional[str] = None,
-    client_name: str = "N/A",
-    brand_name: str = "FF Tech",
-    audit_date: Optional[str] = None,
-    website_name: Optional[str] = None,
+    report_title: str = "Website Audit Report",
 ) -> str:
     """
-    Single entry point for PDF generation:
-    runner_result -> mapped audit_data -> generate_audit_pdf
+    Generate a PDF at output_path using audit_data.
+    Returns output_path.
     """
-    audit_data = map_runner_result_to_audit_data(
-        runner_result=runner_result,
-        client_name=client_name,
-        brand_name=brand_name,
-        audit_date=audit_date,
-        website_name=website_name,
-    )
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    return generate_audit_pdf(
-        audit_data=audit_data,
-        output_path=output_path,
-        logo_path=logo_path,
-        report_title="Website Audit Report",
+    c = canvas.Canvas(output_path, pagesize=A4)
+    page_w, page_h = A4
+
+    x = 48
+    y = page_h - 60
+
+    # Optional logo
+    if logo_path and os.path.exists(logo_path):
+        try:
+            # Draw logo at top-right
+            c.drawImage(logo_path, page_w - 160, page_h - 95, width=110, height=50, preserveAspectRatio=True, mask="auto")
+        except Exception:
+            # Ignore logo errors, keep generating
+            pass
+
+    # Title
+    y = _draw_heading(c, report_title, x, y)
+    y -= 6
+
+    website = audit_data.get("website") or {}
+    client = audit_data.get("client") or {}
+    brand = audit_data.get("brand") or {}
+    audit = audit_data.get("audit") or {}
+    scope = audit_data.get("scope") or {}
+    scores = audit_data.get("scores") or {}
+    seo = audit_data.get("seo") or {}
+    perf = audit_data.get("performance") or {}
+    mobile = audit_data.get("mobile") or {}
+
+    # Summary block
+    c.setFont("Helvetica", 10.5)
+    c.setFillColor(colors.black)
+
+    y = _draw_paragraph(
+        c,
+        f"Client: {_safe_str(client.get('name', 'N/A'))} | Brand: {_safe_str(brand.get('name', 'N/A'))}",
+        x, y
     )
+    y = _draw_paragraph(
+        c,
+        f"Website: {_safe_str(website.get('name', 'N/A'))}  ({_safe_str(website.get('url', 'N/A'))})",
+        x, y
+    )
+    y = _draw_paragraph(
+        c,
+        f"Audit Date: {_safe_str(audit.get('date', 'N/A'))}",
+        x, y
+    )
+
+    y -= 6
+    y = _new_page_if_needed(c, y)
+
+    # Executive Summary
+    y = _draw_subheading(c, "Executive Summary", x, y)
+    y = _draw_paragraph(c, _safe_str(audit.get("executive_summary", "")), x, y)
+    y -= 6
+    y = _new_page_if_needed(c, y)
+
+    # Overall score line
+    overall_score = audit.get("overall_score")
+    grade = audit.get("grade", "N/A")
+    verdict = audit.get("verdict", "N/A")
+
+    y = _draw_subheading(c, "Overall Result", x, y)
+    y = _draw_paragraph(
+        c,
+        f"Overall Score: {_safe_str(overall_score)} | Grade: {_safe_str(grade)} | Verdict: {_safe_str(verdict)}",
+        x, y
+    )
+    y -= 6
+    y = _new_page_if_needed(c, y)
+
+    # Scores
+    y = _draw_subheading(c, "Section Scores", x, y)
+    score_lines = [
+        f"SEO: {_safe_str(scores.get('seo'))}",
+        f"Performance: {_safe_str(scores.get('performance'))}",
+        f"Security: {_safe_str(scores.get('security'))}",
+        f"Accessibility: {_safe_str(scores.get('accessibility'))}",
+        f"Content Quality: {_safe_str(scores.get('content_quality'))}",
+        f"UX/UI: {_safe_str(scores.get('ux_ui'))}",
+    ]
+    y = _draw_bullets(c, score_lines, x, y, max_items=12)
+    y -= 6
+    y = _new_page_if_needed(c, y)
+
+    # Key risks & opportunities
+    risks = audit.get("key_risks") or []
+    opps = audit.get("opportunities") or []
+
+    y = _draw_subheading(c, "Key Risks", x, y)
+    y = _draw_bullets(c, [ _safe_str(r) for r in risks ], x, y, max_items=10)
+    y -= 4
+    y = _new_page_if_needed(c, y)
+
+    y = _draw_subheading(c, "Opportunities", x, y)
+    y = _draw_bullets(c, [ _safe_str(o) for o in opps ], x, y, max_items=10)
+    y -= 6
+    y = _new_page_if_needed(c, y)
+
+    # Scope
+    y = _draw_subheading(c, "Audit Scope", x, y)
+    y = _draw_paragraph(c, "What we checked:", x, y)
+    y = _draw_bullets(c, [ _safe_str(w) for w in (scope.get("what") or []) ], x + 12, y, max_items=12)
+    y = _draw_paragraph(c, f"Why it matters: {_safe_str(scope.get('why', ''))}", x, y)
+    tools = scope.get("tools") or []
+    if tools:
+        y = _draw_paragraph(c, "Tools:", x, y)
+        y = _draw_bullets(c, [ _safe_str(t) for t in tools ], x + 12, y, max_items=10)
+
+    y -= 6
+    y = _new_page_if_needed(c, y)
+
+    # SEO details
+    y = _draw_subheading(c, "SEO Findings", x, y)
+    on_page = seo.get("on_page_issues") or []
+    tech = seo.get("technical_issues") or []
+    gaps = seo.get("content_gaps") or []
+
+    if on_page:
+        y = _draw_paragraph(c, "On-page issues:", x, y)
+        y = _draw_bullets(c, [ _safe_str(i) for i in on_page ], x + 12, y, max_items=12)
+    if tech:
+        y = _draw_paragraph(c, "Technical issues:", x, y)
+        y = _draw_bullets(c, [ _safe_str(i) for i in tech ], x + 12, y, max_items=12)
+    if gaps:
+        y = _draw_paragraph(c, "Content gaps:", x, y)
+        y = _draw_bullets(c, [ _safe_str(i) for i in gaps ], x + 12, y, max_items=12)
+
+    y -= 6
+    y = _new_page_if_needed(c, y)
+
+    # Performance details
+    y = _draw_subheading(c, "Performance Findings", x, y)
+    page_size_issues = (perf.get("page_size_issues") or [])
+    if page_size_issues:
+        y = _draw_paragraph(c, "Page-size / load issues:", x, y)
+        y = _draw_bullets(c, [ _safe_str(i) for i in page_size_issues ], x + 12, y, max_items=12)
+
+    y -= 6
+    y = _new_page_if_needed(c, y)
+
+    # Mobile
+    y = _draw_subheading(c, "Mobile Findings", x, y)
+    mobile_issues = (mobile.get("mobile_usability_problems") or []) + (mobile.get("responsive_issues") or [])
+    if mobile_issues:
+        y = _draw_bullets(c, [ _safe_str(i) for i in mobile_issues ], x, y, max_items=12)
+    else:
+        y = _draw_paragraph(c, "No mobile-specific issues were provided by the runner output.", x, y)
+
+    # Footer
+    c.setFont("Helvetica-Oblique", 9)
+    c.setFillColor(colors.grey)
+    c.drawString(x, 30, "Generated by FF Tech Audit System")
+
+    c.save()
+    return output_path
