@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import tempfile
+import datetime as dt
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Body, BackgroundTasks
@@ -14,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.websockets import WebSocketState
 
 from app.audit.runner import WebsiteAuditRunner
-from app.audit.pdf_report import generate_audit_pdf
+from app.audit.pdf_service import generate_pdf_from_runner_result  # ✅ adapter (best practice)
 
 # ------------------------------------------------------------
 # Logging (Railway-friendly)
@@ -86,7 +87,7 @@ async def health():
     return {"ok": True}
 
 # ------------------------------------------------------------
-# PDF Generation Endpoint (FIXED)
+# PDF Generation Endpoint (best-practice integration, backward compatible)
 # ------------------------------------------------------------
 @app.post("/generate-pdf")
 async def generate_pdf(
@@ -94,44 +95,71 @@ async def generate_pdf(
     payload: Dict[str, Any] = Body(...),            # ✅ default after
 ):
     """
-    Receives audit result → generates PDF → sends it as download
-    Cleans up temp file automatically after response is sent
+    Backward compatible endpoint:
+
+    Accepts either:
+      A) runner result directly (existing UI):
+         { audited_url, overall_score, grade, breakdown, chart_data, dynamic }
+
+      OR
+
+      B) extended payload for better cover page:
+         {
+           "client_name": "ABC",
+           "brand_name": "FF Tech",
+           "audit_date": "2026-01-30",
+           "website_name": "My Site",
+           "result": { ...runner result... }
+         }
+
+    Generates PDF and returns it.
     """
     tmp_path = None
     try:
-        # Prepare data for pdf_report (adjust keys as needed)
-        audit_data = {
-            "website": {
-                "url": payload.get("audited_url", "Unknown"),
-            },
-            "audit": {
-                "overall_score": payload.get("overall_score"),
-                "grade": payload.get("grade"),
-            },
-            "scores": {
-                "seo": payload.get("breakdown", {}).get("seo", {}).get("score"),
-                "performance": payload.get("breakdown", {}).get("performance", {}).get("score"),
-                "links": payload.get("breakdown", {}).get("links", {}).get("score"),
-                "security": payload.get("breakdown", {}).get("security", {}).get("score"),
-            },
-        }
+        # ----------------------------------------
+        # 1) Detect payload shape
+        # ----------------------------------------
+        if isinstance(payload.get("result"), dict):
+            runner_result = payload.get("result") or {}
+            client_name = str(payload.get("client_name") or "N/A")
+            brand_name = str(payload.get("brand_name") or "FF Tech")
+            audit_date = str(payload.get("audit_date") or dt.date.today().isoformat())
+            website_name = payload.get("website_name")
+        else:
+            # Old format: payload IS runner_result
+            runner_result = payload
+            client_name = "N/A"
+            brand_name = "FF Tech"
+            audit_date = dt.date.today().isoformat()
+            website_name = None
 
-        # Create temporary file
+        # ----------------------------------------
+        # 2) Create temp file
+        # ----------------------------------------
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp_path = tmp.name
 
         logger.info("Generating PDF to: %s", tmp_path)
 
-        # Generate PDF
-        generate_audit_pdf(
-            audit_data=audit_data,
+        # ----------------------------------------
+        # 3) Generate PDF via adapter (best practice)
+        # ----------------------------------------
+        generate_pdf_from_runner_result(
+            runner_result=runner_result,
             output_path=tmp_path,
-            # logo_path="app/assets/logo.png"  # ← add if you have one
+            logo_path=None,             # add if you have a logo file path
+            client_name=client_name,
+            brand_name=brand_name,
+            audit_date=audit_date,
+            website_name=website_name,
         )
 
-        # Prepare filename
+        # ----------------------------------------
+        # 4) Filename
+        # ----------------------------------------
+        audited_url = str(runner_result.get("audited_url", "report"))
         domain = (
-            str(payload.get("audited_url", "report"))
+            audited_url
             .replace("https://", "")
             .replace("http://", "")
             .replace("/", "_")
@@ -141,7 +169,9 @@ async def generate_pdf(
         )
         filename = f"website-audit-report-{domain}.pdf"
 
-        # Cleanup function (runs after response is sent)
+        # ----------------------------------------
+        # 5) Cleanup after response
+        # ----------------------------------------
         def cleanup():
             try:
                 if tmp_path and os.path.exists(tmp_path):
@@ -152,7 +182,6 @@ async def generate_pdf(
 
         background_tasks.add_task(cleanup)
 
-        # Send file to browser
         return FileResponse(
             path=tmp_path,
             filename=filename,
@@ -162,7 +191,6 @@ async def generate_pdf(
     except Exception as e:
         logger.exception("PDF generation failed")
 
-        # Emergency cleanup if something went wrong
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
@@ -248,4 +276,3 @@ async def ws_endpoint(ws: WebSocket):
             logger.exception("WS loop error: %s", e)
             await _safe_ws_send(ws, {"status": "error", "progress": 100, "error": f"WS error: {e}"})
             break
-``
