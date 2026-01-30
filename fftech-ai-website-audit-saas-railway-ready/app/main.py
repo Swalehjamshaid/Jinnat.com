@@ -1,195 +1,174 @@
-# -*- coding: utf-8 -*-
-"""
-app/audit/pdf_service.py
-
-Adapter layer (best practice):
-- Accepts runner.py output (stable)
-- Maps it into pdf_report.py audit_data format
-- Calls generate_audit_pdf()
-
-This keeps runner.py input/output unchanged.
-"""
-
+# app/main.py
 from __future__ import annotations
 
 import os
-import datetime as dt
-from typing import Any, Dict, Optional, List, Tuple
+import time
+import logging
+from typing import Optional, Dict, Any
 
-from app.audit.pdf_report import generate_audit_pdf
-
-
-def _safe_get(d: Dict[str, Any], *path: str, default=None):
-    cur: Any = d
-    for p in path:
-        if not isinstance(cur, dict) or p not in cur:
-            return default
-        cur = cur[p]
-    return cur
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 
-def _today_iso() -> str:
-    return dt.date.today().isoformat()
+# -----------------------------------------------------------------------------
+# Logging (simple, container-friendly)
+# -----------------------------------------------------------------------------
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("app")
 
 
-def _derive_risks_opps(result: Dict[str, Any]) -> Tuple[List[str], List[str]]:
-    """Derive basic risks/opportunities from runner output (optional, but makes PDF smarter)."""
-    risks: List[str] = []
-    opps: List[str] = []
-
-    b = result.get("breakdown") or {}
-
-    seo_extras = _safe_get(b, "seo", "extras", default={}) or {}
-    perf_extras = _safe_get(b, "performance", "extras", default={}) or {}
-    sec = _safe_get(b, "security", default={}) or {}
-    links = _safe_get(b, "links", default={}) or {}
-
-    if seo_extras.get("meta_description_present") is False:
-        risks.append("Missing meta description can reduce click-through rate from Google results.")
-        opps.append("Write compelling meta descriptions for key pages to improve CTR.")
-
-    h1_count = seo_extras.get("h1_count")
-    if isinstance(h1_count, int) and h1_count == 0:
-        risks.append("No H1 detected; page topic clarity may be reduced.")
-        opps.append("Add exactly one H1 aligned with the primary topic/keyword.")
-    elif isinstance(h1_count, int) and h1_count > 1:
-        risks.append("Multiple H1 tags detected; heading hierarchy may be unclear.")
-        opps.append("Use one H1 and structure content with H2/H3 headings.")
-
-    imgs_total = seo_extras.get("images_total")
-    imgs_missing_alt = seo_extras.get("images_missing_alt")
-    if isinstance(imgs_total, int) and isinstance(imgs_missing_alt, int) and imgs_total >= 5 and imgs_missing_alt > 0:
-        risks.append("Some images lack ALT text, impacting accessibility and SEO.")
-        opps.append("Add descriptive ALT text to images, especially important content images.")
-
-    load_ms = perf_extras.get("load_ms")
-    if isinstance(load_ms, int) and load_ms > 3000:
-        risks.append(f"Slow load time detected ({load_ms} ms) which may reduce conversions.")
-        opps.append("Optimize images, minify assets, and reduce render-blocking scripts.")
-
-    bytes_ = perf_extras.get("bytes")
-    if isinstance(bytes_, int) and bytes_ > 1_500_000:
-        risks.append("Large page size can slow down mobile experience.")
-        opps.append("Compress images and use WebP/AVIF; defer non-critical resources.")
-
-    if sec.get("https") is False:
-        risks.append("HTTPS is not enabled, which reduces trust and security.")
-        opps.append("Enable SSL/TLS (HTTPS) and enforce redirects from HTTP to HTTPS.")
-
-    if sec.get("https") is True and sec.get("hsts") is False:
-        risks.append("HSTS header missing; HTTPS enforcement can be improved.")
-        opps.append("Enable HSTS to strengthen transport security.")
-
-    if (links.get("internal_links_count") or 0) == 0:
-        risks.append("No internal links detected; crawlability and navigation may be weak.")
-        opps.append("Add internal links to key pages to improve structure and SEO.")
-
-    return risks[:8], opps[:8]
-
-
-def map_runner_result_to_audit_data(
-    runner_result: Dict[str, Any],
-    client_name: str = "N/A",
-    brand_name: str = "FF Tech",
-    audit_date: Optional[str] = None,
-    website_name: Optional[str] = None,
-) -> Dict[str, Any]:
+# -----------------------------------------------------------------------------
+# Lightweight config (no extra dependency required)
+# -----------------------------------------------------------------------------
+class Settings:
     """
-    Map runner output -> pdf_report audit_data structure.
+    Flexible settings using env vars.
+    You can later replace this with pydantic-settings if you want.
     """
-    audit_date = audit_date or _today_iso()
+    APP_NAME: str = os.getenv("APP_NAME", "FFTech Audit API")
+    APP_VERSION: str = os.getenv("APP_VERSION", "1.0.0")
+    ENV: str = os.getenv("ENV", "production")  # dev/staging/production
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes", "on")
 
-    audited_url = runner_result.get("audited_url") or "N/A"
-    overall_score = runner_result.get("overall_score")
-    grade = runner_result.get("grade") or "N/A"
+    # CORS
+    CORS_ALLOW_ORIGINS: str = os.getenv("CORS_ALLOW_ORIGINS", "*")  # comma-separated
 
-    breakdown = runner_result.get("breakdown") or {}
+    # OpenAPI docs toggles (recommended to disable in production if needed)
+    ENABLE_DOCS: bool = os.getenv("ENABLE_DOCS", "true").lower() in ("1", "true", "yes", "on")
 
-    scores = {
-        "seo": _safe_get(breakdown, "seo", "score", default=None),
-        "performance": _safe_get(breakdown, "performance", "score", default=None),
-        "ux_ui": None,
-        "accessibility": None,
-        "security": _safe_get(breakdown, "security", "score", default=None),
-        "content_quality": None,
-    }
+    # API base path (helps when running behind reverse proxy)
+    ROOT_PATH: str = os.getenv("ROOT_PATH", "")
 
-    risks, opps = _derive_risks_opps(runner_result)
-
-    audit_data: Dict[str, Any] = {
-        "website": {
-            "name": website_name or audited_url,
-            "url": audited_url,
-            "industry": "N/A",
-            "audience": "N/A",
-            "goals": [],
-        },
-        "client": {"name": client_name},
-        "brand": {"name": brand_name},
-        "audit": {
-            "date": audit_date,
-            "overall_score": overall_score,
-            "grade": grade,
-            "verdict": "Healthy" if isinstance(overall_score, int) and overall_score >= 80 else "Needs Improvement",
-            "executive_summary": "This report summarizes the website’s current health based on automated checks.",
-            "key_risks": risks,
-            "opportunities": opps,
-        },
-        "scores": scores,
-
-        # Optional sections (you can expand later)
-        "scope": {
-            "what": ["SEO basics", "Performance heuristics", "Links structure", "Security checks"],
-            "why": "These factors impact rankings, UX, trust, and conversions.",
-            "tools": ["FF Tech runner.py", "ReportLab PDF generator"],
-        },
-        "seo": {
-            "on_page_issues": [],
-            "technical_issues": [],
-            "content_gaps": [],
-            "keyword_optimization_level": "N/A",
-        },
-        "performance": {
-            "core_web_vitals": {},
-            "mobile_vs_desktop": "N/A",
-            "page_size_issues": [],
-        },
-        "mobile": {
-            "responsive_issues": [],
-            "usability_problems": [],
-            "mobile_score": None,
-        },
-    }
-
-    return audit_data
+    # Feature flags
+    ENABLE_AUDIT_ROUTES: bool = os.getenv("ENABLE_AUDIT_ROUTES", "true").lower() in ("1", "true", "yes", "on")
 
 
-def generate_pdf_from_runner_result(
-    runner_result: Dict[str, Any],
-    output_path: str,
-    logo_path: Optional[str] = None,
-    client_name: str = "N/A",
-    brand_name: str = "FF Tech",
-    audit_date: Optional[str] = None,
-    website_name: Optional[str] = None,
-) -> str:
-    """
-    One-call function:
-    runner_result -> audit_data -> generate_audit_pdf
-    """
-    audit_data = map_runner_result_to_audit_data(
-        runner_result=runner_result,
-        client_name=client_name,
-        brand_name=brand_name,
-        audit_date=audit_date,
-        website_name=website_name,
+settings = Settings()
+
+
+# -----------------------------------------------------------------------------
+# Application factory (very flexible, testable, avoids circular imports)
+# -----------------------------------------------------------------------------
+def create_app() -> FastAPI:
+    docs_url = "/docs" if settings.ENABLE_DOCS else None
+    redoc_url = "/redoc" if settings.ENABLE_DOCS else None
+    openapi_url = "/openapi.json" if settings.ENABLE_DOCS else None
+
+    app = FastAPI(
+        title=settings.APP_NAME,
+        version=settings.APP_VERSION,
+        debug=settings.DEBUG,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
+        root_path=settings.ROOT_PATH,
     )
 
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    # --------------------------
+    # Middleware: CORS
+    # --------------------------
+    origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
+    if origins == ["*"]:
+        allow_origins = ["*"]
+    else:
+        allow_origins = origins
 
-    return generate_audit_pdf(
-        audit_data=audit_data,
-        output_path=output_path,
-        logo_path=logo_path,
-        report_title="Website Audit Report",
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
+
+    # --------------------------
+    # Request timing middleware
+    # --------------------------
+    @app.middleware("http")
+    async def add_timing_header(request: Request, call_next):
+        start = time.time()
+        response = await call_next(request)
+        duration_ms = int((time.time() - start) * 1000)
+        response.headers["X-Process-Time-ms"] = str(duration_ms)
+        return response
+
+    # --------------------------
+    # Lifecycle events (startup/shutdown)
+    # --------------------------
+    @app.on_event("startup")
+    async def on_startup():
+        logger.info("Starting %s v%s (ENV=%s)", settings.APP_NAME, settings.APP_VERSION, settings.ENV)
+        # Example: init DB connections, load models, warm caches, etc.
+        # Keep it light; avoid importing heavy modules at file import-time.
+
+    @app.on_event("shutdown")
+    async def on_shutdown():
+        logger.info("Shutting down %s", settings.APP_NAME)
+        # Example: close DB connections, cleanup resources
+
+    # --------------------------
+    # Global exception handlers
+    # --------------------------
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        logger.exception("Unhandled error: %s %s", request.method, request.url)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Internal Server Error",
+                "detail": str(exc) if settings.DEBUG else "An unexpected error occurred.",
+            },
+        )
+
+    # --------------------------
+    # Health endpoints (great for Docker/K8s)
+    # --------------------------
+    @app.get("/health", tags=["system"])
+    async def health():
+        return {"status": "ok", "service": settings.APP_NAME, "version": settings.APP_VERSION}
+
+    @app.get("/ready", tags=["system"])
+    async def ready():
+        # Add checks here (db reachable, external deps, etc.)
+        return {"status": "ready"}
+
+    # --------------------------
+    # Routes / Routers (lazy import to prevent circular imports)
+    # --------------------------
+    if settings.ENABLE_AUDIT_ROUTES:
+        try:
+            # Import routers only after app creation to avoid circular import issues.
+            # Example: from app.routes.audit import router as audit_router
+            # app.include_router(audit_router, prefix="/api/v1", tags=["audit"])
+
+            # If you don't have routers yet, keep this placeholder.
+            logger.info("Audit routes enabled (ENABLE_AUDIT_ROUTES=true)")
+
+        except Exception as e:
+            logger.exception("Failed to load routes: %s", e)
+            # Don't crash the whole app if routes fail in production
+            # but you may choose to raise e in strict environments.
+
+    # --------------------------
+    # Simple root route
+    # --------------------------
+    @app.get("/", tags=["system"])
+    async def root():
+        return {
+            "message": f"Welcome to {settings.APP_NAME}",
+            "docs": "/docs" if settings.ENABLE_DOCS else None,
+            "health": "/health",
+        }
+
+    return app
+
+
+# -----------------------------------------------------------------------------
+# ASGI entrypoint: Uvicorn expects `app` here
+# -----------------------------------------------------------------------------
+app = create_app()
