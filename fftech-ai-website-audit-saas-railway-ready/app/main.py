@@ -1,223 +1,159 @@
-# app/main.py
+# app/api/router.py
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import os
 import time
-import logging
-from pathlib import Path
-from typing import Any, Dict
+from contextlib import suppress
+from typing import Dict, Any
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, FileResponse, Response
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter, Request, Query
+from fastapi.responses import StreamingResponse
 
-try:
-    # Optional dependency (FastAPI usually has it)
-    from fastapi.staticfiles import StaticFiles
-except Exception:  # pragma: no cover
-    StaticFiles = None  # type: ignore
+from app.audit.crawler import crawl
+from app.audit.psi import fetch_lighthouse
+from app.audit.grader import compute_scores
 
+logger = logging.getLogger("FFTech_Production")
+logging.basicConfig(level=logging.INFO)
 
-# -----------------------------------------------------------------------------
-# Logging (container-friendly)
-# -----------------------------------------------------------------------------
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
-logger = logging.getLogger("app")
+router = APIRouter()
+
+# In-memory job registry. For production use Redis/RQ/Celery.
+_jobs: Dict[str, Dict[str, Any]] = {}
+
+JOB_TTL_SECONDS = int(os.getenv("JOB_TTL_SECONDS", "900"))  # 15 minutes
+SSE_HEARTBEAT_SECONDS = float(os.getenv("SSE_HEARTBEAT_SECONDS", "2.0"))
 
 
-# -----------------------------------------------------------------------------
-# Simple settings (env-based; replace with pydantic-settings later if desired)
-# -----------------------------------------------------------------------------
-class Settings:
-    APP_NAME: str = os.getenv("APP_NAME", "FFTech Audit API")
-    APP_VERSION: str = os.getenv("APP_VERSION", "1.0.0")
-    ENV: str = os.getenv("ENV", "production")  # dev/staging/production
-    DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes", "on")
-
-    # Docs exposure
-    ENABLE_DOCS: bool = os.getenv("ENABLE_DOCS", "true").lower() in ("1", "true", "yes", "on")
-
-    # When behind reverse proxy subpath
-    ROOT_PATH: str = os.getenv("ROOT_PATH", "")
-
-    # CORS
-    CORS_ALLOW_ORIGINS: str = os.getenv("CORS_ALLOW_ORIGINS", "*")  # comma-separated
-
-    # API prefix
-    API_PREFIX: str = os.getenv("API_PREFIX", "/api")
-    API_VERSION_PREFIX: str = os.getenv("API_VERSION_PREFIX", "/v1")
-
-    # Feature flags
-    ENABLE_AUDIT_ROUTES: bool = os.getenv("ENABLE_AUDIT_ROUTES", "true").lower() in ("1", "true", "yes", "on")
-
-    # Static directory
-    STATIC_DIR: str = os.getenv("STATIC_DIR", "app/static")
+def json_dumps(obj) -> str:
+    """Compact JSON for SSE."""
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
 
 
-settings = Settings()
+def _job_key(url: str, api_key: str) -> str:
+    return f"{url.strip()}|{api_key.strip()}"
 
 
-# -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
-def _truthy(value: Any) -> bool:
-    return str(value).lower() in ("1", "true", "yes", "on")
+def _cleanup_jobs() -> None:
+    now = time.time()
+    to_delete = []
+    for k, v in _jobs.items():
+        created_at = v.get("created_at", 0)
+        task = v.get("task")
+        if (now - created_at) > JOB_TTL_SECONDS:
+            to_delete.append(k)
+        elif task and task.done() and (now - created_at) > 60:
+            to_delete.append(k)
+
+    for k in to_delete:
+        _jobs.pop(k, None)
 
 
-def _split_csv(value: str) -> list[str]:
-    return [x.strip() for x in (value or "").split(",") if x.strip()]
+async def run_audit_and_emit(url: str, api_key: str, queue: asyncio.Queue):
+    async def emit(payload: Dict[str, Any]):
+        payload["ts"] = time.time()
+        await queue.put(payload)
 
+    try:
+        logger.info(f"Audit Started: {url}")
+        await emit({"crawl_progress": 0.0, "psi_progress": 0.0, "status": "Starting Audit"})
 
-# -----------------------------------------------------------------------------
-# App factory (flexible + avoids circular import issues)
-# -----------------------------------------------------------------------------
-def create_app() -> FastAPI:
-    docs_url = "/docs" if settings.ENABLE_DOCS else None
-    redoc_url = "/redoc" if settings.ENABLE_DOCS else None
-    openapi_url = "/openapi.json" if settings.ENABLE_DOCS else None
+        crawl_task = asyncio.create_task(crawl(url, max_pages=15))
+        psi_task = asyncio.create_task(fetch_lighthouse(url, api_key))
 
-    app = FastAPI(
-        title=settings.APP_NAME,
-        version=settings.APP_VERSION,
-        debug=settings.DEBUG,
-        docs_url=docs_url,
-        redoc_url=redoc_url,
-        openapi_url=openapi_url,
-        root_path=settings.ROOT_PATH,
-    )
+        while not crawl_task.done() or not psi_task.done():
+            await emit(
+                {
+                    "crawl_progress": 0.5 if not crawl_task.done() else 1.0,
+                    "psi_progress": 0.5 if not psi_task.done() else 1.0,
+                    "status": "Auditing...",
+                }
+            )
+            await asyncio.sleep(SSE_HEARTBEAT_SECONDS)
 
-    # --------------------------
-    # CORS
-    # --------------------------
-    origins = _split_csv(settings.CORS_ALLOW_ORIGINS)
-    if not origins or origins == ["*"]:
-        allow_origins = ["*"]
-    else:
-        allow_origins = origins
+        crawl_result, psi_result = await asyncio.gather(crawl_task, psi_task)
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allow_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # --------------------------
-    # Request timing middleware
-    # --------------------------
-    @app.middleware("http")
-    async def add_timing_header(request: Request, call_next):
-        start = time.time()
-        response = await call_next(request)
-        response.headers["X-Process-Time-ms"] = str(int((time.time() - start) * 1000))
-        return response
-
-    # --------------------------
-    # Global exception handler
-    # --------------------------
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception):
-        logger.exception("Unhandled error: %s %s", request.method, request.url)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "Internal Server Error",
-                "detail": str(exc) if settings.DEBUG else "An unexpected error occurred.",
-            },
-        )
-
-    # --------------------------
-    # Lifecycle events
-    # --------------------------
-    @app.on_event("startup")
-    async def on_startup():
-        logger.info("Starting %s v%s (ENV=%s)", settings.APP_NAME, settings.APP_VERSION, settings.ENV)
-
-        # Mount static files if directory exists and StaticFiles is available
-        static_dir = Path(settings.STATIC_DIR)
-        if StaticFiles is not None and static_dir.exists() and static_dir.is_dir():
-            app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-            logger.info("Static mounted: /static -> %s", static_dir)
-
-        # Lazy-load routers safely (prevents circular import & startup crashes)
-        _include_routers(app)
-
-    @app.on_event("shutdown")
-    async def on_shutdown():
-        logger.info("Shutting down %s", settings.APP_NAME)
-
-    # --------------------------
-    # System endpoints
-    # --------------------------
-    @app.get("/", tags=["system"])
-    async def root():
-        return {
-            "message": f"Welcome to {settings.APP_NAME}",
-            "version": settings.APP_VERSION,
-            "docs": "/docs" if settings.ENABLE_DOCS else None,
-            "health": "/health",
-            "ready": "/ready",
+        crawl_stats = {
+            "pages": len(getattr(crawl_result, "pages", []) or []),
+            "broken_links": len(getattr(crawl_result, "broken_internal", []) or []),
+            "errors": (getattr(crawl_result, "status_counts", {}) or {}).get(0, 0),
         }
 
-    @app.get("/health", tags=["system"])
-    async def health():
-        return {"status": "ok", "service": settings.APP_NAME, "version": settings.APP_VERSION}
+        overall_score, grade, breakdown = compute_scores(
+            lighthouse=psi_result,
+            crawl=crawl_stats,
+        )
 
-    @app.get("/ready", tags=["system"])
-    async def ready():
-        # Add real checks here later (db ping, redis, etc.)
-        return {"status": "ready"}
+        await emit(
+            {
+                "finished": True,
+                "overall_score": overall_score,
+                "grade": grade,
+                "breakdown": breakdown,
+                "crawl_progress": 1.0,
+                "psi_progress": 1.0,
+                "status": "Completed",
+            }
+        )
 
-    # --------------------------
-    # Favicon handler (prevents browser 404 noise)
-    # --------------------------
-    @app.get("/favicon.ico", include_in_schema=False)
-    async def favicon():
-        """
-        If app/static/favicon.ico exists -> serve it.
-        Otherwise return 204 (No Content) to avoid 404 log noise.
-        """
-        ico = Path(settings.STATIC_DIR) / "favicon.ico"
-        if ico.exists():
-            return FileResponse(str(ico))
-        return Response(status_code=204)
+    except asyncio.CancelledError:
+        await queue.put({"finished": True, "status": "Cancelled"})
+        raise
+    except Exception as exc:
+        logger.exception(f"Audit failed for {url}")
+        await queue.put(
+            {
+                "error": str(exc),
+                "finished": True,
+                "crawl_progress": 1.0,
+                "psi_progress": 1.0,
+                "status": "Failed",
+            }
+        )
 
-    return app
 
+# ✅ FIX: DO NOT hardcode /api here. main.py adds /api/v1 prefix.
+@router.get("/open-audit-progress")
+async def open_audit_progress(
+    request: Request,
+    url: str = Query(...),
+    api_key: str = Query(...),
+):
+    _cleanup_jobs()
+    key = _job_key(url, api_key)
 
-def _include_routers(app: FastAPI) -> None:
-    """
-    Router loader. Keeps main.py stable even if modules aren't present yet.
-    Add your routers here as your project grows.
+    if key not in _jobs or _jobs[key]["task"].done():
+        queue: asyncio.Queue = asyncio.Queue()
+        task = asyncio.create_task(run_audit_and_emit(url, api_key, queue))
+        _jobs[key] = {"task": task, "queue": queue, "created_at": time.time()}
 
-    IMPORTANT: We import inside the function to avoid circular imports.
-    """
-    api_prefix = settings.API_PREFIX + settings.API_VERSION_PREFIX
+    queue = _jobs[key]["queue"]
+    task = _jobs[key]["task"]
 
-    if settings.ENABLE_AUDIT_ROUTES:
+    async def event_stream():
+        yield f"data: {json_dumps({'crawl_progress': 0.0, 'psi_progress': 0.0, 'status': 'Queued'})}\n\n"
         try:
-            # Example structure (recommended):
-            # app/routes/audit.py -> router = APIRouter()
-            # from app.routes.audit import router as audit_router
+            while True:
+                if await request.is_disconnected():
+                    with suppress(Exception):
+                        task.cancel()
+                    break
 
-            from app.routes.audit import router as audit_router  # type: ignore
+                with suppress(asyncio.TimeoutError):
+                    item = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    yield f"data: {json_dumps(item)}\n\n"
+                    if item.get("finished"):
+                        break
+        finally:
+            _cleanup_jobs()
 
-            app.include_router(audit_router, prefix=api_prefix, tags=["audit"])
-            logger.info("Audit routes loaded at %s", api_prefix)
-        except ModuleNotFoundError:
-            # Routes module not created yet — not an error.
-            logger.info("Audit routes enabled (ENABLE_AUDIT_ROUTES=true) but app.routes.audit not found (skipping).")
-        except Exception as e:
-            # You can raise here if you want strict behavior
-            logger.exception("Failed to load audit routes: %s", e)
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
 
-
-# -----------------------------------------------------------------------------
-# ASGI entrypoint (Uvicorn expects `app`)
-# -----------------------------------------------------------------------------
-app = create_app()
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
