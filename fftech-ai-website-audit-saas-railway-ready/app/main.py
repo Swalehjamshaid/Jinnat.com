@@ -1,278 +1,195 @@
 # -*- coding: utf-8 -*-
+"""
+app/audit/pdf_service.py
+
+Adapter layer (best practice):
+- Accepts runner.py output (stable)
+- Maps it into pdf_report.py audit_data format
+- Calls generate_audit_pdf()
+
+This keeps runner.py input/output unchanged.
+"""
+
 from __future__ import annotations
 
-import asyncio
-import json
-import logging
 import os
-import tempfile
 import datetime as dt
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, Tuple
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Body, BackgroundTasks
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
-from starlette.websockets import WebSocketState
-
-from app.audit.runner import WebsiteAuditRunner
-from app.audit.pdf_service import generate_pdf_from_runner_result  # ✅ adapter (best practice)
-
-# ------------------------------------------------------------
-# Logging (Railway-friendly)
-# ------------------------------------------------------------
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s | %(name)s | %(message)s")
-logger = logging.getLogger("ff-tech-audit")
-
-# ------------------------------------------------------------
-# App + Templates
-# ------------------------------------------------------------
-app = FastAPI(title="FF Tech Audit", version="1.0.0")
-
-_templates_dir = "templates"
-if os.path.isdir(os.path.join("app", "templates")):
-    _templates_dir = os.path.join("app", "templates")
-templates = Jinja2Templates(directory=_templates_dir)
-
-# ------------------------------------------------------------
-# Helpers (super flexible parsing + safe send)
-# ------------------------------------------------------------
-def _extract_url(payload: Any) -> str:
-    if payload is None:
-        return ""
-    if isinstance(payload, str):
-        return payload.strip()
-    if isinstance(payload, dict):
-        for key in ("url", "website", "domain", "link", "target"):
-            val = payload.get(key)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-        for key in ("data", "payload", "message", "input"):
-            inner = payload.get(key)
-            got = _extract_url(inner)
-            if got:
-                return got
-    return ""
+from app.audit.pdf_report import generate_audit_pdf
 
 
-async def _safe_ws_send(ws: WebSocket, message: Dict[str, Any]) -> None:
-    try:
-        if ws.client_state == WebSocketState.CONNECTED:
-            await ws.send_text(json.dumps(message, ensure_ascii=False))
-    except Exception as e:
-        logger.warning("WS send failed: %s", e)
+def _safe_get(d: Dict[str, Any], *path: str, default=None):
+    cur: Any = d
+    for p in path:
+        if not isinstance(cur, dict) or p not in cur:
+            return default
+        cur = cur[p]
+    return cur
 
 
-async def _send_status(
-    ws: WebSocket,
-    status: str,
-    progress: int,
-    extra: Optional[Dict[str, Any]] = None
-) -> None:
-    msg: Dict[str, Any] = {"status": status, "progress": int(progress)}
-    if extra:
-        msg.update(extra)
-    await _safe_ws_send(ws, msg)
-
-# ------------------------------------------------------------
-# Routes
-# ------------------------------------------------------------
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+def _today_iso() -> str:
+    return dt.date.today().isoformat()
 
 
-@app.get("/health")
-async def health():
-    return {"ok": True}
+def _derive_risks_opps(result: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Derive basic risks/opportunities from runner output (optional, but makes PDF smarter)."""
+    risks: List[str] = []
+    opps: List[str] = []
 
-# ------------------------------------------------------------
-# PDF Generation Endpoint (best-practice integration, backward compatible)
-# ------------------------------------------------------------
-@app.post("/generate-pdf")
-async def generate_pdf(
-    background_tasks: BackgroundTasks,              # ✅ non-default first
-    payload: Dict[str, Any] = Body(...),            # ✅ default after
-):
+    b = result.get("breakdown") or {}
+
+    seo_extras = _safe_get(b, "seo", "extras", default={}) or {}
+    perf_extras = _safe_get(b, "performance", "extras", default={}) or {}
+    sec = _safe_get(b, "security", default={}) or {}
+    links = _safe_get(b, "links", default={}) or {}
+
+    if seo_extras.get("meta_description_present") is False:
+        risks.append("Missing meta description can reduce click-through rate from Google results.")
+        opps.append("Write compelling meta descriptions for key pages to improve CTR.")
+
+    h1_count = seo_extras.get("h1_count")
+    if isinstance(h1_count, int) and h1_count == 0:
+        risks.append("No H1 detected; page topic clarity may be reduced.")
+        opps.append("Add exactly one H1 aligned with the primary topic/keyword.")
+    elif isinstance(h1_count, int) and h1_count > 1:
+        risks.append("Multiple H1 tags detected; heading hierarchy may be unclear.")
+        opps.append("Use one H1 and structure content with H2/H3 headings.")
+
+    imgs_total = seo_extras.get("images_total")
+    imgs_missing_alt = seo_extras.get("images_missing_alt")
+    if isinstance(imgs_total, int) and isinstance(imgs_missing_alt, int) and imgs_total >= 5 and imgs_missing_alt > 0:
+        risks.append("Some images lack ALT text, impacting accessibility and SEO.")
+        opps.append("Add descriptive ALT text to images, especially important content images.")
+
+    load_ms = perf_extras.get("load_ms")
+    if isinstance(load_ms, int) and load_ms > 3000:
+        risks.append(f"Slow load time detected ({load_ms} ms) which may reduce conversions.")
+        opps.append("Optimize images, minify assets, and reduce render-blocking scripts.")
+
+    bytes_ = perf_extras.get("bytes")
+    if isinstance(bytes_, int) and bytes_ > 1_500_000:
+        risks.append("Large page size can slow down mobile experience.")
+        opps.append("Compress images and use WebP/AVIF; defer non-critical resources.")
+
+    if sec.get("https") is False:
+        risks.append("HTTPS is not enabled, which reduces trust and security.")
+        opps.append("Enable SSL/TLS (HTTPS) and enforce redirects from HTTP to HTTPS.")
+
+    if sec.get("https") is True and sec.get("hsts") is False:
+        risks.append("HSTS header missing; HTTPS enforcement can be improved.")
+        opps.append("Enable HSTS to strengthen transport security.")
+
+    if (links.get("internal_links_count") or 0) == 0:
+        risks.append("No internal links detected; crawlability and navigation may be weak.")
+        opps.append("Add internal links to key pages to improve structure and SEO.")
+
+    return risks[:8], opps[:8]
+
+
+def map_runner_result_to_audit_data(
+    runner_result: Dict[str, Any],
+    client_name: str = "N/A",
+    brand_name: str = "FF Tech",
+    audit_date: Optional[str] = None,
+    website_name: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    Backward compatible endpoint:
-
-    Accepts either:
-      A) runner result directly (existing UI):
-         { audited_url, overall_score, grade, breakdown, chart_data, dynamic }
-
-      OR
-
-      B) extended payload for better cover page:
-         {
-           "client_name": "ABC",
-           "brand_name": "FF Tech",
-           "audit_date": "2026-01-30",
-           "website_name": "My Site",
-           "result": { ...runner result... }
-         }
-
-    Generates PDF and returns it.
+    Map runner output -> pdf_report audit_data structure.
     """
-    tmp_path = None
-    try:
-        # ----------------------------------------
-        # 1) Detect payload shape
-        # ----------------------------------------
-        if isinstance(payload.get("result"), dict):
-            runner_result = payload.get("result") or {}
-            client_name = str(payload.get("client_name") or "N/A")
-            brand_name = str(payload.get("brand_name") or "FF Tech")
-            audit_date = str(payload.get("audit_date") or dt.date.today().isoformat())
-            website_name = payload.get("website_name")
-        else:
-            # Old format: payload IS runner_result
-            runner_result = payload
-            client_name = "N/A"
-            brand_name = "FF Tech"
-            audit_date = dt.date.today().isoformat()
-            website_name = None
+    audit_date = audit_date or _today_iso()
 
-        # ----------------------------------------
-        # 2) Create temp file
-        # ----------------------------------------
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp_path = tmp.name
+    audited_url = runner_result.get("audited_url") or "N/A"
+    overall_score = runner_result.get("overall_score")
+    grade = runner_result.get("grade") or "N/A"
 
-        logger.info("Generating PDF to: %s", tmp_path)
+    breakdown = runner_result.get("breakdown") or {}
 
-        # ----------------------------------------
-        # 3) Generate PDF via adapter (best practice)
-        # ----------------------------------------
-        generate_pdf_from_runner_result(
-            runner_result=runner_result,
-            output_path=tmp_path,
-            logo_path=None,             # add if you have a logo file path
-            client_name=client_name,
-            brand_name=brand_name,
-            audit_date=audit_date,
-            website_name=website_name,
-        )
+    scores = {
+        "seo": _safe_get(breakdown, "seo", "score", default=None),
+        "performance": _safe_get(breakdown, "performance", "score", default=None),
+        "ux_ui": None,
+        "accessibility": None,
+        "security": _safe_get(breakdown, "security", "score", default=None),
+        "content_quality": None,
+    }
 
-        # ----------------------------------------
-        # 4) Filename
-        # ----------------------------------------
-        audited_url = str(runner_result.get("audited_url", "report"))
-        domain = (
-            audited_url
-            .replace("https://", "")
-            .replace("http://", "")
-            .replace("/", "_")
-            .replace("www.", "")
-            .split("?")[0]
-            .strip()
-        )
-        filename = f"website-audit-report-{domain}.pdf"
+    risks, opps = _derive_risks_opps(runner_result)
 
-        # ----------------------------------------
-        # 5) Cleanup after response
-        # ----------------------------------------
-        def cleanup():
-            try:
-                if tmp_path and os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-                    logger.info("Cleaned up: %s", tmp_path)
-            except Exception as e:
-                logger.warning("Cleanup failed for %s: %s", tmp_path, e)
+    audit_data: Dict[str, Any] = {
+        "website": {
+            "name": website_name or audited_url,
+            "url": audited_url,
+            "industry": "N/A",
+            "audience": "N/A",
+            "goals": [],
+        },
+        "client": {"name": client_name},
+        "brand": {"name": brand_name},
+        "audit": {
+            "date": audit_date,
+            "overall_score": overall_score,
+            "grade": grade,
+            "verdict": "Healthy" if isinstance(overall_score, int) and overall_score >= 80 else "Needs Improvement",
+            "executive_summary": "This report summarizes the website’s current health based on automated checks.",
+            "key_risks": risks,
+            "opportunities": opps,
+        },
+        "scores": scores,
 
-        background_tasks.add_task(cleanup)
+        # Optional sections (you can expand later)
+        "scope": {
+            "what": ["SEO basics", "Performance heuristics", "Links structure", "Security checks"],
+            "why": "These factors impact rankings, UX, trust, and conversions.",
+            "tools": ["FF Tech runner.py", "ReportLab PDF generator"],
+        },
+        "seo": {
+            "on_page_issues": [],
+            "technical_issues": [],
+            "content_gaps": [],
+            "keyword_optimization_level": "N/A",
+        },
+        "performance": {
+            "core_web_vitals": {},
+            "mobile_vs_desktop": "N/A",
+            "page_size_issues": [],
+        },
+        "mobile": {
+            "responsive_issues": [],
+            "usability_problems": [],
+            "mobile_score": None,
+        },
+    }
 
-        return FileResponse(
-            path=tmp_path,
-            filename=filename,
-            media_type="application/pdf"
-        )
+    return audit_data
 
-    except Exception as e:
-        logger.exception("PDF generation failed")
 
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
+def generate_pdf_from_runner_result(
+    runner_result: Dict[str, Any],
+    output_path: str,
+    logo_path: Optional[str] = None,
+    client_name: str = "N/A",
+    brand_name: str = "FF Tech",
+    audit_date: Optional[str] = None,
+    website_name: Optional[str] = None,
+) -> str:
+    """
+    One-call function:
+    runner_result -> audit_data -> generate_audit_pdf
+    """
+    audit_data = map_runner_result_to_audit_data(
+        runner_result=runner_result,
+        client_name=client_name,
+        brand_name=brand_name,
+        audit_date=audit_date,
+        website_name=website_name,
+    )
 
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": f"Failed to generate PDF: {str(e)}"}
-        )
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-# ------------------------------------------------------------
-# WebSocket: /ws (unchanged)
-# ------------------------------------------------------------
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    await ws.accept()
-    await _send_status(ws, "connected", 0)
-    runner = WebsiteAuditRunner()
-    running_lock = asyncio.Lock()
-
-    while True:
-        try:
-            raw = await ws.receive_text()
-            payload: Any
-            try:
-                payload = json.loads(raw)
-            except json.JSONDecodeError:
-                payload = raw
-
-            url = _extract_url(payload)
-            if not url:
-                await _safe_ws_send(ws, {
-                    "status": "error",
-                    "progress": 100,
-                    "error": "Invalid input. Send JSON like {\"url\":\"example.com\"} or send a plain URL string."
-                })
-                continue
-
-            if running_lock.locked():
-                await _send_status(ws, "busy", 0, {"message": "Audit already running. Please wait."})
-                continue
-
-            async with running_lock:
-                await _send_status(ws, "starting", 5, {"url": url})
-
-                async def progress_cb(status: str, percent: int, data: Optional[dict] = None):
-                    msg = {"status": status, "progress": int(percent)}
-                    if data is not None:
-                        msg["payload"] = data
-                    await _safe_ws_send(ws, msg)
-
-                try:
-                    result = await runner.run(url, progress_cb=progress_cb)
-
-                    if isinstance(result, dict) and result.get("error"):
-                        await _safe_ws_send(ws, {
-                            "status": "error",
-                            "progress": 100,
-                            "error": str(result.get("error")),
-                            "result": result,
-                        })
-                        continue
-
-                    await _safe_ws_send(ws, {
-                        "status": "completed",
-                        "progress": 100,
-                        "result": result
-                    })
-
-                except Exception as e:
-                    logger.exception("Audit run failed")
-                    await _safe_ws_send(ws, {
-                        "status": "error",
-                        "progress": 100,
-                        "error": f"Server error: {e}"
-                    })
-
-        except WebSocketDisconnect:
-            logger.info("Client disconnected")
-            break
-        except Exception as e:
-            logger.exception("WS loop error: %s", e)
-            await _safe_ws_send(ws, {"status": "error", "progress": 100, "error": f"WS error: {e}"})
-            break
+    return generate_audit_pdf(
+        audit_data=audit_data,
+        output_path=output_path,
+        logo_path=logo_path,
+        report_title="Website Audit Report",
+    )
