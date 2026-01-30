@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict, Optional, Tuple, Union
+import tempfile
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Body, BackgroundTasks
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.websockets import WebSocketState
 
@@ -51,6 +53,7 @@ def _extract_url(payload: Any) -> str:
                 return got
     return ""
 
+
 async def _safe_ws_send(ws: WebSocket, message: Dict[str, Any]) -> None:
     try:
         if ws.client_state == WebSocketState.CONNECTED:
@@ -58,7 +61,13 @@ async def _safe_ws_send(ws: WebSocket, message: Dict[str, Any]) -> None:
     except Exception as e:
         logger.warning("WS send failed: %s", e)
 
-async def _send_status(ws: WebSocket, status: str, progress: int, extra: Optional[Dict[str, Any]] = None) -> None:
+
+async def _send_status(
+    ws: WebSocket,
+    status: str,
+    progress: int,
+    extra: Optional[Dict[str, Any]] = None
+) -> None:
     msg: Dict[str, Any] = {"status": status, "progress": int(progress)}
     if extra:
         msg.update(extra)
@@ -71,19 +80,18 @@ async def _send_status(ws: WebSocket, status: str, progress: int, extra: Optiona
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+
 @app.get("/health")
 async def health():
     return {"ok": True}
 
 # ------------------------------------------------------------
-# PDF Generation Endpoint (FIXED - no more AttributeError)
+# PDF Generation Endpoint (FIXED)
 # ------------------------------------------------------------
-import tempfile
-
 @app.post("/generate-pdf")
 async def generate_pdf(
-    payload: Dict[str, Any] = Body(...),
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,              # ✅ non-default first
+    payload: Dict[str, Any] = Body(...),            # ✅ default after
 ):
     """
     Receives audit result → generates PDF → sends it as download
@@ -112,7 +120,7 @@ async def generate_pdf(
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp_path = tmp.name
 
-        logger.info(f"Generating PDF to: {tmp_path}")
+        logger.info("Generating PDF to: %s", tmp_path)
 
         # Generate PDF
         generate_audit_pdf(
@@ -136,11 +144,11 @@ async def generate_pdf(
         # Cleanup function (runs after response is sent)
         def cleanup():
             try:
-                if os.path.exists(tmp_path):
+                if tmp_path and os.path.exists(tmp_path):
                     os.unlink(tmp_path)
-                    logger.info(f"Cleaned up: {tmp_path}")
+                    logger.info("Cleaned up: %s", tmp_path)
             except Exception as e:
-                logger.warning(f"Cleanup failed for {tmp_path}: {e}")
+                logger.warning("Cleanup failed for %s: %s", tmp_path, e)
 
         background_tasks.add_task(cleanup)
 
@@ -153,13 +161,18 @@ async def generate_pdf(
 
     except Exception as e:
         logger.exception("PDF generation failed")
+
         # Emergency cleanup if something went wrong
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
-            except:
+            except Exception:
                 pass
-        return {"status": "error", "message": f"Failed to generate PDF: {str(e)}"}, 500
+
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Failed to generate PDF: {str(e)}"}
+        )
 
 # ------------------------------------------------------------
 # WebSocket: /ws (unchanged)
@@ -235,3 +248,4 @@ async def ws_endpoint(ws: WebSocket):
             logger.exception("WS loop error: %s", e)
             await _safe_ws_send(ws, {"status": "error", "progress": 100, "error": f"WS error: {e}"})
             break
+``
