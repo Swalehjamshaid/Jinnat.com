@@ -7,7 +7,7 @@ import logging
 import os
 import time
 from contextlib import suppress
-from typing import Any, Dict, Optional, Tuple
+from typing import Dict, Any
 
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import StreamingResponse
@@ -17,38 +17,35 @@ from app.audit.psi import fetch_lighthouse
 from app.audit.grader import compute_scores
 
 logger = logging.getLogger("FFTech_Production")
+logging.basicConfig(level=logging.INFO)
 
 router = APIRouter()
 
 # In-memory job registry. For production use Redis/RQ/Celery.
 _jobs: Dict[str, Dict[str, Any]] = {}
 
-JOB_TTL_SECONDS = int(os.getenv("JOB_TTL_SECONDS", "900"))          # 15 min
-SSE_HEARTBEAT_SECONDS = float(os.getenv("SSE_HEARTBEAT_SECONDS", "8"))
+JOB_TTL_SECONDS = int(os.getenv("JOB_TTL_SECONDS", "900"))  # 15 minutes
+SSE_HEARTBEAT_SECONDS = float(os.getenv("SSE_HEARTBEAT_SECONDS", "2.0"))
 
 
-def json_dumps(obj: Any) -> str:
+def json_dumps(obj) -> str:
     """Compact JSON for SSE."""
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
 
 
 def _job_key(url: str, api_key: str) -> str:
-    """Avoid collisions across users."""
     return f"{url.strip()}|{api_key.strip()}"
 
 
 def _cleanup_jobs() -> None:
-    """Remove old finished jobs to avoid memory leak."""
     now = time.time()
     to_delete = []
     for k, v in _jobs.items():
         created_at = v.get("created_at", 0)
         task = v.get("task")
         if (now - created_at) > JOB_TTL_SECONDS:
-            # TTL expired
             to_delete.append(k)
-        elif task and getattr(task, "done", lambda: False)() and (now - created_at) > 60:
-            # finished jobs older than 1 minute
+        elif task and task.done() and (now - created_at) > 60:
             to_delete.append(k)
 
     for k in to_delete:
@@ -56,34 +53,23 @@ def _cleanup_jobs() -> None:
 
 
 async def run_audit_and_emit(url: str, api_key: str, queue: asyncio.Queue):
-    """
-    Run the audit for a URL:
-      - Crawl pages
-      - Fetch Lighthouse metrics (async)
-      - Compute final scores
-      - Emit progress updates via queue
-    """
-
-    async def emit(payload: Dict[str, Any]) -> None:
+    async def emit(payload: Dict[str, Any]):
         payload["ts"] = time.time()
         await queue.put(payload)
 
     try:
-        logger.info("Audit Started: %s", url)
-        await emit({"status": "Starting Audit", "crawl_progress": 0.0, "psi_progress": 0.0})
+        logger.info(f"Audit Started: {url}")
+        await emit({"crawl_progress": 0.0, "psi_progress": 0.0, "status": "Starting Audit"})
 
-        # Run crawl + PSI concurrently
         crawl_task = asyncio.create_task(crawl(url, max_pages=15))
         psi_task = asyncio.create_task(fetch_lighthouse(url, api_key))
 
-        # Heartbeat loop while tasks run
         while not crawl_task.done() or not psi_task.done():
             await emit(
                 {
-                    "status": "Auditing...",
-                    # Keep progress conservative unless you implement real progress in crawl/psi
                     "crawl_progress": 0.5 if not crawl_task.done() else 1.0,
                     "psi_progress": 0.5 if not psi_task.done() else 1.0,
+                    "status": "Auditing...",
                 }
             )
             await asyncio.sleep(SSE_HEARTBEAT_SECONDS)
@@ -98,27 +84,26 @@ async def run_audit_and_emit(url: str, api_key: str, queue: asyncio.Queue):
 
         overall_score, grade, breakdown = compute_scores(
             lighthouse=psi_result,
-            crawl=crawl_stats
+            crawl=crawl_stats,
         )
 
-        final_payload = {
-            "finished": True,
-            "overall_score": overall_score,
-            "grade": grade,
-            "breakdown": breakdown,
-            "crawl_progress": 1.0,
-            "psi_progress": 1.0,
-            "status": "Completed",
-        }
-
-        await emit(final_payload)
+        await emit(
+            {
+                "finished": True,
+                "overall_score": overall_score,
+                "grade": grade,
+                "breakdown": breakdown,
+                "crawl_progress": 1.0,
+                "psi_progress": 1.0,
+                "status": "Completed",
+            }
+        )
 
     except asyncio.CancelledError:
-        # Client disconnected and we cancelled the task
         await queue.put({"finished": True, "status": "Cancelled"})
         raise
     except Exception as exc:
-        logger.exception("Audit failed for %s", url)
+        logger.exception(f"Audit failed for {url}")
         await queue.put(
             {
                 "error": str(exc),
@@ -130,23 +115,16 @@ async def run_audit_and_emit(url: str, api_key: str, queue: asyncio.Queue):
         )
 
 
+# ✅ FIX: DO NOT hardcode /api here. main.py adds /api/v1 prefix.
 @router.get("/open-audit-progress")
 async def open_audit_progress(
     request: Request,
     url: str = Query(...),
     api_key: str = Query(...),
 ):
-    """
-    SSE endpoint for audit progress.
-      - Starts audit if not already running
-      - Streams progress + final result
-    """
-
     _cleanup_jobs()
-
     key = _job_key(url, api_key)
 
-    # Start new job if none exists or previous finished
     if key not in _jobs or _jobs[key]["task"].done():
         queue: asyncio.Queue = asyncio.Queue()
         task = asyncio.create_task(run_audit_and_emit(url, api_key, queue))
@@ -156,13 +134,10 @@ async def open_audit_progress(
     task = _jobs[key]["task"]
 
     async def event_stream():
-        # Initial message
-        yield f"data: {json_dumps({'status': 'Queued', 'crawl_progress': 0.0, 'psi_progress': 0.0})}\n\n"
-
+        yield f"data: {json_dumps({'crawl_progress': 0.0, 'psi_progress': 0.0, 'status': 'Queued'})}\n\n"
         try:
             while True:
                 if await request.is_disconnected():
-                    # Cancel task to stop wasting CPU
                     with suppress(Exception):
                         task.cancel()
                     break
@@ -172,19 +147,12 @@ async def open_audit_progress(
                     yield f"data: {json_dumps(item)}\n\n"
                     if item.get("finished"):
                         break
-
-                # Optional heartbeat so proxies don’t close connection
-                # (Only when no data was sent in the last timeout window)
-                # yield f": ping\n\n"
-
         finally:
-            # Cleanup finished tasks (keep it short-lived)
             _cleanup_jobs()
 
     headers = {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
-        # Helpful behind nginx / reverse proxies:
         "X-Accel-Buffering": "no",
     }
 
