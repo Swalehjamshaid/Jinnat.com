@@ -1,23 +1,28 @@
-reportlab 
 # =========================================================
-# FF Tech Website Audit SaaS – requirements.txt
-# =========================================================
-# Last reviewed: January 2026
+# FF Tech Website Audit SaaS – requirements.txt (COMPREHENSIVE)
+# Last reviewed: 31 Jan 2026
 # Target: FastAPI backend on Railway
-# Focus: Website auditing (SEO, performance, security, links), WebSocket progress, PDF reports
+#
+# Includes:
+# - Core API + WebSockets
+# - HTML parsing and audit checks
+# - PDF Export (ReportLab + WeasyPrint world-class option)
+# - Optional: PPTX/XLSX, screenshots, DB, caching, QA tools (commented)
 # =========================================================
 
 # ────────────────────────────────────────────────
 # Core Web Framework & Server
 # ────────────────────────────────────────────────
 fastapi==0.115.6
-uvicorn[standard]==0.32.1                  # development & production server
-gunicorn==23.0.0                           # production WSGI server (used by Railway)
-jinja2==3.1.5                              # templates (index.html)
-python-multipart==0.0.20                   # form/file handling
-websockets==14.1                           # WebSocket support
+uvicorn[standard]==0.32.1
+gunicorn==23.0.0
+jinja2==3.1.5
+python-multipart==0.0.20
+websockets==14.1
 
-# Better JSON handling (faster, smaller memory)
+# ────────────────────────────────────────────────
+# JSON Performance
+# ────────────────────────────────────────────────
 orjson==3.10.15
 ujson==5.10.0
 
@@ -37,58 +42,62 @@ urllib3==2.3.0
 certifi==2024.12.14
 
 # ────────────────────────────────────────────────
-# HTML Parsing & Content Analysis (very important for audit)
+# HTML Parsing & Content Analysis
 # ────────────────────────────────────────────────
 beautifulsoup4==4.12.3
-lxml==5.3.0                                # faster parser for bs4
+lxml==5.3.0
 
 # ────────────────────────────────────────────────
-# Reporting – PDF Generation (critical for your current issue)
+# PDF Export (Choose your engine in code)
 # ────────────────────────────────────────────────
-reportlab==4.2.5                           # <<<< REQUIRED for PDF export – do NOT remove
 
-# Optional reporting formats (uncomment if needed)
-# python-pptx==1.0.2                       # PowerPoint export
-# openpyxl==3.1.5                          # Excel export
-# weasyprint==63.0                         # HTML → beautiful PDF (needs system libs)
+# 1) ReportLab (reliable, simplest deployment)
+reportlab==4.2.5
+
+# 2) WeasyPrint (world-class HTML/CSS PDF; supports pdf_variant + pdf_tags)
+# NOTE: Requires OS libs on Railway/Docker (Cairo/Pango/etc.) in addition to pip.
+weasyprint==63.0  # supports PDF variants via pdf_variant and tagging via pdf_tags in options [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)[2](https://deepwiki.com/Kozea/WeasyPrint/1-weasyprint-overview)
+
+# Helpful for logos/QR in PDFs (optional)
+# pillow==10.4.0
+# qrcode==7.4.2
 
 # ────────────────────────────────────────────────
-# [OPTIONAL] Advanced scraping / JS rendering
+# Optional – Exports (PNG/PPTX/XLSX)
 # ────────────────────────────────────────────────
-# playwright==1.49.1                       # best for screenshots + JS-rendered pages
-# pillow==10.4.0                           # image processing (thumbnails, etc.)
+# python-pptx==1.0.2
+# openpyxl==3.1.5
 
 # ────────────────────────────────────────────────
-# [OPTIONAL] Database (if you add user accounts, history, saved audits…)
+# Optional – Advanced scraping / JS rendering
+# ────────────────────────────────────────────────
+# playwright==1.49.1
+# pillow==10.4.0
+
+# ────────────────────────────────────────────────
+# Optional – Database (user accounts, history, saved audits)
 # ────────────────────────────────────────────────
 # sqlalchemy==2.0.36
-# psycopg2-binary==2.9.10                  # PostgreSQL sync driver
-# asyncpg==0.30.0                          # PostgreSQL async driver (preferred with FastAPI)
-# alembic==1.14.1                          # migrations
+# psycopg2-binary==2.9.10
+# asyncpg==0.30.0
+# alembic==1.14.1
 
 # ────────────────────────────────────────────────
-# [OPTIONAL] Caching / Rate Limiting / Background Tasks
+# Optional – Caching / Background Jobs
 # ────────────────────────────────────────────────
-# redis==5.2.1                             # caching + rate-limit backend
-# rq==2.1.0                                # simple background jobs (lighter than Celery)
+# redis==5.2.1
+# rq==2.1.0
 
 # ────────────────────────────────────────────────
-# [OPTIONAL] AI / Content Analysis Enhancement
+# Optional – Logging/Observability
 # ────────────────────────────────────────────────
-# google-generativeai==0.8.3               # Gemini for content quality / suggestions
+# python-json-logger==2.0.7
 
 # ────────────────────────────────────────────────
-# Development & Quality (can be removed in pure production build if desired)
+# Dev & QA (keep commented in production)
 # ────────────────────────────────────────────────
-# black==24.10.0
-# ruff==0.8.4
-# mypy==1.14.0
 # pytest==8.3.4
 # pytest-asyncio==0.25.2
-
-# =========================================================
-# Installation notes for Railway:
-#   No --no-deps or --no-binary needed
-#   ReportLab should install cleanly (pure Python + small C extensions)
-#   If using Playwright → add build script: playwright install --with-deps
-# =========================================================
+# ruff==0.8.4
+# black==24.10.0
+# mypy==1.14.0
