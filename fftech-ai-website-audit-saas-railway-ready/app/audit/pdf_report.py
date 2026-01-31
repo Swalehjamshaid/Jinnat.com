@@ -2,1019 +2,745 @@
 """
 app/audit/pdf_report.py
 
-International-standard, world-class 5-page PDF builder for Website Audit output.
+World-class PDF "Web Report" generator using WeasyPrint (HTML/CSS → PDF).
 
-Goals:
-- Beautiful, executive-grade PDF with charts and strong typography
-- Robust in production (Railway/Docker/Linux)
-- Defensive coding: missing fields should NOT crash PDF generation
-- Strict output: capped content to avoid accidental page overflow
-- Does NOT change runner_result I/O schema (no loss of input/output)
+Why WeasyPrint?
+- Supports PDF variants (PDF/A, PDF/UA, etc.) using the pdf_variant option. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+- Can tag PDFs for accessibility using pdf_tags=True. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+- Supports CSS paged media concepts for print-ready layouts (page breaks, headers/footers). [2](https://deepwiki.com/Kozea/WeasyPrint/1-weasyprint-overview)[1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+- Extracts metadata from HTML (<title>, <meta ...>, <html lang=...>) into PDF metadata fields. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
 
-Expected runner_result keys (best-effort):
-  audited_url, overall_score, grade, breakdown, dynamic, chart_data
+Exported API:
+    generate_audit_pdf(audit_data: dict, output_path: str, logo_path: str|None = None, report_title: str = "...", ...)
 """
 
 from __future__ import annotations
 
-import io
 import os
-import math
 import datetime as _dt
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-# ----------------------------
-# Matplotlib (headless + safe cache)
-# ----------------------------
-# Railway sometimes blocks default matplotlib cache dir.
-# You can also set env var: MPLCONFIGDIR=/tmp/matplotlib
-os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
-
-import matplotlib  # noqa: E402
-matplotlib.use("Agg")  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-
-# ----------------------------
-# ReportLab
-# ----------------------------
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.pdfbase.pdfmetrics import stringWidth
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
-    Image,
-    PageBreak,
-    KeepTogether,
-)
-
-A4_W, A4_H = A4
-
-# =========================================================
-# Branding / Theme (tweak here for your brand)
-# =========================================================
-BRAND = {
-    "primary": colors.HexColor("#4F46E5"),       # Indigo
-    "primary_dark": colors.HexColor("#4338CA"),
-    "accent": colors.HexColor("#10B981"),        # Emerald
-    "warning": colors.HexColor("#F59E0B"),       # Amber
-    "danger": colors.HexColor("#EF4444"),        # Red
-    "info": colors.HexColor("#06B6D4"),          # Cyan
-    "purple": colors.HexColor("#8B5CF6"),
-    "blue": colors.HexColor("#3B82F6"),
-
-    "bg_soft": colors.HexColor("#F8FAFC"),       # Slate-50
-    "bg_card": colors.HexColor("#FFFFFF"),
-    "text": colors.HexColor("#0F172A"),          # Slate-900
-    "muted": colors.HexColor("#475569"),         # Slate-600
-    "border": colors.HexColor("#E2E8F0"),        # Slate-200
-    "grid": colors.HexColor("#CBD5E1"),          # Slate-300
-}
-
-# =========================================================
-# Output Guardrails (keep report strictly 5 pages)
-# =========================================================
-CAPS = {
-    "max_exec_bullets": 6,
-    "max_top_risks": 6,
-    "max_quick_wins": 6,
-    "max_extras_findings": 7,
-    "max_dynamic_cards": 6,
-    "max_kv_rows": 14,
-    "max_raw_json_chars": 2200,  # keep appendix stable
-}
+# WeasyPrint provides HTML→PDF and supports PDF/UA and PDF/A variants in options. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+try:
+    from weasyprint import HTML, CSS
+    from weasyprint.text.fonts import FontConfiguration
+except Exception as e:
+    raise RuntimeError(
+        "WeasyPrint is required for world-class PDF export. "
+        "Install: pip install weasyprint (plus system deps for your OS). "
+        f"Import error: {e}"
+    ) from e
 
 
-@dataclass
-class PdfMeta:
-    report_title: str
-    brand_name: str
-    client_name: str
-    audit_date: str
-    website_name: Optional[str]
-    audited_url: str
-    logo_path: Optional[str] = None
+__all__ = ["generate_audit_pdf"]
 
 
-# =========================================================
-# Helper: safe conversions
-# =========================================================
-def _safe(v: Any, default: str = "—") -> str:
-    if v is None:
-        return default
-    if isinstance(v, (int, float)):
-        if isinstance(v, float) and not math.isfinite(v):
-            return default
-        # keep as int if close
-        if isinstance(v, float) and abs(v - round(v)) < 1e-9:
-            return str(int(round(v)))
-        return str(v)
-    s = str(v).strip()
-    return s if s else default
+# -----------------------------
+# Small utilities
+# -----------------------------
+
+def _ensure_dir(file_path: str) -> None:
+    d = os.path.dirname(os.path.abspath(file_path))
+    if d and not os.path.exists(d):
+        os.makedirs(d, exist_ok=True)
 
 
-def _num(v: Any, default: float = 0.0) -> float:
+def _safe_str(v: Any, default: str = "") -> str:
     try:
-        x = float(v)
-        if not math.isfinite(x):
-            return float(default)
-        return x
+        if v is None:
+            return default
+        s = str(v)
+        return s if s.strip() else default
     except Exception:
-        return float(default)
+        return default
 
 
-def _clamp_score(x: float) -> float:
-    return max(0.0, min(100.0, float(x)))
+def _safe_int(v: Any, default: int = 0) -> int:
+    try:
+        return int(v)
+    except Exception:
+        return default
 
 
-def _today_stamp() -> str:
+def _clamp(n: int, lo: int = 0, hi: int = 100) -> int:
+    return max(lo, min(hi, int(n)))
+
+
+def _html_escape(s: str) -> str:
+    s = s or ""
+    return (s.replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "&quot;")
+             .replace("'", "&#39;"))
+
+
+def _iso_date(v: Optional[str] = None) -> str:
+    # WeasyPrint can store created/modified metadata from dcterms meta tags. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    if v and isinstance(v, str) and v.strip():
+        return v.strip()
     return _dt.date.today().isoformat()
 
 
-def _grade_color(grade: str):
-    g = (grade or "").upper().strip()
-    if g.startswith("A"):
-        return BRAND["accent"]
-    if g.startswith("B"):
-        return BRAND["info"]
-    if g.startswith("C"):
-        return BRAND["warning"]
-    return BRAND["danger"]
-
-
-def _score_to_label(score: float) -> str:
-    s = _clamp_score(score)
+def _score_band(score: Any) -> Tuple[str, str]:
+    """Return (label, hex_color)"""
+    s = _clamp(_safe_int(score, 0))
     if s >= 90:
-        return "Excellent"
+        return "Excellent", "#16a34a"
     if s >= 75:
-        return "Good"
+        return "Good", "#22c55e"
     if s >= 60:
-        return "Fair"
-    return "Needs Improvement"
+        return "Fair", "#f59e0b"
+    return "Needs Improvement", "#ef4444"
 
 
-def _risk_level(score: float) -> str:
-    # Higher score => lower risk
-    s = _clamp_score(score)
-    if s >= 85:
-        return "Low"
-    if s >= 70:
-        return "Medium"
-    return "High"
-
-
-def _risk_color(risk: str):
-    r = (risk or "").lower()
-    if r == "low":
-        return BRAND["accent"]
-    if r == "medium":
-        return BRAND["warning"]
-    return BRAND["danger"]
-
-
-def _extract_breakdown(result: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    b = result.get("breakdown") or {}
-    return {
-        "seo": b.get("seo") or {},
-        "performance": b.get("performance") or {},
-        "links": b.get("links") or {},
-        "security": b.get("security") or {},
-        "ai": b.get("ai") or {},
-        "competitors": b.get("competitors") or {},
-        # Optional keys you might add later
-        "accessibility": b.get("accessibility") or {},
-        "content": b.get("content") or {},
-    }
-
-
-# =========================================================
-# Helper: interpret extras into readable bullets
-# =========================================================
-def _top_findings_from_extras(extras: Optional[Dict[str, Any]], max_items: int = 7) -> List[str]:
+def _svg_score_bar(categories: List[Tuple[str, int]]) -> str:
     """
-    Convert extras dict into bullet-like findings.
-    Defensive: works with dicts, nested dicts (partial), and primitives.
+    Inline SVG (vector) score chart.
+    - Inline SVG keeps things crisp and print-friendly.
+    - Provide <title>/<desc> for assistive technology hints.
     """
-    if not extras or not isinstance(extras, dict):
-        return ["No detailed signals returned by the scanner for this section."]
+    # basic sizing
+    w, h = 760, 240
+    pad_l, pad_r, pad_t, pad_b = 60, 20, 30, 40
+    chart_w = w - pad_l - pad_r
+    chart_h = h - pad_t - pad_b
+    n = max(1, len(categories))
+    bar_gap = 14
+    bar_w = int((chart_w - (n - 1) * bar_gap) / n)
+    max_val = 100
 
-    items: List[str] = []
-    for k, v in list(extras.items()):
-        if len(items) >= max_items:
-            break
-        key = str(k).replace("_", " ").strip().title()
+    # build bars
+    bars = []
+    labels = []
+    for i, (name, val) in enumerate(categories):
+        x = pad_l + i * (bar_w + bar_gap)
+        v = _clamp(val)
+        bh = int((v / max_val) * chart_h)
+        y = pad_t + (chart_h - bh)
+        band, color = _score_band(v)
 
-        if isinstance(v, bool):
-            items.append(f"{key}: {'Yes' if v else 'No'}")
-        elif isinstance(v, (int, float, str)):
-            items.append(f"{key}: {_safe(v)}")
-        elif isinstance(v, dict):
-            # take 1-2 subkeys
-            subparts = []
-            for sk, sv in list(v.items())[:2]:
-                subparts.append(f"{str(sk).replace('_',' ')}={_safe(sv)}")
-            if subparts:
-                items.append(f"{key}: " + ", ".join(subparts))
-            else:
-                items.append(f"{key}: Available")
-        elif isinstance(v, list):
-            items.append(f"{key}: {len(v)} items")
-        else:
-            items.append(f"{key}: Available")
+        bars.append(
+            f'<rect x="{x}" y="{y}" width="{bar_w}" height="{bh}" rx="10" fill="{color}"></rect>'
+        )
+        labels.append(
+            f'<text x="{x + bar_w/2:.1f}" y="{h - 18}" text-anchor="middle" '
+            f'font-size="12" fill="#0f172a">{_html_escape(name)}</text>'
+        )
+        labels.append(
+            f'<text x="{x + bar_w/2:.1f}" y="{y - 8}" text-anchor="middle" '
+            f'font-size="12" fill="#0f172a">{v}</text>'
+        )
 
-    return items or ["No detailed signals returned by the scanner for this section."]
+    # y-axis ticks
+    ticks = []
+    for t in [0, 25, 50, 75, 100]:
+        ty = pad_t + (chart_h - int((t / 100) * chart_h))
+        ticks.append(f'<line x1="{pad_l-10}" y1="{ty}" x2="{w-pad_r}" y2="{ty}" stroke="#e5e7eb" stroke-width="1"/>')
+        ticks.append(f'<text x="{pad_l-16}" y="{ty+4}" text-anchor="end" font-size="11" fill="#64748b">{t}</text>')
 
-
-# =========================================================
-# Charts (matplotlib -> PNG bytes)
-# =========================================================
-def _fig_to_png_bytes(fig) -> bytes:
-    bio = io.BytesIO()
-    fig.savefig(bio, format="png", dpi=180, bbox_inches="tight", transparent=False)
-    plt.close(fig)
-    bio.seek(0)
-    return bio.read()
-
-
-def build_category_bar_chart(scores: Dict[str, float]) -> bytes:
-    labels = ["SEO", "Performance", "Links", "Security", "AI", "Competitors"]
-    values = [
-        _clamp_score(scores.get("seo", 0)),
-        _clamp_score(scores.get("performance", 0)),
-        _clamp_score(scores.get("links", 0)),
-        _clamp_score(scores.get("security", 0)),
-        _clamp_score(scores.get("ai", 0)),
-        _clamp_score(scores.get("competitors", 0)),
-    ]
-    cols = ["#F59E0B", "#06B6D4", "#10B981", "#EF4444", "#3B82F6", "#8B5CF6"]
-
-    fig = plt.figure(figsize=(8.4, 3.3))
-    ax = fig.add_subplot(111)
-    ax.bar(labels, values, color=cols, edgecolor="#111827", linewidth=0.4)
-    ax.set_ylim(0, 100)
-    ax.set_title("Category Score Breakdown (0-100)", fontsize=12, weight="bold")
-    ax.grid(axis="y", alpha=0.18)
-    for i, v in enumerate(values):
-        ax.text(i, v + 2, f"{int(round(v))}", ha="center", va="bottom", fontsize=9, weight="bold")
-    fig.tight_layout()
-    return _fig_to_png_bytes(fig)
+    return f"""
+<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label="Score Breakdown Chart" xmlns="http://www.w3.org/2000/svg">
+  <title>Score Breakdown</title>
+  <desc>Bar chart showing category scores out of 100.</desc>
+  <rect x="0" y="0" width="{w}" height="{h}" rx="18" fill="#ffffff" stroke="#e5e7eb"/>
+  {''.join(ticks)}
+  {''.join(bars)}
+  {''.join(labels)}
+</svg>
+""".strip()
 
 
-def build_radar_chart(scores: Dict[str, float]) -> bytes:
-    labels = ["SEO", "Performance", "Links", "Security", "AI", "Competitors"]
-    vals = [
-        _clamp_score(scores.get("seo", 0)),
-        _clamp_score(scores.get("performance", 0)),
-        _clamp_score(scores.get("links", 0)),
-        _clamp_score(scores.get("security", 0)),
-        _clamp_score(scores.get("ai", 0)),
-        _clamp_score(scores.get("competitors", 0)),
-    ]
-    vals += vals[:1]
-    angles = [n / float(len(labels)) * 2 * math.pi for n in range(len(labels))]
-    angles += angles[:1]
-
-    fig = plt.figure(figsize=(6.2, 4.2))
-    ax = plt.subplot(111, polar=True)
-    ax.set_theta_offset(math.pi / 2)
-    ax.set_theta_direction(-1)
-    ax.set_thetagrids([a * 180 / math.pi for a in angles[:-1]], labels, fontsize=9)
-
-    ax.set_ylim(0, 100)
-    ax.plot(angles, vals, linewidth=2, color="#4F46E5")
-    ax.fill(angles, vals, color="#4F46E5", alpha=0.22)
-    ax.set_title("Audit Radar (Higher is Better)", fontsize=12, weight="bold", pad=18)
-    ax.grid(alpha=0.20)
-    fig.tight_layout()
-    return _fig_to_png_bytes(fig)
+def _list_items(items: Any) -> List[str]:
+    if not items:
+        return []
+    if isinstance(items, list):
+        return [x for x in (_safe_str(i, "") for i in items) if x.strip()]
+    return [x for x in _safe_str(items, "").split("\n") if x.strip()]
 
 
-def build_gauge_like_donut(overall_score: float) -> bytes:
-    score = _clamp_score(overall_score)
-    fig = plt.figure(figsize=(3.6, 3.6))
-    ax = fig.add_subplot(111)
-    ax.axis("equal")
+# -----------------------------
+# CSS (print-ready, brandable)
+# -----------------------------
 
-    sizes = [score, 100 - score]
-    col_main = "#10B981" if score >= 85 else "#06B6D4" if score >= 70 else "#F59E0B" if score >= 55 else "#EF4444"
-    ax.pie(
-        sizes,
-        startangle=90,
-        colors=[col_main, "#E5E7EB"],
-        wedgeprops=dict(width=0.30, edgecolor="white"),
-    )
-    ax.text(0, 0.02, f"{int(round(score))}", ha="center", va="center", fontsize=26, weight="bold", color="#111827")
-    ax.text(0, -0.25, _score_to_label(score), ha="center", va="center", fontsize=10, color="#475569")
-    ax.set_title("Overall Score", fontsize=11, weight="bold", pad=10)
-    fig.tight_layout()
-    return _fig_to_png_bytes(fig)
-
-
-# =========================================================
-# Layout helpers
-# =========================================================
-def _load_logo(logo_path: Optional[str], max_w_mm: float = 32.0, max_h_mm: float = 12.0) -> Optional[Image]:
+def _build_css() -> str:
     """
-    Load logo if exists. Never crash if missing/unreadable.
+    CSS Paged Media:
+    - @page for margins + page counters for page numbers (supported by WeasyPrint). [2](https://deepwiki.com/Kozea/WeasyPrint/1-weasyprint-overview)[1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
     """
-    if not logo_path:
-        return None
-    try:
-        p = logo_path.strip()
-        if not p:
-            return None
-        # if relative, accept as-is; caller may provide absolute path
-        if not os.path.isfile(p):
-            return None
-        img = Image(p)
-        img.drawWidth = max_w_mm * mm
-        img.drawHeight = max_h_mm * mm
-        img.hAlign = "LEFT"
-        return img
-    except Exception:
-        return None
+    return r"""
+/* ---------- Page / Print ---------- */
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+
+  @bottom-left {
+    content: string(doc-title);
+    color: #475569;
+    font-size: 9pt;
+  }
+
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    color: #475569;
+    font-size: 9pt;
+  }
+}
+
+/* ---------- Base ---------- */
+:root{
+  --ink:#0f172a;
+  --muted:#475569;
+  --border:#e5e7eb;
+  --bg:#f8fafc;
+  --brand:#0ea5e9;
+  --ok:#16a34a;
+  --warn:#f59e0b;
+  --bad:#ef4444;
+  --card:#ffffff;
+}
+
+html, body{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  color: var(--ink);
+  font-size: 11pt;
+  line-height: 1.45;
+}
+
+* { box-sizing: border-box; }
+
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.small { font-size: 9.5pt; color: var(--muted); }
+.muted { color: var(--muted); }
+
+hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+
+.page-break { break-before: page; }
+
+/* ---------- Cover ---------- */
+.cover {
+  padding: 18mm 14mm;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 55%, #f8fafc 100%);
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.cover h1 {
+  font-size: 24pt;
+  line-height: 1.1;
+  margin: 0 0 6px 0;
+}
+
+.cover .meta {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 18px;
+}
+
+.meta .kv {
+  background: rgba(255,255,255,0.9);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.kv .k { font-size: 9.2pt; color: var(--muted); }
+.kv .v { font-size: 11pt; font-weight: 600; margin-top: 2px; }
+
+/* ---------- Headings ---------- */
+h2 {
+  font-size: 14.5pt;
+  margin: 18px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+h3 {
+  font-size: 12.5pt;
+  margin: 14px 0 8px;
+}
+
+h1, h2, h3 { break-after: avoid; }
+
+/* Create PDF bookmarks from headings where supported */
+h2 { bookmark-level: 1; bookmark-label: content(text); }
+h3 { bookmark-level: 2; bookmark-label: content(text); }
+
+/* ---------- Cards / Grid ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 12px;
+}
+
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 12px;
+}
+
+.badge{
+  display:inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 9.5pt;
+  border: 1px solid var(--border);
+  background: #fff;
+  margin-left: 6px;
+}
+
+.badge.ok { border-color: rgba(22,163,74,.25); background: rgba(22,163,74,.08); color: #166534; }
+.badge.warn { border-color: rgba(245,158,11,.25); background: rgba(245,158,11,.10); color: #92400e; }
+.badge.bad { border-color: rgba(239,68,68,.25); background: rgba(239,68,68,.08); color: #991b1b; }
+
+/* ---------- Tables ---------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+thead th {
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 700;
+  font-size: 10pt;
+  padding: 10px;
+  text-align: left;
+}
+
+tbody td {
+  padding: 9px 10px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+tbody tr:nth-child(even) td { background: #f8fafc; }
+
+/* ---------- Lists ---------- */
+ul { margin: 6px 0 0 18px; }
+li { margin: 4px 0; }
+
+/* ---------- Footer note ---------- */
+.note {
+  font-size: 9.3pt;
+  color: var(--muted);
+  border-left: 4px solid #cbd5e1;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border-radius: 10px;
+}
+""".strip()
 
 
-def _chip(text: str, bg, fg=colors.white) -> Table:
-    t = Table([[Paragraph(f"<b>{text}</b>", ParagraphStyle(
-        "chip",
-        fontName="Helvetica-Bold",
-        fontSize=9.5,
-        textColor=fg,
-        alignment=TA_CENTER,
-        leading=11
-    ))]], colWidths=[46 * mm])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), bg),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.white),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-    ]))
-    return t
+# -----------------------------
+# HTML template (semantic)
+# -----------------------------
 
-
-def _card(title: str, body: List[Any], styles, accent_color=BRAND["primary"]) -> Table:
-    """
-    A consistent card container (international report style).
-    """
-    header = Table([[Paragraph(f"<b>{title}</b>", styles["CardTitle"])]], colWidths=[170 * mm])
-    header.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), BRAND["bg_soft"]),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-        ("LINEBELOW", (0, 0), (-1, -1), 1.2, accent_color),
-    ]))
-
-    content = Table([[body]], colWidths=[170 * mm])
-    content.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), BRAND["bg_card"]),
-        ("BOX", (0, 0), (-1, -1), 0.6, BRAND["border"]),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-    ]))
-
-    return Table([[header], [content]], colWidths=[170 * mm])
-
-
-def _bullets(items: List[str], styles, max_items: int) -> Paragraph:
-    items = (items or [])[:max_items]
-    html = "<br/>".join([f"• {i}" for i in items]) if items else "—"
-    return Paragraph(html, styles["Body"])
-
-
-def _best_and_worst(scores: Dict[str, float]) -> Tuple[List[Tuple[str, float]], List[Tuple[str, float]]]:
-    pairs = [
-        ("SEO", _clamp_score(scores.get("seo", 0))),
-        ("Performance", _clamp_score(scores.get("performance", 0))),
-        ("Links", _clamp_score(scores.get("links", 0))),
-        ("Security", _clamp_score(scores.get("security", 0))),
-        ("AI Readiness", _clamp_score(scores.get("ai", 0))),
-        ("Competitors", _clamp_score(scores.get("competitors", 0))),
-    ]
-    best = sorted(pairs, key=lambda x: x[1], reverse=True)[:3]
-    worst = sorted(pairs, key=lambda x: x[1])[:3]
-    return best, worst
-
-
-def _derive_top_risks(scores: Dict[str, float]) -> List[str]:
-    """
-    Simple, reliable risk statements based on low category scores.
-    (Better than guessing unknown fields.)
-    """
-    risks = []
-    if scores.get("security", 100) < 70:
-        risks.append("Security posture appears below target. Prioritize HTTPS/HSTS and security header hardening.")
-    if scores.get("performance", 100) < 70:
-        risks.append("Performance signals indicate potential slow load/UX issues. Optimize page weight and render-blocking assets.")
-    if scores.get("seo", 100) < 70:
-        risks.append("SEO discoverability signals need improvement. Validate titles/descriptions/canonical and indexing directives.")
-    if scores.get("links", 100) < 70:
-        risks.append("Link health may impact crawl quality. Reduce broken links and improve internal navigation structure.")
-    if scores.get("ai", 100) < 70:
-        risks.append("AI readiness signals suggest missing structured content/metadata. Add schema and improve semantic structure.")
-    if scores.get("competitors", 100) < 70:
-        risks.append("Competitive positioning appears weak against benchmarks. Consider content strategy and UX improvements.")
-    return (risks or ["No high-severity risks detected from category scoring."])[:CAPS["max_top_risks"]]
-
-
-def _derive_quick_wins(breakdown: Dict[str, Dict[str, Any]], scores: Dict[str, float]) -> List[str]:
-    wins = []
-    seo_ex = (breakdown.get("seo") or {}).get("extras") or {}
-    perf_ex = (breakdown.get("performance") or {}).get("extras") or {}
-    sec = breakdown.get("security") or {}
-
-    # Conservative quick wins (avoid guessing too much)
-    if scores.get("seo", 100) < 85:
-        wins.append("Ensure every page has a unique, concise title and meta description aligned to target keywords.")
-    if scores.get("performance", 100) < 85:
-        wins.append("Compress/resize images and enable long-lived caching for static assets (CSS/JS/images).")
-    if not sec.get("hsts", False):
-        wins.append("Enable HSTS (Strict-Transport-Security) to improve transport security (after HTTPS confirmed).")
-    # Use extras hints if present
-    if "canonical" in seo_ex and seo_ex.get("canonical") in (False, None, ""):
-        wins.append("Add/validate canonical URL to reduce duplicate indexing and consolidate ranking signals.")
-    if "load_ms" in perf_ex:
-        wins.append("Reduce time-to-load by removing render-blocking scripts and deferring non-critical JS.")
-    return (wins or ["No immediate quick wins detected from available signals."])[:CAPS["max_quick_wins"]]
-
-
-# =========================================================
-# Public API: PDF Builder
-# =========================================================
-def generate_worldclass_5page_pdf(
-    runner_result: Dict[str, Any],
-    output_path: str,
+def _build_html(
+    audit_data: Dict[str, Any],
     *,
-    logo_path: Optional[str] = None,
-    report_title: str = "Website Audit Report",
-    client_name: str = "N/A",
-    brand_name: str = "FF Tech",
-    audit_date: str = "",
-    website_name: Optional[str] = None,
+    report_title: str,
+    logo_path: Optional[str],
+    lang: str,
+    generator_name: str,
+    keywords: Optional[List[str]],
 ) -> str:
-    """
-    Create a strict 5-page PDF at output_path.
+    website = audit_data.get("website") or {}
+    client = audit_data.get("client") or {}
+    brand = audit_data.get("brand") or {}
+    audit = audit_data.get("audit") or {}
+    scores = audit_data.get("scores") or {}
+    scope = audit_data.get("scope") or {}
+    seo_block = audit_data.get("seo") or {}
+    perf_block = audit_data.get("performance") or {}
 
-    Defensive:
-    - Missing runner fields won't crash
-    - content capped to avoid spilling beyond 5 pages
-    """
+    website_name = _safe_str(website.get("name"), "N/A")
+    website_url = _safe_str(website.get("url"), "N/A")
+    industry = _safe_str(website.get("industry"), "N/A")
+    audience = _safe_str(website.get("audience"), "N/A")
+    goals = _list_items(website.get("goals"))
 
-    audited_url = _safe(runner_result.get("audited_url"), "website")
-    meta = PdfMeta(
-        report_title=_safe(report_title, "Website Audit Report"),
-        brand_name=_safe(brand_name, "FF Tech"),
-        client_name=_safe(client_name, "N/A"),
-        audit_date=_safe(audit_date, _today_stamp()),
-        website_name=website_name,
-        audited_url=audited_url,
-        logo_path=logo_path,
-    )
+    client_name = _safe_str(client.get("name"), "N/A")
+    brand_name = _safe_str(brand.get("name"), "N/A")
 
-    breakdown = _extract_breakdown(runner_result)
-    overall_score = _clamp_score(_num(runner_result.get("overall_score"), 0))
-    grade = _safe(runner_result.get("grade"), "—")
+    audit_date = _iso_date(_safe_str(audit.get("date"), ""))
+    overall_score = _clamp(_safe_int(audit.get("overall_score"), 0))
+    grade = _safe_str(audit.get("grade"), "N/A")
+    verdict = _safe_str(audit.get("verdict"), "N/A")
+    exec_summary = _safe_str(audit.get("executive_summary"), "")
 
-    scores = {
-        "seo": _clamp_score(_num((breakdown["seo"].get("score")), 0)),
-        "performance": _clamp_score(_num((breakdown["performance"].get("score")), 0)),
-        "links": _clamp_score(_num((breakdown["links"].get("score")), 0)),
-        "security": _clamp_score(_num((breakdown["security"].get("score")), 0)),
-        "ai": _clamp_score(_num((breakdown["ai"].get("score")), 0)),
-        "competitors": _clamp_score(_num((breakdown["competitors"].get("score")), 0)),
-    }
+    key_risks = _list_items(audit.get("key_risks"))
+    opportunities = _list_items(audit.get("opportunities"))
 
-    # Build charts once (safe)
-    chart_bar = build_category_bar_chart(scores)
-    chart_radar = build_radar_chart(scores)
-    chart_donut = build_gauge_like_donut(overall_score)
+    # Category scores (runner_result_to_audit_data currently sets seo/performance/security; others may be None)
+    seo = scores.get("seo")
+    performance = scores.get("performance")
+    security = scores.get("security")
+    ux_ui = scores.get("ux_ui")
+    accessibility = scores.get("accessibility")
+    content_quality = scores.get("content_quality")
 
-    # Styles
-    styles = _build_styles()
+    def fmt_score(v: Any) -> str:
+        if v is None or v == "":
+            return "N/A"
+        try:
+            return str(_clamp(int(v)))
+        except Exception:
+            return "N/A"
 
-    # Document setup (tight, professional margins)
-    doc = SimpleDocTemplate(
-        output_path,
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=18 * mm,
-        bottomMargin=16 * mm,
-        title=meta.report_title,
-        author=meta.brand_name,
-    )
+    # label and badge class by overall score
+    overall_label, overall_color = _score_band(overall_score)
+    overall_badge_cls = "ok" if overall_score >= 75 else ("warn" if overall_score >= 60 else "bad")
 
-    story: List[Any] = []
+    # Findings
+    seo_on_page = _list_items(seo_block.get("on_page_issues"))
+    seo_tech = _list_items(seo_block.get("technical_issues"))
+    perf_issues = _list_items(perf_block.get("page_size_issues"))
 
-    # ===== PAGE 1: Cover + Executive Snapshot =====
-    story.extend(_page1_cover(meta, overall_score, grade, chart_donut, styles, scores))
+    what = _list_items(scope.get("what"))
+    why = _safe_str(scope.get("why"), "")
+    tools = _list_items(scope.get("tools"))
 
-    # ===== PAGE 2: Executive Summary + Visuals + Risk =====
-    story.append(PageBreak())
-    story.extend(_page2_exec_summary(meta, overall_score, grade, chart_bar, chart_radar, styles, scores, breakdown))
-
-    # ===== PAGE 3: SEO Deep Dive =====
-    story.append(PageBreak())
-    story.extend(_page3_seo_deep_dive(meta, breakdown, styles, scores))
-
-    # ===== PAGE 4: Performance + Security Deep Dive =====
-    story.append(PageBreak())
-    story.extend(_page4_perf_security(meta, breakdown, styles, scores))
-
-    # ===== PAGE 5: Links + AI + Competitors + Action Plan + Appendix =====
-    story.append(PageBreak())
-    story.extend(_page5_links_ai_action_appendix(meta, runner_result, breakdown, styles, scores))
-
-    # Build with branded header/footer and page count
-    doc.build(
-        story,
-        onFirstPage=lambda c, d: _draw_header_footer(c, d, meta, is_cover=True),
-        onLaterPages=lambda c, d: _draw_header_footer(c, d, meta, is_cover=False),
-    )
-
-    return output_path
-
-
-# =========================================================
-# Styles (international report typography)
-# =========================================================
-def _build_styles():
-    base = getSampleStyleSheet()
-
-    # Avoid collisions if file is reloaded
-    def add_style(style: ParagraphStyle):
-        if style.name not in base.byName:
-            base.add(style)
-
-    add_style(ParagraphStyle(
-        name="H1",
-        parent=base["Heading1"],
-        fontName="Helvetica-Bold",
-        fontSize=20,
-        leading=24,
-        textColor=BRAND["text"],
-        spaceAfter=8,
-    ))
-    add_style(ParagraphStyle(
-        name="H2",
-        parent=base["Heading2"],
-        fontName="Helvetica-Bold",
-        fontSize=13.5,
-        leading=18,
-        textColor=BRAND["text"],
-        spaceBefore=8,
-        spaceAfter=6,
-    ))
-    add_style(ParagraphStyle(
-        name="H3",
-        parent=base["Heading3"],
-        fontName="Helvetica-Bold",
-        fontSize=11.5,
-        leading=15,
-        textColor=BRAND["text"],
-        spaceBefore=6,
-        spaceAfter=4,
-    ))
-    add_style(ParagraphStyle(
-        name="Body",
-        parent=base["BodyText"],
-        fontName="Helvetica",
-        fontSize=10.2,
-        leading=14,
-        textColor=BRAND["text"],
-    ))
-    add_style(ParagraphStyle(
-        name="Muted",
-        parent=base["BodyText"],
-        fontName="Helvetica",
-        fontSize=9.4,
-        leading=13,
-        textColor=BRAND["muted"],
-    ))
-    add_style(ParagraphStyle(
-        name="Center",
-        parent=base["BodyText"],
-        alignment=TA_CENTER,
-        fontName="Helvetica",
-        fontSize=10.2,
-        leading=14,
-        textColor=BRAND["text"],
-    ))
-    add_style(ParagraphStyle(
-        name="Right",
-        parent=base["BodyText"],
-        alignment=TA_RIGHT,
-        fontName="Helvetica",
-        fontSize=10.2,
-        leading=14,
-        textColor=BRAND["text"],
-    ))
-    add_style(ParagraphStyle(
-        name="Badge",
-        parent=base["BodyText"],
-        alignment=TA_CENTER,
-        fontName="Helvetica-Bold",
-        fontSize=11,
-        leading=13,
-        textColor=colors.white,
-    ))
-    add_style(ParagraphStyle(
-        name="CardTitle",
-        parent=base["BodyText"],
-        fontName="Helvetica-Bold",
-        fontSize=11,
-        leading=14,
-        textColor=BRAND["text"],
-    ))
-
-    return base
-
-
-# =========================================================
-# Page 1: Cover + Exec Snapshot
-# =========================================================
-def _page1_cover(meta: PdfMeta, overall_score: float, grade: str, donut_png: bytes, styles, scores: Dict[str, float]):
-    elems: List[Any] = []
-
-    logo = _load_logo(meta.logo_path)
-    elems.append(Spacer(1, 6 * mm))
-
-    # Top line (brand)
-    if logo:
-        header = Table([[logo, Paragraph(f"<b>{meta.brand_name}</b>", styles["Muted"])]], colWidths=[38*mm, 132*mm])
-        header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
-        elems.append(header)
-    else:
-        elems.append(Paragraph(f"<b>{meta.brand_name}</b> • Website Audit Report", styles["Muted"]))
-
-    elems.append(Spacer(1, 6 * mm))
-
-    # Title & meta
-    elems.append(Paragraph(_safe(meta.report_title), styles["H1"]))
-    audited_name = meta.website_name or meta.audited_url
-    elems.append(Paragraph(f"<b>Audited Property:</b> {_safe(audited_name)}", styles["Body"]))
-    elems.append(Paragraph(f"<b>Client:</b> {_safe(meta.client_name)}", styles["Body"]))
-    elems.append(Paragraph(f"<b>Audit Date:</b> {_safe(meta.audit_date)}", styles["Body"]))
-    elems.append(Spacer(1, 10 * mm))
-
-    donut_img = Image(io.BytesIO(donut_png), width=70*mm, height=70*mm)
-    donut_img.hAlign = "LEFT"
-
-    # Grade badge
-    gcol = _grade_color(grade)
-    badge = Table([[Paragraph(f"Grade: {grade}", styles["Badge"])]], colWidths=[55*mm])
-    badge.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), gcol),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.white),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-
-    best, worst = _best_and_worst(scores)
-    best_txt = ", ".join([f"{k} {int(v)}" for k, v in best])
-    worst_txt = ", ".join([f"{k} {int(v)}" for k, v in worst])
-
-    chips = [
-        _chip(f"Score: {int(round(overall_score))} / 100", BRAND["primary"]),
-        _chip(f"Rating: {_score_to_label(overall_score)}", BRAND["info"]),
-        _chip("Confidential", BRAND["danger"]),
-    ]
-
-    summary = [
-        f"Top strengths: <b>{best_txt}</b>",
-        f"Top opportunities: <b>{worst_txt}</b>",
-        "This report is generated using automated signals to guide prioritization and remediation.",
-    ]
-    bullets = Paragraph("<br/>".join([f"• {s}" for s in summary]), styles["Body"])
-
-    right_col = KeepTogether([
-        badge,
-        Spacer(1, 4*mm),
-        Table([[chips[0], chips[1], chips[2]]], colWidths=[52*mm, 52*mm, 52*mm]),
-        Spacer(1, 4*mm),
-        bullets
+    # SVG chart (vector)
+    chart_svg = _svg_score_bar([
+        ("SEO", _safe_int(seo, 0) if seo is not None else 0),
+        ("Performance", _safe_int(performance, 0) if performance is not None else 0),
+        ("Security", _safe_int(security, 0) if security is not None else 0),
+        ("Accessibility", _safe_int(accessibility, 0) if accessibility is not None else 0),
     ])
 
-    layout = Table([[donut_img, Spacer(1, 1), right_col]], colWidths=[78*mm, 6*mm, 86*mm])
-    layout.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    elems.append(layout)
+    # logo file URL (WeasyPrint resolves local paths using base_url or file://)
+    logo_html = ""
+    if logo_path and os.path.exists(logo_path):
+        # alt text is required for accessibility expectations (Tagged PDF best practices). [3](https://pdfa.org/resource/iso-14289-pdfua/)[4](https://www.iso.org/standard/64599.html)
+        logo_html = f'<img class="logo" src="{_html_escape(logo_path)}" alt="{_html_escape(brand_name)} logo" />'
 
-    elems.append(Spacer(1, 8*mm))
+    # Keywords/meta
+    kw = ", ".join(keywords or [])
 
-    note = (
-        "Scope: The scanner evaluates SEO signals, performance footprint, security headers, link structure, "
-        "AI-readiness indicators, and competitive benchmarks (where available). "
-        "For regulated industries or critical risk posture, a manual security assessment is recommended."
+    # Store doc title for footer via CSS strings
+    # WeasyPrint reads metadata from <title> and <meta ...> and language from <html lang>. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    html = f"""
+<!doctype html>
+<html lang="{_html_escape(lang)}">
+<head>
+  <meta charset="utf-8">
+  <title>{_html_escape(report_title)}</title>
+
+  <meta name="author" content="{_html_escape(brand_name)}">
+  <meta name="description" content="Website audit report for { _html_escape(website_url) }">
+  <meta name="keywords" content="{_html_escape(kw)}">
+  <meta name="generator" content="{_html_escape(generator_name)}">
+
+  <!-- W3C profile of ISO8601 date strings are supported in metadata fields by WeasyPrint. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html) -->
+  <meta name="dcterms.created" content="{_html_escape(audit_date)}">
+  <meta name="dcterms.modified" content="{_html_escape(audit_date)}">
+
+  <style>
+    /* CSS injected from Python for single-file reliability */
+  </style>
+</head>
+
+<body>
+
+<!-- Cover -->
+<section class="cover" aria-label="Cover Page">
+  <div class="brand-row">
+    {logo_html}
+    <div>
+      <h1 style="string-set: doc-title content();">{_html_escape(report_title)}</h1>
+      <div class="small">
+        <span><b>Brand:</b> {_html_escape(brand_name)}</span> &nbsp; • &nbsp;
+        <span><b>Client:</b> {_html_escape(client_name)}</span>
+      </div>
+      <div class="small">
+        <span><b>Date:</b> {_html_escape(audit_date)}</span>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="meta" role="group" aria-label="Report Metadata">
+    <div class="kv"><div class="k">Website</div><div class="v">{_html_escape(website_name)}</div></div>
+    <div class="kv"><div class="k">URL</div><div class="v">{_html_escape(website_url)}</div></div>
+    <div class="kv"><div class="k">Industry</div><div class="v">{_html_escape(industry)}</div></div>
+    <div class="kv"><div class="k">Audience</div><div class="v">{_html_escape(audience)}</div></div>
+
+    <div class="kv">
+      <div class="k">Overall Score</div>
+      <div class="v">
+        {overall_score} / 100
+        <span class="badge {overall_badge_cls}">{_html_escape(overall_label)}</span>
+      </div>
+    </div>
+
+    <div class="kv"><div class="k">Grade</div><div class="v">{_html_escape(grade)}</div></div>
+    <div class="kv"><div class="k">Verdict</div><div class="v">{_html_escape(verdict)}</div></div>
+    <div class="kv"><div class="k">Prepared by</div><div class="v">{_html_escape(brand_name)}</div></div>
+  </div>
+
+  <hr>
+
+  <div class="small">
+    <b>Goals:</b>
+    {"<ul>" + "".join(f"<li>{_html_escape(g)}</li>" for g in goals) + "</ul>" if goals else "<span class='muted'>N/A</span>"}
+  </div>
+</section>
+
+<div class="page-break"></div>
+
+<!-- Executive Summary -->
+<section aria-label="Executive Summary">
+  <h2>Executive Summary</h2>
+  <p>{_html_escape(exec_summary) if exec_summary else "This report summarizes automated health checks across SEO, performance, link structure, and security."}</p>
+
+  <div class="grid" role="group" aria-label="Summary Cards">
+    <div class="card">
+      <h3>Overall Result</h3>
+      <p><b>{overall_score}/100</b> • Grade <b>{_html_escape(grade)}</b> • Verdict <b>{_html_escape(verdict)}</b></p>
+      <p class="small muted">This is an automated report. Prioritize improvements based on business goals and user impact.</p>
+    </div>
+
+    <div class="card">
+      <h3>Score Breakdown</h3>
+      <div aria-label="Score chart">
+        {chart_svg}
+      </div>
+      <p class="small muted">Scores are heuristic indicators to guide prioritization.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Category Scores Table -->
+<section aria-label="Category Scores">
+  <h2>Category Scores</h2>
+
+  <table role="table" aria-label="Category Scores Table">
+    <thead>
+      <tr>
+        <th scope="col">Category</th>
+        <th scope="col">Score</th>
+        <th scope="col">Interpretation</th>
+      </tr>
+    </thead>
+    <tbody>
+      { _row("SEO", seo) }
+      { _row("Performance", performance) }
+      { _row("Security", security) }
+      { _row("UX/UI", ux_ui) }
+      { _row("Accessibility", accessibility) }
+      { _row("Content Quality", content_quality) }
+    </tbody>
+  </table>
+</section>
+
+<!-- Risks & Opportunities -->
+<section aria-label="Key Risks and Opportunities">
+  <h2>Key Risks</h2>
+  { _ul(key_risks) }
+
+  <h2>Opportunities</h2>
+  { _ul(opportunities) }
+</section>
+
+<!-- Findings -->
+<section aria-label="Detailed Findings">
+  <h2>SEO Findings</h2>
+  <h3>On-Page Issues</h3>
+  { _ul(seo_on_page) }
+  <h3>Technical Issues</h3>
+  { _ul(seo_tech) }
+
+  <h2>Performance Findings</h2>
+  <h3>Performance & Page Size</h3>
+  { _ul(perf_issues) }
+</section>
+
+<div class="page-break"></div>
+
+<!-- Methodology -->
+<section aria-label="Scope and Methodology">
+  <h2>Scope & Methodology</h2>
+  <h3>What we checked</h3>
+  { _ul(what) }
+
+  <h3>Why it matters</h3>
+  <p>{_html_escape(why) if why else "N/A"}</p>
+
+  <h3>Tools & Approach</h3>
+  { _ul(tools) }
+
+  <div class="note" role="note" aria-label="Important Note">
+    <b>Note:</b> Automated checks do not replace manual review. For accessibility and compliance claims,
+    validate output using appropriate tooling and perform manual QA.
+  </div>
+</section>
+
+<!-- Appendix -->
+<section aria-label="Appendix">
+  <h2>Appendix</h2>
+  <p class="small muted">
+    Generated by {_html_escape(generator_name)} on {_html_escape(audit_date)}.
+    This PDF uses semantic structure and optional tagging to support accessibility workflows.
+  </p>
+</section>
+
+</body>
+</html>
+""".strip()
+
+    # helper functions injected into template (simple safe string formatting)
+    def _interpret(v: Any) -> str:
+        if v is None or v == "":
+            return "Not assessed"
+        try:
+            s = _clamp(int(v))
+            label, _ = _score_band(s)
+            return label
+        except Exception:
+            return "Not assessed"
+
+    def _row(cat: str, v: Any) -> str:
+        sc = fmt_score(v)
+        interp = _interpret(v)
+        return f"<tr><td>{_html_escape(cat)}</td><td><b>{_html_escape(sc)}</b></td><td>{_html_escape(interp)}</td></tr>"
+
+    def _ul(items: List[str]) -> str:
+        if not items:
+            return "<p class='muted'>None identified.</p>"
+        return "<ul>" + "".join(f"<li>{_html_escape(x)}</li>" for x in items) + "</ul>"
+
+    # Replace placeholders by calling helpers
+    html = html.replace("{ _ul(key_risks) }", _ul(key_risks))
+    html = html.replace("{ _ul(opportunities) }", _ul(opportunities))
+    html = html.replace("{ _ul(seo_on_page) }", _ul(seo_on_page))
+    html = html.replace("{ _ul(seo_tech) }", _ul(seo_tech))
+    html = html.replace("{ _ul(perf_issues) }", _ul(perf_issues))
+    html = html.replace("{ _ul(what) }", _ul(what))
+    html = html.replace("{ _ul(tools) }", _ul(tools))
+
+    html = html.replace("{ _row(\"SEO\", seo) }", _row("SEO", seo))
+    html = html.replace("{ _row(\"Performance\", performance) }", _row("Performance", performance))
+    html = html.replace("{ _row(\"Security\", security) }", _row("Security", security))
+    html = html.replace("{ _row(\"UX/UI\", ux_ui) }", _row("UX/UI", ux_ui))
+    html = html.replace("{ _row(\"Accessibility\", accessibility) }", _row("Accessibility", accessibility))
+    html = html.replace("{ _row(\"Content Quality\", content_quality) }", _row("Content Quality", content_quality))
+
+    return html
+
+
+# -----------------------------
+# Public API
+# -----------------------------
+
+def generate_audit_pdf(
+    *,
+    audit_data: Dict[str, Any],
+    output_path: str,
+    logo_path: Optional[str] = None,
+    report_title: str = "Website Audit Report",
+    brand_generator: str = "FF Tech Website Audit Pro",
+    lang: str = "en",
+    pdf_variant: str = "pdf/ua-1",
+    # pdf_variant choices include pdf/ua-1, pdf/ua-2, pdf/a-2u, etc. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    tag_pdf: bool = True,
+    include_srgb_profile: bool = True,
+    embed_full_fonts: bool = True,
+    keywords: Optional[List[str]] = None,
+    base_url: Optional[str] = None,
+) -> str:
+    """
+    Generate a high-end, print-ready audit PDF.
+
+    Parameters
+    ----------
+    audit_data : dict
+        The dict structure produced by runner_result_to_audit_data() in runner.py
+    output_path : str
+        Path to write PDF
+    logo_path : str|None
+        Optional logo image path
+    report_title : str
+        PDF title
+    lang : str
+        Document language (BCP 47). Extracted from <html lang> into metadata. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    pdf_variant : str
+        e.g. "pdf/ua-1" for accessible PDF, or "pdf/a-2u" for archival + unicode mapping. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    tag_pdf : bool
+        Whether to enable PDF tagging. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    include_srgb_profile : bool
+        Include sRGB profile for consistent color management. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)le. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    base_url : str|None
+        Base URL for resolving relative assets (images/fonts).
+
+    Returns
+    -------
+    str : output_path
+    """
+    if not isinstance(audit_data, dict):
+        raise ValueError("audit_data must be a dict")
+    if not output_path or not isinstance(output_path, str):
+        raise ValueError("output_path must be a non-empty string")
+
+    _ensure_dir(output_path)
+
+    css_text = _build_css()
+    html_text = _build_html(
+        audit_data,
+        report_title=report_title,
+        logo_path=logo_path,
+        lang=lang,
+        generator_name=brand_generator,
+        keywords=keywords or ["website audit", "seo", "performance", "security", "accessibility", "report"],
     )
-    elems.append(_card("Scope & Disclaimer", [Paragraph(note, styles["Muted"])], styles, accent_color=BRAND["primary"]))
 
-    return elems
-
-
-# =========================================================
-# Page 2: Executive Summary + visuals + risk + quick wins
-# =========================================================
-def _page2_exec_summary(meta: PdfMeta, overall_score: float, grade: str,
-                        bar_png: bytes, radar_png: bytes, styles,
-                        scores: Dict[str, float], breakdown: Dict[str, Dict[str, Any]]):
-    elems: List[Any] = []
-
-    elems.append(Paragraph("Executive Summary", styles["H1"]))
-    elems.append(Paragraph(
-        f"This summary highlights key outcomes for <b>{meta.audited_url}</b>. "
-        f"Overall score: <b>{int(round(overall_score))}</b> (Grade <b>{grade}</b>).",
-        styles["Body"]
-    ))
-    elems.append(Spacer(1, 5*mm))
-
-    # Charts
-    img_bar = Image(io.BytesIO(bar_png), width=165*mm, height=62*mm)
-    img_radar = Image(io.BytesIO(radar_png), width=165*mm, height=85*mm)
-    img_bar.hAlign = "CENTER"
-    img_radar.hAlign = "CENTER"
-
-    elems.append(_card("Score Visualizations", [img_bar, Spacer(1, 2*mm), img_radar], styles))
-
-    elems.append(Spacer(1, 5*mm))
-
-    # Category table
-    rows = [["Category", "Score", "Risk", "Interpretation"]]
-    order = [
-        ("seo", "SEO"),
-        ("performance", "Performance"),
-        ("security", "Security"),
-        ("links", "Links"),
-        ("ai", "AI Readiness"),
-        ("competitors", "Competitors"),
-    ]
-    for key, label in order:
-        sc = float(scores.get(key, 0))
-        risk = _risk_level(sc)
-        rows.append([label, f"{int(round(sc))}", risk, _score_to_label(sc)])
-
-    t = Table(rows, colWidths=[40*mm, 22*mm, 25*mm, 83*mm])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), BRAND["primary"]),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("ALIGN", (1, 1), (2, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("GRID", (0, 0), (-1, -1), 0.25, BRAND["border"]),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND["bg_soft"]]),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    for i in range(1, len(rows)):
-        rc = _risk_color(rows[i][2])
-        t.setStyle(TableStyle([
-            ("TEXTCOLOR", (2, i), (2, i), rc),
-            ("FONTNAME", (2, i), (2, i), "Helvetica-Bold"),
-        ]))
-
-    top_risks = _derive_top_risks(scores)
-    quick_wins = _derive_quick_wins(breakdown, scores)
-
-    elems.append(_card("Category Summary & Risk View", [
-        t,
-        Spacer(1, 4*mm),
-        Paragraph("<b>Top Risks (prioritize):</b>", styles["Body"]),
-        _bullets(top_risks, styles, CAPS["max_top_risks"]),
-        Spacer(1, 3*mm),
-        Paragraph("<b>Quick Wins (low effort / high impact):</b>", styles["Body"]),
-        _bullets(quick_wins, styles, CAPS["max_quick_wins"]),
-    ], styles, accent_color=BRAND["info"]))
-
-    return elems
-
-
-# =========================================================
-# Page 3: SEO Deep Dive (international audit style)
-# =========================================================
-def _page3_seo_deep_dive(meta: PdfMeta, breakdown: Dict[str, Dict[str, Any]], styles, scores: Dict[str, float]):
-    elems: List[Any] = []
-
-    seo = breakdown.get("seo") or {}
-    seo_score = _clamp_score(_num(seo.get("score"), 0))
-    extras = seo.get("extras") or {}
-
-    elems.append(Paragraph("Technical Deep Dive — SEO", styles["H1"]))
-    elems.append(Paragraph(
-        f"SEO score: <b>{int(round(seo_score))}</b> ({_score_to_label(seo_score)}). "
-        "This section focuses on discoverability signals and indexing readiness.",
-        styles["Body"]
-    ))
-    elems.append(Spacer(1, 4*mm))
-
-    findings = _top_findings_from_extras(extras, max_items=CAPS["max_extras_findings"])
-
-    # Best-practice guidance (safe, universal)
-    recommendations = [
-        "Ensure unique titles and meta descriptions for primary pages; avoid duplicates and truncation.",
-        "Validate canonical URLs and avoid conflicting indexing directives (robots meta vs headers).",
-        "Add structured data (Schema.org) where relevant (Organization, Product, Article, FAQ).",
-        "Use clear heading hierarchy (H1/H2/H3) aligned to search intent.",
-        "Strengthen internal linking to key conversion pages using descriptive anchor text.",
-        "Ensure OpenGraph/Twitter metadata for consistent sharing previews.",
-    ]
-
-    elems.append(_card("Observed SEO Signals (from scanner)", [
-        Paragraph("Key signals extracted during scan:", styles["Body"]),
-        Spacer(1, 2*mm),
-        _bullets(findings, styles, CAPS["max_extras_findings"]),
-    ], styles, accent_color=BRAND["warning"]))
-
-    elems.append(Spacer(1, 4*mm))
-    elems.append(_card("Recommendations (Industry Best Practice)", [
-        _bullets(recommendations, styles, CAPS["max_exec_bullets"]),
-        Paragraph(
-            "Note: Recommendations are prioritized based on typical impact; adjust to your business goals and site type.",
-            styles["Muted"]
-        ),
-    ], styles, accent_color=BRAND["primary"]))
-
-    return elems
-
-
-# =========================================================
-# Page 4: Performance + Security Deep Dive
-# =========================================================
-def _page4_perf_security(meta: PdfMeta, breakdown: Dict[str, Dict[str, Any]], styles, scores: Dict[str, float]):
-    elems: List[Any] = []
-
-    perf = breakdown.get("performance") or {}
-    sec = breakdown.get("security") or {}
-
-    perf_score = _clamp_score(_num(perf.get("score"), 0))
-    sec_score = _clamp_score(_num(sec.get("score"), 0))
-
-    perf_extras = perf.get("extras") or {}
-
-    elems.append(Paragraph("Technical Deep Dive — Performance & Security", styles["H1"]))
-    elems.append(Paragraph(
-        f"Performance score: <b>{int(round(perf_score))}</b> • "
-        f"Security score: <b>{int(round(sec_score))}</b>.",
-        styles["Body"]
-    ))
-    elems.append(Spacer(1, 4*mm))
-
-    perf_findings = _top_findings_from_extras(perf_extras, max_items=CAPS["max_extras_findings"])
-
-    perf_actions = [
-        "Compress and properly size images; prefer modern formats (WebP/AVIF) where supported.",
-        "Minify CSS/JS and defer non-critical scripts; reduce render-blocking resources.",
-        "Enable caching headers (Cache-Control) and compression (gzip/brotli) for text assets.",
-        "Use CDN for static assets and optimize server response time (TTFB).",
-    ]
-
-    # Security table (defensive)
-    sec_rows = [["Signal", "Value"]]
-    sec_rows.append(["HTTPS", "Yes" if bool(sec.get("https")) else "No"])
-    sec_rows.append(["HSTS", "Yes" if bool(sec.get("hsts")) else "No"])
-    sec_rows.append(["HTTP Status", _safe(sec.get("status_code"))])
-    sec_rows.append(["Server", _safe(sec.get("server"))])
-
-    sec_tbl = Table(sec_rows, colWidths=[55*mm, 110*mm])
-    sec_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), BRAND["primary"]),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.25, BRAND["border"]),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND["bg_soft"]]),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-
-    sec_actions = [
-        "Enforce HTTPS site-wide and redirect HTTP -> HTTPS.",
-        "Enable HSTS after confirming HTTPS stability (avoid locking out subdomains inadvertently).",
-        "Add/verify core security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy).",
-        "Review cookies for Secure/HttpOnly/SameSite on authenticated sessions.",
-    ]
-
-    elems.append(_card("Performance Signals (from scanner)", [
-        Paragraph(f"Key performance signals extracted during scan:", styles["Body"]),
-        Spacer(1, 2*mm),
-        _bullets(perf_findings, styles, CAPS["max_extras_findings"]),
-        Spacer(1, 3*mm),
-        Paragraph("<b>Performance Actions (Priority):</b>", styles["Body"]),
-        _bullets(perf_actions, styles, CAPS["max_exec_bullets"]),
-    ], styles, accent_color=BRAND["info"]))
-
-    elems.append(Spacer(1, 4*mm))
-    elems.append(_card("Security Posture (Transport & Headers)", [
-        sec_tbl,
-        Spacer(1, 3*mm),
-        Paragraph("<b>Security Actions (Priority):</b>", styles["Body"]),
-        _bullets(sec_actions, styles, CAPS["max_exec_bullets"]),
-    ], styles, accent_color=BRAND["danger"]))
-
-    return elems
-
-
-# =========================================================
-# Page 5: Links + AI + Competitors + Roadmap + Appendix
-# =========================================================
-def _page5_links_ai_action_appendix(meta: PdfMeta, result: Dict[str, Any],
-                                   breakdown: Dict[str, Dict[str, Any]], styles,
-                                   scores: Dict[str, float]):
-    elems: List[Any] = []
-
-    links = breakdown.get("links") or {}
-    ai = breakdown.get("ai") or {}
-    comp = breakdown.get("competitors") or {}
-
-    elems.append(Paragraph("Links, AI Readiness & Action Plan", styles["H1"]))
-    elems.append(Paragraph(
-        "This section consolidates link footprint, AI-readiness, competitive benchmarks, and a prioritized roadmap.",
-        styles["Body"]
-    ))
-    elems.append(Spacer(1, 4*mm))
-
-    # Links summary
-    internal = links.get("internal_links_count", 0)
-    external = links.get("external_links_count", 0)
-    total = links.get("total_links_count", 0)
-
-    links_summary = Paragraph(
-        f"<b>Links:</b> Internal {_safe(internal)} • External {_safe(external)} • Total {_safe(total)} • "
-        f"Score <b>{int(round(scores.get('links', 0)))}</b>",
-        styles["Body"]
+    # Inject CSS into HTML <style> to keep single-file reliability
+    html_text = html_text.replace(
+        "<style>\n    /* CSS injected from Python for single-file reliability */\n  </style>",
+        f"<style>\n{css_text}\n</style>"
     )
 
-    # AI / competitor summary
-    top_comp = comp.get("top_competitor_score")
-    comp_line = f"Top competitor score: {_safe(top_comp)}" if top_comp is not None else "Top competitor score: —"
-    ai_line = f"AI readiness score: <b>{int(round(scores.get('ai', 0)))}</b>"
-    comp_score_line = f"Competitors score: <b>{int(round(scores.get('competitors', 0)))}</b>"
+    font_config = FontConfiguration()
 
-    # Roadmap (international standard)
-    roadmap = [
-        "P0 (0–72 hours): Fix critical security gaps (HTTPS/HSTS), broken redirects, and missing core metadata.",
-        "P1 (1–2 weeks): Reduce page weight, remove render-blocking assets, compress images, and enable caching.",
-        "P2 (2–4 weeks): Improve structured data, content hierarchy, and internal linking to key conversion pages.",
-        "P3 (ongoing): Establish monitoring, competitor benchmarking, and content/UX iteration cycles.",
-    ]
+    # WeasyPrint options include pdf_variant, pdf_tags, custom_metadata, srgb, full_fonts. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    # Enable custom_metadata so HTML meta tags end up in PDF info fields. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    options = {
+        "pdf_variant": pdf_variant,
+        "pdf_tags": bool(tag_pdf),
+        "custom_metadata": True,
+        "srgb": bool(include_srgb_profile),
+        "full_fonts": bool(embed_full_fonts),
+        # Reasonable defaults for reports:
+        "optimize_images": True,
+        "jpeg_quality": 90,
+    }
 
-    # Dynamic cards (if present)
-    dyn = result.get("dynamic") or {}
-    cards = dyn.get("cards") or []
-    cards = cards[:CAPS["max_dynamic_cards"]] if isinstance(cards, list) else []
-
-    cards_flow: List[Any] = []
-    if cards:
-        cards_flow.append(Paragraph("<b>Highlights (from engine):</b>", styles["Body"]))
-        bullets = []
-        for c in cards:
-            title = _safe(c.get("title"))
-            body = _safe(c.get("body"))
-            bullets.append(f"{title}: {body}")
-        cards_flow.append(_bullets(bullets, styles, CAPS["max_dynamic_cards"]))
-    else:
-        cards_flow.append(Paragraph("No additional highlight cards returned for this run.", styles["Muted"]))
-
-    # KV appendix (capped)
-    kv = dyn.get("kv") or []
-    kv_tbl = None
-    if isinstance(kv, list) and kv:
-        rows = [["Key", "Value"]]
-        for item in kv[:CAPS["max_kv_rows"]]:
-            rows.append([_safe(item.get("key")), _safe(item.get("value"))])
-
-        kv_tbl = Table(rows, colWidths=[55*mm, 110*mm])
-        kv_tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), BRAND["primary"]),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.25, BRAND["border"]),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND["bg_soft"]]),
-            ("FONTSIZE", (0, 1), (-1, -1), 9),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-
-    # Raw JSON short appendix (optional)
-    raw_json = ""
-    try:
-        import json
+    # Base URL helps resolve local logo paths + any future assets. [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)
+    doc = HTML(string=html_text, base_url=base_url or os.getcwd())
+    doc.write_pdf(
+        output_path,
+        stylesheets=[CSS(string=css_text, font_config=font_config)],
+        font_config=font_config,
+        **options
+    )
+    return output_path
