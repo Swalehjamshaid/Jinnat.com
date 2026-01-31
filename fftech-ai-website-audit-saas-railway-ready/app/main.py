@@ -1,57 +1,355 @@
-FROM ubuntu:22.04
+# -*- coding: utf-8 -*-
+"""
+app/main.py
+FastAPI entrypoint
+- WebSocket-powered website audit
+- Streams progress + results from WebsiteAuditRunner
+- Serves UI from app/templates/index.html (Jinja2Templates)
+- Static mount optional (/static)
+- PDF export endpoint
+Endpoints:
+  GET /health
+  GET / -> serves app/templates/index.html
+  GET /static/* -> static assets (optional)
+  GET /favicon.ico -> optional (avoids noisy 404)
+  WS /ws -> live streaming progress
+  POST /api/audit -> JSON result
+  POST /api/audit/pdf -> PDF download
+"""
+from __future__ import annotations
+import os
+import re
+import tempfile
+import datetime as _dt
+import logging
+import traceback
+from typing import Any, Dict, Optional, List
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from app.audit.runner import (
+    WebsiteAuditRunner,
+    runner_result_to_audit_data,
+)
 
-# Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+# --------------------------------------------------
+# Logging (Railway-friendly)
+# --------------------------------------------------
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(levelname)s | %(asctime)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("app.main")
 
-# Install Python + system dependencies (for WeasyPrint/PDF rendering, etc.)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-venv \
-    build-essential \
-    libpq-dev \
-    ca-certificates \
-    openssl \
-    curl \
-    libcairo2 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libpangoft2-1.0-0 \
-    libharfbuzz0b \
-    libgdk-pixbuf-2.0-0 \
-    libglib2.0-0 \
-    libffi-dev \
-    shared-mime-info \
-    fonts-dejavu-core \
-    fonts-liberation \
-    fontconfig \
-    && rm -rf /var/lib/apt/lists/* \
-    && update-ca-certificates
+# --------------------------------------------------
+# App init
+# --------------------------------------------------
+app = FastAPI(
+    title="FF Tech Website Audit Engine",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
 
-# Set working directory
-WORKDIR /app
+# --------------------------------------------------
+# CORS (safe default)
+# --------------------------------------------------
+cors_origins = os.getenv("CORS_ORIGINS", "*").strip()
+allow_origins = ["*"] if cors_origins == "*" else [
+    o.strip() for o in cors_origins.split(",") if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Create virtual environment and activate it persistently for runtime
-RUN python3 -m venv /venv
-ENV PATH="/venv/bin:$PATH"
+# --------------------------------------------------
+# UI Hosting (Templates: app/templates/index.html)
+# --------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # .../app
+TEMPLATES_DIR = os.getenv("TEMPLATES_DIR") or os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.getenv("STATIC_DIR") or os.path.join(BASE_DIR, "static")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+INDEX_TEMPLATE = "index.html"
+INDEX_PATH = os.path.join(TEMPLATES_DIR, INDEX_TEMPLATE)
 
-# Copy requirements first for better caching during builds
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir uvicorn[standard]  # ensure uvicorn is available
+# Mount /static if directory exists (optional)
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# Copy the rest of your application code
-COPY . .
+logger.info("✅ BASE_DIR : %s", BASE_DIR)
+logger.info("✅ TEMPLATES_DIR : %s", TEMPLATES_DIR)
+logger.info("✅ INDEX_PATH : %s", INDEX_PATH)
+logger.info("✅ STATIC_DIR : %s", STATIC_DIR)
 
-# Expose port (informational only — Railway uses $PORT env var)
-EXPOSE 8000
+# --------------------------------------------------
+# Health Check (Railway / LB friendly)
+# --------------------------------------------------
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+# --------------------------------------------------
+# Favicon (optional: stops noisy 404 in logs)
+# --------------------------------------------------
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    ico = os.path.join(STATIC_DIR, "favicon.ico")
+    if os.path.isfile(ico):
+        return FileResponse(ico)
+    return Response(status_code=204)
+
+# --------------------------------------------------
+# Root UI (serves templates/index.html)
+# --------------------------------------------------
+@app.get("/")
+async def index(request: Request):
+    if os.path.isfile(INDEX_PATH):
+        return templates.TemplateResponse(INDEX_TEMPLATE, {"request": request})
+    return HTMLResponse(
+        f"""
+        <h2>FF Tech Website Audit API</h2>
+        <p><strong>UI not found.</strong> Put your dashboard at <code>{INDEX_PATH}</code></p>
+        <ul>
+          <li>WebSocket: <code>/ws</code></li>
+          <li>REST audit: <code>POST /api/audit</code></li>
+          <li>PDF export: <code>POST /api/audit/pdf</code></li>
+        </ul>
+        """,
+        status_code=200,
+    )
+
+# --------------------------------------------------
+# Helpers
+# --------------------------------------------------
+def _safe_filename(s: str, default: str = "audit") -> str:
+    s = (s or "").strip()
+    s = re.sub(r"[^a-zA-Z0-9._-]+", "_", s)[:80]
+    return s or default
+
+def _today_stamp() -> str:
+    return _dt.date.today().isoformat()
+
+def _cleanup_file(path: str) -> None:
+    try:
+        if path and os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+def _looks_like_missing_dependency(msg: str) -> bool:
+    """
+    Detect likely missing PDF dependencies.
+    Works for both ReportLab and WeasyPrint-style failures.
+    """
+    m = (msg or "").lower()
+    needles = [
+        "no module named 'reportlab'",
+        "reportlab not installed",
+        "reportlab is required",
+        "pdf export requires reportlab",
+        "no module named 'weasyprint'",
+        "weasyprint is required",
+        "cannot load library",
+        "libcairo",
+        "cairo",
+        "pango",
+        "pangocairo",
+        "gdk-pixbuf",
+        "gobject",
+        "shared object file",
+    ]
+    return any(n in m for n in needles)
+
+def _coerce_goals(v: Any) -> List[str]:
+    """
+    goals may come as list or comma-separated string.
+    """
+    if not v:
+        return []
+    if isinstance(v, list):
+        return [str(x).strip() for x in v if str(x).strip()]
+    if isinstance(v, str):
+        raw = v.replace("\r", "\n")
+        parts = []
+        for chunk in raw.split("\n"):
+            for p in chunk.split(","):
+                p = p.strip()
+                if p:
+                    parts.append(p)
+        return parts
+    return []
+
+# --------------------------------------------------
+# WebSocket Audit Endpoint
+# --------------------------------------------------
+@app.websocket("/ws")
+async def websocket_audit(ws: WebSocket):
+    await ws.accept()
+    completed_sent = False
+    try:
+        payload = await ws.receive_json()
+        url = (payload.get("url") or "").strip()
+        if not url:
+            await ws.send_json({"progress": 100, "status": "error", "error": "URL is required"})
+            await ws.close()
+            return
+        runner = WebsiteAuditRunner()
+        async def progress_cb(status: str, percent: int, data: Optional[Dict[str, Any]] = None):
+            nonlocal completed_sent
+            message: Dict[str, Any] = {"progress": int(percent), "status": status}
+            if data is not None:
+                message["payload"] = data
+            await ws.send_json(message)
+            if status == "completed":
+                completed_sent = True
+        result = await runner.run(url, progress_cb=progress_cb)
+        if not completed_sent:
+            await ws.send_json({"progress": 100, "status": "completed", "result": result})
+        await ws.close()
+    except WebSocketDisconnect:
+        return
+    except Exception as e:
+        logger.exception("WebSocket error: %s", e)
+        try:
+            await ws.send_json({"progress": 100, "status": "error", "error": str(e)})
+            await ws.close()
+        except Exception:
+            pass
+
+# --------------------------------------------------
+# REST: Run Audit (JSON)
+# --------------------------------------------------
+@app.post("/api/audit")
+async def api_audit(payload: Dict[str, Any]):
+    url = (payload.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    runner = WebsiteAuditRunner()
+    result = await runner.run(url, progress_cb=None)
+    return JSONResponse(result)
+
+# --------------------------------------------------
+# REST: Generate PDF
+# --------------------------------------------------
+@app.post("/api/audit/pdf")
+async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
+    """
+    Backward compatible:
+      - keeps existing payload keys
+      - adds OPTIONAL keys to match runner_result_to_audit_data and pdf_report.py features
+    """
+    url = (payload.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+
+    # Existing fields (unchanged)
+    client_name = (payload.get("client_name") or "").strip() or os.getenv("PDF_CLIENT_NAME", "N/A")
+    brand_name = (payload.get("brand_name") or "").strip() or os.getenv("PDF_BRAND_NAME", "FF Tech")
+    report_title = (payload.get("report_title") or "").strip() or os.getenv("PDF_REPORT_TITLE", "Website Audit Report")
+    website_name = (payload.get("website_name") or "").strip() or None
+    logo_path = (payload.get("logo_path") or "").strip() or os.getenv("PDF_LOGO_PATH") or None
+    if logo_path and not os.path.isfile(logo_path):
+        logger.warning("PDF logo_path not found, skipping: %s", logo_path)
+        logo_path = None
+
+    # NEW (optional) attributes
+    industry = (payload.get("industry") or "").strip() or "N/A"
+    audience = (payload.get("audience") or "").strip() or "N/A"
+    goals = _coerce_goals(payload.get("goals"))
+
+    lang = (payload.get("lang") or "").strip() or os.getenv("PDF_LANG", "en")
+    pdf_variant = (payload.get("pdf_variant") or "").strip() or os.getenv("PDF_VARIANT", "pdf/ua-1")
+    tag_pdf = bool(payload.get("tag_pdf")) if payload.get("tag_pdf") is not None else (os.getenv("PDF_TAGS", "1") == "1")
+    include_srgb_profile = bool(payload.get("include_srgb_profile")) if payload.get("include_srgb_profile") is not None else (os.getenv("PDF_SRGB", "1") == "1")
+    embed_full_fonts = bool(payload.get("embed_full_fonts")) if payload.get("embed_full_fonts") is not None else (os.getenv("PDF_FULL_FONTS", "1") == "1")
+    brand_generator = (payload.get("brand_generator") or "").strip() or os.getenv("PDF_GENERATOR", "FF Tech Website Audit Pro")
+
+    keywords_val = payload.get("keywords")
+    keywords: Optional[List[str]] = None
+    if keywords_val:
+        if isinstance(keywords_val, list):
+            keywords = [str(x).strip() for x in keywords_val if str(x).strip()]
+        elif isinstance(keywords_val, str):
+            keywords = [k.strip() for k in keywords_val.split(",") if k.strip()]
+
+    base_url = (payload.get("base_url") or "").strip() or None
+
+    # Run audit
+    runner = WebsiteAuditRunner()
+    result = await runner.run(url, progress_cb=None)
+    audited_url = result.get("audited_url") or "website"
+    filename = f"{_safe_filename(audited_url)}_{_today_stamp()}.pdf"
+    out_path = os.path.join(tempfile.gettempdir(), filename)
+
+    try:
+        audit_data = runner_result_to_audit_data(
+            result,
+            client_name=client_name,
+            brand_name=brand_name,
+            audit_date=_today_stamp(),
+            website_name=website_name,
+            industry=industry,
+            audience=audience,
+            goals=goals,
+        )
+
+        try:
+            from app.audit.pdf_report import generate_audit_pdf
+        except Exception as e:
+            raise RuntimeError(f"PDF module import failed: {type(e).__name__}: {e}") from e
+
+        generate_audit_pdf(
+            audit_data=audit_data,
+            output_path=out_path,
+            logo_path=logo_path,
+            report_title=report_title,
+            brand_generator=brand_generator,
+            lang=lang,
+            pdf_variant=pdf_variant,
+            tag_pdf=tag_pdf,
+            include_srgb_profile=include_srgb_profile,
+            embed_full_fonts=embed_full_fonts,
+            keywords=keywords,
+            base_url=base_url,
+        )
+
+        if not os.path.isfile(out_path) or os.path.getsize(out_path) < 1024:
+            raise RuntimeError("PDF generation did not produce a valid output file.")
+
+    except RuntimeError as e:
+        msg = str(e)
+        if _looks_like_missing_dependency(msg):
+            logger.error("PDF dependency missing: %s", msg)
+            raise HTTPException(status_code=501, detail=msg)
+        logger.error("PDF runtime failure: %s\n%s", msg, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {msg}")
+    except Exception as e:
+        logger.error("PDF exception: %s\n%s", e, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
+
+    background.add_task(_cleanup_file, out_path)
+    return FileResponse(
+        out_path,
+        media_type="application/pdf",
+        filename=filename,
+    )
+
 
 # ────────────────────────────────────────────────────────────────
-# IMPORTANT FIX: Use SHELL FORM (no []) so $PORT expands at runtime
-# ${PORT:-8000} → uses Railway's PORT if set, else 8000 for local docker run
+# Added for local development + Railway compatibility
+# This block does NOT change any behavior when running with uvicorn
 # ────────────────────────────────────────────────────────────────
-# Adjust module path if needed:
-#   - If main.py is directly in /app → keep main:app
-#   - If main.py is in /app/app/main.py → change to app.main:app
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,          # auto-reload in development
+        log_level="info"
+    )
