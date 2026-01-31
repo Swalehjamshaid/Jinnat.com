@@ -1,10 +1,11 @@
 # Use a suitable base image (choose one that matches your needs)
-FROM ubuntu:22.04   # or debian:bookworm-slim, python:3.11-slim, node:20-slim, etc.
+# Options: debian:bookworm-slim, python:3.11-slim, node:20-slim, etc.
+FROM ubuntu:22.04
 
 # Optional: set working directory early
 WORKDIR /app
 
-# Your original RUN command (now valid because FROM exists)
+# Your original package installations
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
@@ -26,4 +27,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Add your other instructions here (COPY, ENV, CMD, etc.)
+# ... rest of your Dockerfile (COPY, RUN pip/npm install, CMD, etc.)
