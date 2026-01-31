@@ -11,12 +11,12 @@ FastAPI entrypoint
 
 Endpoints:
   GET  /health
-  GET  /                 -> serves app/templates/index.html
-  GET  /static/*         -> static assets (optional)
-  GET  /favicon.ico      -> optional (avoids noisy 404)
-  WS   /ws               -> live streaming progress
-  POST /api/audit        -> JSON result
-  POST /api/audit/pdf    -> PDF download
+  GET  /                  -> serves app/templates/index.html
+  GET  /static/*          -> static assets (optional)
+  GET  /favicon.ico       -> optional (avoids noisy 404)
+  WS   /ws                -> live streaming progress
+  POST /api/audit         -> JSON result
+  POST /api/audit/pdf     -> PDF download
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import tempfile
 import datetime as _dt
 import logging
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,8 +35,10 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
-
+from app.audit.runner import (
+    WebsiteAuditRunner,
+    runner_result_to_audit_data,
+)
 
 # --------------------------------------------------
 # Logging (Railway-friendly)
@@ -49,16 +51,6 @@ logger = logging.getLogger("app.main")
 
 
 # --------------------------------------------------
-# Matplotlib safety (PDF charts on Railway)
-# --------------------------------------------------
-os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
-try:
-    os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
-except Exception:
-    logger.warning("Could not create MPLCONFIGDIR directory; charts may fail.")
-
-
-# --------------------------------------------------
 # App init
 # --------------------------------------------------
 app = FastAPI(
@@ -66,7 +58,6 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
-
 
 # --------------------------------------------------
 # CORS (safe default)
@@ -83,7 +74,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # --------------------------------------------------
 # UI Hosting (Templates: app/templates/index.html)
@@ -105,7 +95,6 @@ logger.info("✅ BASE_DIR      : %s", BASE_DIR)
 logger.info("✅ TEMPLATES_DIR : %s", TEMPLATES_DIR)
 logger.info("✅ INDEX_PATH    : %s", INDEX_PATH)
 logger.info("✅ STATIC_DIR    : %s", STATIC_DIR)
-logger.info("✅ MPLCONFIGDIR  : %s", os.getenv("MPLCONFIGDIR"))
 
 
 # --------------------------------------------------
@@ -171,14 +160,55 @@ def _cleanup_file(path: str) -> None:
 
 
 def _looks_like_missing_dependency(msg: str) -> bool:
+    """
+    Detect likely missing PDF dependencies.
+    Works for both ReportLab and WeasyPrint-style failures.
+    Note: WeasyPrint often fails due to missing system libs (cairo/pango/gobject). [2](https://www.thewcag.com/principles)[3](https://www.wcag.com/resource/what-is-wcag/)
+    """
     m = (msg or "").lower()
     needles = [
+        # reportlab
         "no module named 'reportlab'",
         "reportlab not installed",
         "reportlab is required",
         "pdf export requires reportlab",
+
+        # weasyprint python pkg
+        "no module named 'weasyprint'",
+        "weasyprint is required",
+
+        # common linux shared-lib missing errors (weasyprint runtime)
+        "cannot load library",
+        "libcairo",
+        "cairo",
+        "pango",
+        "pangocairo",
+        "gdk-pixbuf",
+        "gobject",
+        "shared object file",
     ]
     return any(n in m for n in needles)
+
+
+def _coerce_goals(v: Any) -> List[str]:
+    """
+    goals may come as list or comma-separated string.
+    """
+    if not v:
+        return []
+    if isinstance(v, list):
+        return [str(x).strip() for x in v if str(x).strip()]
+    if isinstance(v, str):
+        # allow newline or comma separated
+        raw = v.replace("\r", "\n")
+        parts = []
+        for chunk in raw.split("\n"):
+            for p in chunk.split(","):
+                p = p.strip()
+                if p:
+                    parts.append(p)
+        return parts
+    return []
 
 
 # --------------------------------------------------
@@ -246,10 +276,20 @@ async def api_audit(payload: Dict[str, Any]):
 # --------------------------------------------------
 @app.post("/api/audit/pdf")
 async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
+    """
+    Backward compatible:
+      - keeps existing payload keys
+      - adds OPTIONAL keys to match runner_result_to_audit_data and pdf_report.py features:
+        industry, audience, goals
+        lang, pdf_variant, tag_pdf, include_srgb_profile, embed_full_fonts, keywords, base_url, brand_generator
+
+    WeasyPrint options like pdf_variant and pdf_tags exist in WeasyPrint API. [1](https://nixpacks.com/docs/deploying/railway)
+    """
     url = (payload.get("url") or "").strip()
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
 
+    # Existing fields (unchanged)
     client_name = (payload.get("client_name") or "").strip() or os.getenv("PDF_CLIENT_NAME", "N/A")
     brand_name = (payload.get("brand_name") or "").strip() or os.getenv("PDF_BRAND_NAME", "FF Tech")
     report_title = (payload.get("report_title") or "").strip() or os.getenv("PDF_REPORT_TITLE", "Website Audit Report")
@@ -260,6 +300,31 @@ async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
         logger.warning("PDF logo_path not found, skipping: %s", logo_path)
         logo_path = None
 
+    # NEW (optional) attributes from runner_result_to_audit_data
+    industry = (payload.get("industry") or "").strip() or "N/A"
+    audience = (payload.get("audience") or "").strip() or "N/A"
+    goals = _coerce_goals(payload.get("goals"))
+
+    # NEW (optional) attributes aligned with WeasyPrint-based pdf_report.py
+    # WeasyPrint supports pdf_variant and tagging with pdf_tags. [1](https://nixpacks.com/docs/deploying/railway)
+    lang = (payload.get("lang") or "").strip() or os.getenv("PDF_LANG", "en")
+    pdf_variant = (payload.get("pdf_variant") or "").strip() or os.getenv("PDF_VARIANT", "pdf/ua-1")
+    tag_pdf = bool(payload.get("tag_pdf")) if payload.get("tag_pdf") is not None else (os.getenv("PDF_TAGS", "1") == "1")
+    include_srgb_profile = bool(payload.get("include_srgb_profile")) if payload.get("include_srgb_profile") is not None else (os.getenv("PDF_SRGB", "1") == "1")
+    embed_full_fonts = bool(payload.get("embed_full_fonts")) if payload.get("embed_full_fonts") is not None else (os.getenv("PDF_FULL_FONTS", "1") == "1")
+    brand_generator = (payload.get("brand_generator") or "").strip() or os.getenv("PDF_GENERATOR", "FF Tech Website Audit Pro")
+
+    keywords_val = payload.get("keywords")
+    keywords: Optional[List[str]] = None
+    if keywords_val:
+        if isinstance(keywords_val, list):
+            keywords = [str(x).strip() for x in keywords_val if str(x).strip()]
+        elif isinstance(keywords_val, str):
+            keywords = [k.strip() for k in keywords_val.split(",") if k.strip()]
+
+    base_url = (payload.get("base_url") or "").strip() or None
+
+    # Run audit
     runner = WebsiteAuditRunner()
     result = await runner.run(url, progress_cb=None)
 
@@ -268,15 +333,38 @@ async def api_audit_pdf(payload: Dict[str, Any], background: BackgroundTasks):
     out_path = os.path.join(tempfile.gettempdir(), filename)
 
     try:
-        generate_pdf_from_runner_result(
-            runner_result=result,
-            output_path=out_path,
-            logo_path=logo_path,
-            report_title=report_title,
+        # Build audit_data using runner.py helper (this is the "attributes of runner.py")
+        audit_data = runner_result_to_audit_data(
+            result,
             client_name=client_name,
             brand_name=brand_name,
             audit_date=_today_stamp(),
             website_name=website_name,
+            industry=industry,
+            audience=audience,
+            goals=goals,
+        )
+
+        # Import PDF generator from your project path
+        try:
+            from app.audit.pdf_report import generate_audit_pdf
+        except Exception as e:
+            raise RuntimeError(f"PDF module import failed: {type(e).__name__}: {e}") from e
+
+        # Call pdf_report.py generator (same output: writes file and returns path)
+        generate_audit_pdf(
+            audit_data=audit_data,
+            output_path=out_path,
+            logo_path=logo_path,
+            report_title=report_title,
+            brand_generator=brand_generator,
+            lang=lang,
+            pdf_variant=pdf_variant,
+            tag_pdf=tag_pdf,
+            include_srgb_profile=include_srgb_profile,
+            embed_full_fonts=embed_full_fonts,
+            keywords=keywords,
+            base_url=base_url,
         )
 
         if not os.path.isfile(out_path) or os.path.getsize(out_path) < 1024:
