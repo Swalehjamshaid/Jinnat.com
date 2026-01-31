@@ -1,3 +1,9 @@
+fastapi
+uvicorn
+# add your other deps here, e.g.:
+# jinja2
+# whatever is in app.audit.*
+
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt (COMPREHENSIVE)
 # Last reviewed: 31 Jan 2026
