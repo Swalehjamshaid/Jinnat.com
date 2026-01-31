@@ -30,8 +30,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# ✅ Copy and allow execution
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
 EXPOSE 8080
 
-# ✅ IMPORTANT: Use shell form so $PORT expands.
-# ✅ Default to 8080 if PORT is not set.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# ✅ Start via shell script (PORT will expand correctly)
+CMD ["/start.sh"]
