@@ -1,10 +1,9 @@
-# Use Ubuntu 22.04 as base (good for your WeasyPrint system deps)
 FROM ubuntu:22.04
 
-# Avoid interactive prompts during apt
+# Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies (your original + Python essentials)
+# Install Python + system deps in one layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -26,27 +25,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     fonts-liberation \
     fontconfig \
-    && update-ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
 
-# Set working directory
+# Working dir
 WORKDIR /app
 
-# Create virtual environment (best practice for isolation)
-RUN python3 -m venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
+# Create + activate venv (PATH update is persistent)
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
 
-# Copy and install Python dependencies first (cache layer optimization)
+# Copy & install deps (cache-friendly order)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir uvicorn[standard]  # ensure uvicorn is there
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir uvicorn[standard]  # force uvicorn if missing
 
-# Copy the rest of your application code
+# Copy app code
 COPY . .
 
-# Expose the port (Railway uses $PORT anyway, but good habit)
+# Railway uses $PORT env var automatically
 EXPOSE 8000
 
-# Start the app with uvicorn (use full path or rely on venv PATH)
-# Adjust "main:app" if your file is app/main.py → use "app.main:app"
+# CMD uses venv's uvicorn (adjust "main:app" → "app.main:app" if file is in /app/app/main.py)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "$PORT"]
