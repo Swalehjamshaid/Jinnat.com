@@ -1,9 +1,7 @@
 #!/bin/sh
 set -e
 
-echo "Starting application..."
-echo "PORT is: ${PORT:-8080}"
+echo "Starting FastAPI on PORT=${PORT:-8080}"
 
-python -m uvicorn app.main:app \
-  --host 0.0.0.0 \
-  --port ${PORT:-8080}
+# Run FastAPI via Python so PORT is read correctly
+python app/main.py
