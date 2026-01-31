@@ -1,9 +1,9 @@
 FROM ubuntu:22.04
 
-# Prevent interactive prompts
+# Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Python + system deps in one layer
+# Install Python + system dependencies (needed for WeasyPrint / PDF generation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -28,24 +28,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && update-ca-certificates
 
-# Working dir
+# Set working directory
 WORKDIR /app
 
-# Create + activate venv (PATH update is persistent)
+# Create virtual environment and make it active for the rest of the build
 RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
-# Copy & install deps (cache-friendly order)
+# Copy requirements first (better caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir uvicorn[standard]  # force uvicorn if missing
+    && pip install --no-cache-dir "uvicorn[standard]"
 
-# Copy app code
+# Copy the entire application
 COPY . .
 
-# Railway uses $PORT env var automatically
+# Expose port (informational – Railway ignores this and uses PORT env var)
 EXPOSE 8000
 
-# CMD uses venv's uvicorn (adjust "main:app" → "app.main:app" if file is in /app/app/main.py)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "$PORT"]
+# ────────────────────────────────────────────────────────────────
+# FIXED: Shell form CMD (no []) so ${PORT} expands correctly at runtime
+# Fallback to 8000 when running locally with docker run
+# ────────────────────────────────────────────────────────────────
+CMD python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
