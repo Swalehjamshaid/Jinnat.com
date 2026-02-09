@@ -1,851 +1,95 @@
+# app/main.py
 # -*- coding: utf-8 -*-
-"""
-app/audit/runner.py
 
-MOST FLEXIBLE WebsiteAuditRunner
-- Pure Python compatible (stdlib fallback)
-- Optional use of requests + bs4 if installed
-- Keeps stable IO:
-    Input : await WebsiteAuditRunner().run(url, progress_cb=None)
-    Output: dict with keys:
-        audited_url, overall_score, grade, breakdown, chart_data, dynamic
-
-PDF integration (SAFE ADDITION):
-- Does NOT change run() input/output
-- Adds helper functions to convert runner result -> audit_data for pdf_report.py
-- Adds optional helper to generate PDF using app/audit/pdf_report.py
-"""
-
-from __future__ import annotations
-
-import asyncio
 import os
-import re
-import ssl
-import time
-import datetime as _dt
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-from urllib.parse import urlparse, urljoin
-from urllib.request import Request, urlopen
+import asyncio
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-# Progress callback type:
-# progress_cb(status: str, percent: int, payload: dict|None) -> None|awaitable
-ProgressCB = Optional[Callable[[str, int, Optional[dict]], Union[None, Any]]]
+from app.audit.runner import WebsiteAuditRunner
 
+# -----------------------------
+# App setup
+# -----------------------------
+app = FastAPI(title="FF Tech Website Audit SaaS")
 
-# ============================================================
-# PDF CONFIG (SAFE ADDITION — does not affect runner output)
-# ============================================================
-# These configs are OPTIONAL and used only if you call helper functions below.
-PDF_REPORT_TITLE: str = os.getenv("PDF_REPORT_TITLE", "Website Audit Report")
-PDF_BRAND_NAME: str = os.getenv("PDF_BRAND_NAME", "FF Tech")
-PDF_CLIENT_NAME: str = os.getenv("PDF_CLIENT_NAME", "N/A")
-PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")  # e.g. "app/assets/logo.png"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# -------------------------------
-# Helpers (safe & stable)
-# -------------------------------
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-def _normalize_url(url: str) -> str:
-    url = (url or "").strip()
+runner = WebsiteAuditRunner()
+
+# -----------------------------
+# WebSocket Manager
+# -----------------------------
+class WSManager:
+    def __init__(self):
+        self.connections = set()
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.connections.add(ws)
+
+    def disconnect(self, ws: WebSocket):
+        self.connections.discard(ws)
+
+    async def send(self, msg: dict):
+        for ws in list(self.connections):
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                self.disconnect(ws)
+
+ws_manager = WSManager()
+
+# -----------------------------
+# Routes
+# -----------------------------
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws_manager.connect(ws)
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(ws)
+
+@app.post("/api/audit")
+async def audit_site(payload: dict):
+    url = payload.get("url", "").strip()
     if not url:
-        return ""
-    if not re.match(r"^https?://", url, flags=re.I):
-        url = "https://" + url
-    return url
-
-
-def _clamp(n: int, lo: int = 0, hi: int = 100) -> int:
-    return max(lo, min(hi, int(n)))
-
-
-def _safe_int(v: Any, default: int = 0) -> int:
-    try:
-        return int(v)
-    except Exception:
-        return default
-
-
-def _grade(score: int) -> str:
-    score = _safe_int(score, 0)
-    if score >= 90:
-        return "A+"
-    if score >= 80:
-        return "A"
-    if score >= 70:
-        return "B"
-    if score >= 60:
-        return "C"
-    if score >= 50:
-        return "D"
-    return "F"
-
-
-async def _maybe_progress(cb: ProgressCB, status: str, percent: int, payload: Optional[dict] = None) -> None:
-    if not cb:
-        return
-    try:
-        res = cb(status, int(percent), payload)
-        if asyncio.iscoroutine(res):
-            await res
-    except Exception:
-        # Never allow callback errors to break audit
-        return
-
-
-def _hostname(url: str) -> str:
-    try:
-        return (urlparse(url).netloc or "").lower()
-    except Exception:
-        return ""
-
-
-def _is_https(url: str) -> bool:
-    try:
-        return urlparse(url).scheme.lower() == "https"
-    except Exception:
-        return False
-
-
-def _truncate(s: str, n: int = 240) -> str:
-    s = s or ""
-    return s if len(s) <= n else s[: n - 1] + "…"
-
-
-# -------------------------------
-# Fetchers (flexible)
-# -------------------------------
-
-def _fetch_with_stdlib(url: str, timeout: float, user_agent: str, max_bytes: int) -> Dict[str, Any]:
-    """
-    Stdlib fetcher using urllib (works everywhere on Railway).
-    Returns:
-      {final_url, status_code, headers, html, bytes, load_ms}
-    """
-    start = time.perf_counter()
-
-    req = Request(
-        url,
-        headers={
-            "User-Agent": user_agent,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-        method="GET",
-    )
-
-    ctx = ssl.create_default_context()
-
-    with urlopen(req, timeout=timeout, context=ctx) as resp:
-        status = getattr(resp, "status", 200)
-        final_url = resp.geturl()
-        headers = dict(resp.headers.items())
-
-        raw = resp.read(max_bytes + 1) or b""
-        if len(raw) > max_bytes:
-            raw = raw[:max_bytes]
-
-        # decode best effort
-        try:
-            html = raw.decode("utf-8", errors="replace")
-        except Exception:
-            html = raw.decode(errors="replace")
-
-    load_ms = int((time.perf_counter() - start) * 1000)
-    return {
-        "final_url": final_url,
-        "status_code": status,
-        "headers": headers,
-        "html": html,
-        "bytes": len(raw),
-        "load_ms": load_ms,
-        "fetcher": "urllib",
-    }
-
-
-def _optional_fetch_with_requests(url: str, timeout: float, user_agent: str, max_bytes: int) -> Optional[Dict[str, Any]]:
-    """
-    If requests is installed, use it. Otherwise return None.
-    """
-    try:
-        import requests  # type: ignore
-    except Exception:
-        return None
-
-    start = time.perf_counter()
-    r = requests.get(
-        url,
-        timeout=timeout,
-        headers={"User-Agent": user_agent, "Accept": "text/html,application/xhtml+xml,*/*"},
-        allow_redirects=True,
-    )
-
-    content = r.content or b""
-    if len(content) > max_bytes:
-        content = content[:max_bytes]
-
-    # requests usually guesses encoding; ensure fallback
-    try:
-        html = r.text
-        if not html:
-            html = content.decode("utf-8", errors="replace")
-    except Exception:
-        html = content.decode("utf-8", errors="replace")
-
-    load_ms = int((time.perf_counter() - start) * 1000)
-    return {
-        "final_url": str(r.url),
-        "status_code": int(r.status_code),
-        "headers": dict(r.headers),
-        "html": html,
-        "bytes": len(content),
-        "load_ms": load_ms,
-        "fetcher": "requests",
-    }
-
-
-def _best_fetch(url: str, timeout: float, user_agent: str, max_bytes: int) -> Dict[str, Any]:
-    """
-    Choose best available fetcher without forcing deps.
-    """
-    data = _optional_fetch_with_requests(url, timeout, user_agent, max_bytes)
-    if data is not None:
-        return data
-    return _fetch_with_stdlib(url, timeout, user_agent, max_bytes)
-
-
-# -------------------------------
-# Parsing (flexible)
-# -------------------------------
-
-def _try_bs4_parse(html: str) -> Optional[Any]:
-    """
-    If bs4 is installed, return BeautifulSoup instance, else None.
-    """
-    try:
-        from bs4 import BeautifulSoup  # type: ignore
-    except Exception:
-        return None
-    try:
-        return BeautifulSoup(html or "", "html.parser")
-    except Exception:
-        return None
-
-
-def _extract_title(html: str, soup: Any = None) -> str:
-    if soup is not None:
-        try:
-            t = soup.title.string if soup.title else ""
-            return _truncate((t or "").strip(), 200)
-        except Exception:
-            pass
-    m = re.search(r"<title[^>]*>(.*?)</title>", html or "", flags=re.I | re.S)
-    if not m:
-        return ""
-    title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
-    return _truncate(title, 200)
-
-
-def _has_meta_description(html: str, soup: Any = None) -> bool:
-    if soup is not None:
-        try:
-            tag = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
-            return bool(tag and (tag.get("content") or "").strip())
-        except Exception:
-            pass
-    return bool(re.search(r'<meta[^>]+name=["\']description["\'][^>]*content=', html or "", flags=re.I))
-
-
-def _canonical_url(html: str, base_url: str, soup: Any = None) -> str:
-    if soup is not None:
-        try:
-            link = soup.find("link", rel=re.compile(r"canonical", re.I))
-            if link and link.get("href"):
-                return urljoin(base_url, link.get("href"))
-        except Exception:
-            pass
-    m = re.search(r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)["\']', html or "", flags=re.I)
-    if m:
-        return urljoin(base_url, m.group(1))
-    return ""
-
-
-def _count_h1(html: str, soup: Any = None) -> int:
-    if soup is not None:
-        try:
-            return len(soup.find_all("h1"))
-        except Exception:
-            pass
-    return len(re.findall(r"<h1\b", html or "", flags=re.I))
-
-
-def _image_alt_stats(html: str, soup: Any = None) -> Tuple[int, int]:
-    """
-    Returns: (total_imgs, imgs_missing_alt)
-    """
-    if soup is not None:
-        try:
-            imgs = soup.find_all("img")
-            total = len(imgs)
-            missing = 0
-            for im in imgs:
-                alt = (im.get("alt") or "").strip()
-                if not alt:
-                    missing += 1
-            return total, missing
-        except Exception:
-            pass
-
-    imgs = re.findall(r"<img\b[^>]*>", html or "", flags=re.I)
-    total = len(imgs)
-    missing = 0
-    for tag in imgs:
-        if not re.search(r'\balt\s*=\s*["\'].*?["\']', tag, flags=re.I | re.S):
-            missing += 1
-    return total, missing
-
-
-def _link_counts(html: str, base_url: str, soup: Any = None) -> Dict[str, int]:
-    base_host = _hostname(base_url)
-
-    def classify(href: str) -> Optional[bool]:
-        href = (href or "").strip()
-        if not href:
-            return None
-        if href.startswith("#") or href.startswith("mailto:") or href.startswith("javascript:"):
-            return None
-        full = urljoin(base_url, href)
-        host = _hostname(full)
-        if not host:
-            return None
-        return host == base_host
-
-    internal = external = 0
-
-    if soup is not None:
-        try:
-            for a in soup.find_all("a"):
-                ok = classify(a.get("href"))
-                if ok is None:
-                    continue
-                if ok:
-                    internal += 1
-                else:
-                    external += 1
-            return {"internal": internal, "external": external, "total": internal + external}
-        except Exception:
-            internal = external = 0
-
-    for m in re.findall(r'href\s*=\s*["\']([^"\']+)["\']', html or "", flags=re.I):
-        ok = classify(m)
-        if ok is None:
-            continue
-        if ok:
-            internal += 1
-        else:
-            external += 1
-
-    return {"internal": internal, "external": external, "total": internal + external}
-
-
-def _resource_counts(html: str, soup: Any = None) -> Dict[str, int]:
-    """
-    Rough counts of scripts/stylesheets as a "complexity" proxy.
-    """
-    scripts = styles = 0
-    if soup is not None:
-        try:
-            scripts = len(soup.find_all("script"))
-            styles = len(soup.find_all("link", rel=re.compile(r"stylesheet", re.I)))
-            return {"scripts": scripts, "styles": styles}
-        except Exception:
-            pass
-
-    scripts = len(re.findall(r"<script\b", html or "", flags=re.I))
-    styles = len(re.findall(r'rel\s*=\s*["\']stylesheet["\']', html or "", flags=re.I))
-    return {"scripts": scripts, "styles": styles}
-
-
-# ============================================================
-# PDF HELPERS (SAFE ADDITION — optional, not used by run())
-# ============================================================
-
-def _today_str() -> str:
-    return _dt.date.today().isoformat()
-
-
-def runner_result_to_audit_data(
-    runner_result: Dict[str, Any],
-    *,
-    client_name: str = PDF_CLIENT_NAME,
-    brand_name: str = PDF_BRAND_NAME,
-    audit_date: Optional[str] = None,
-    website_name: Optional[str] = None,
-    industry: str = "N/A",
-    audience: str = "N/A",
-    goals: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """
-    Convert runner.py output (stable keys) into the audit_data structure
-    expected by app/audit/pdf_report.py generate_audit_pdf().
-
-    IMPORTANT: This does not change runner_result at all.
-    """
-    goals = goals or []
-    audit_date = audit_date or _today_str()
-
-    audited_url = runner_result.get("audited_url") or "N/A"
-    overall_score = runner_result.get("overall_score")
-    grade = runner_result.get("grade") or "N/A"
-    breakdown = runner_result.get("breakdown") or {}
-
-    # Map available scores into pdf dashboard
-    scores = {
-        "seo": (breakdown.get("seo") or {}).get("score"),
-        "performance": (breakdown.get("performance") or {}).get("score"),
-        "security": (breakdown.get("security") or {}).get("score"),
-        "ux_ui": None,
-        "accessibility": None,
-        "content_quality": None,
-    }
-
-    # Build a basic risk/opportunity list from runner extras (no runner changes)
-    risks: List[str] = []
-    opportunities: List[str] = []
-
-    seo_extras = ((breakdown.get("seo") or {}).get("extras") or {})
-    perf_extras = ((breakdown.get("performance") or {}).get("extras") or {})
-    sec = (breakdown.get("security") or {})
-
-    if seo_extras.get("meta_description_present") is False:
-        risks.append("Meta description missing (may reduce search click-through rate).")
-        opportunities.append("Add compelling meta descriptions across key pages.")
-
-    h1_count = seo_extras.get("h1_count")
-    if h1_count == 0:
-        risks.append("No H1 found (page topic clarity may be reduced).")
-        opportunities.append("Add a clear H1 aligned with primary keyword.")
-    elif isinstance(h1_count, int) and h1_count > 1:
-        risks.append("Multiple H1 tags found (heading hierarchy may be inconsistent).")
-        opportunities.append("Use one H1 per page and structure headings with H2/H3.")
-
-    if (seo_extras.get("images_missing_alt") or 0) > 0:
-        risks.append("Some images missing ALT text (accessibility and SEO impact).")
-        opportunities.append("Add descriptive ALT text for important images.")
-
-    load_ms = perf_extras.get("load_ms")
-    if isinstance(load_ms, int) and load_ms > 3000:
-        risks.append(f"Slow load time detected ({load_ms} ms) can hurt conversions.")
-        opportunities.append("Optimize images, reduce JS/CSS, and enable caching/CDN.")
-
-    bytes_ = perf_extras.get("bytes")
-    if isinstance(bytes_, int) and bytes_ > 1_500_000:
-        risks.append("Large page size may impact mobile performance.")
-        opportunities.append("Compress assets and use modern image formats (WebP/AVIF).")
-
-    if sec.get("https") is False:
-        risks.append("HTTPS is not enabled (trust and security risk).")
-        opportunities.append("Enable SSL/TLS to improve security and trust.")
-
-    if sec.get("https") is True and sec.get("hsts") is False:
-        risks.append("HSTS header missing (weaker HTTPS enforcement).")
-        opportunities.append("Enable HSTS to strengthen transport security.")
-
-    # Basic SEO issue lists (derived)
-    on_page_issues: List[str] = []
-    if not seo_extras.get("title"):
-        on_page_issues.append("Missing <title> tag.")
-    if seo_extras.get("meta_description_present") is False:
-        on_page_issues.append("Missing meta description.")
-    if seo_extras.get("h1_count") == 0:
-        on_page_issues.append("No H1 heading found.")
-    if (seo_extras.get("images_missing_alt") or 0) > 0:
-        on_page_issues.append("Images missing ALT attributes detected.")
-
-    technical_issues: List[str] = []
-    if not seo_extras.get("canonical"):
-        technical_issues.append("Canonical link not detected.")
-
-    page_size_issues: List[str] = []
-    if isinstance(load_ms, int) and load_ms > 3000:
-        page_size_issues.append(f"Slow load time: {load_ms} ms.")
-    if isinstance(bytes_, int) and bytes_ > 1_500_000:
-        page_size_issues.append(f"Large page size: {bytes_} bytes.")
-    if (perf_extras.get("scripts") or 0) > 25:
-        page_size_issues.append("High script count may increase JS execution time.")
-    if (perf_extras.get("styles") or 0) > 12:
-        page_size_issues.append("High stylesheet count may increase render-blocking resources.")
-
-    verdict = "Healthy" if isinstance(overall_score, int) and overall_score >= 80 else "Needs Improvement"
-
-    audit_data: Dict[str, Any] = {
-        "website": {
-            "name": website_name or audited_url,
-            "url": audited_url,
-            "industry": industry,
-            "audience": audience,
-            "goals": goals,
-        },
-        "client": {"name": client_name},
-        "brand": {"name": brand_name},
-        "audit": {
-            "date": audit_date,
-            "overall_score": overall_score,
-            "grade": grade,
-            "verdict": verdict,
-            "executive_summary": (
-                "This report summarizes the website’s health based on automated checks "
-                "across SEO, performance, links, and security."
-            ),
-            "key_risks": risks,
-            "opportunities": opportunities,
-        },
-        "scores": scores,
-        "scope": {
-            "what": [
-                "SEO signals (title/meta/h1/canonical/image ALT)",
-                "Performance heuristics (load time, bytes, scripts/styles)",
-                "Link structure (internal/external link counts)",
-                "Security basics (HTTPS, HSTS, status code)",
-            ],
-            "why": "These factors influence search visibility, user experience, trust, and conversion performance.",
-            "tools": [
-                "FFTechAuditBot runner.py (urllib/requests + optional bs4 parsing)",
-                "Heuristic scoring model (weighted categories)",
-            ],
-        },
-        "seo": {
-            "on_page_issues": on_page_issues,
-            "technical_issues": technical_issues,
-            "content_gaps": [],
-            "keyword_optimization_level": "N/A",
-        },
-        "performance": {
-            "core_web_vitals": {
-                "lcp": "N/A", "cls": "N/A", "inp": "N/A",
-                "lcp_notes": "", "cls_notes": "", "inp_notes": ""
-            },
-            "mobile_vs_desktop": "N/A",
-            "page_size_issues": page_size_issues,
-        },
-        "mobile": {
-            "responsive_issues": [],
-            "usability_problems": [],
-            "mobile_score": None,
-        },
-    }
-
-    return audit_data
-
-
-def generate_pdf_from_runner_result(
-    runner_result: Dict[str, Any],
-    output_path: str,
-    *,
-    logo_path: Optional[str] = None,
-    report_title: str = PDF_REPORT_TITLE,
-    client_name: str = PDF_CLIENT_NAME,
-    brand_name: str = PDF_BRAND_NAME,
-    audit_date: Optional[str] = None,
-    website_name: Optional[str] = None,
-) -> str:
-    """
-    Optional helper to generate PDF directly using app/audit/pdf_report.py.
-
-    NOTE:
-      - This does NOT affect runner output.
-      - Only call this from your /generate-pdf endpoint or background task.
-    """
-    audit_data = runner_result_to_audit_data(
-        runner_result,
-        client_name=client_name,
-        brand_name=brand_name,
-        audit_date=audit_date,
-        website_name=website_name,
-    )
-
-    # Lazy import so runner can still run even if reportlab isn't installed
-    try:
-        from app.audit.pdf_report import generate_audit_pdf  # local import
-    except Exception as e:
-        raise RuntimeError("PDF dependencies missing. Install reportlab to enable PDF export.") from e
-
-    return generate_audit_pdf(
-        audit_data=audit_data,
-        output_path=output_path,
-        logo_path=logo_path or (PDF_LOGO_PATH if PDF_LOGO_PATH else None),
-        report_title=report_title,
-    )
-
-
-# -------------------------------
-# Runner (stable IO, flexible internals)
-# -------------------------------
-
-@dataclass
-class WebsiteAuditRunner:
-    """
-    Flexible runner used by your FastAPI / WebSocket layer.
-
-    Input:
-      await WebsiteAuditRunner().run(url, progress_cb=...)
-
-    Output (stable keys):
-      audited_url, overall_score, grade, breakdown, chart_data, dynamic
-    """
-    timeout: float = 25.0
-    max_bytes: int = 5_000_000
-    user_agent: str = "FFTechAuditBot/2.0 (+/ws)"
-    weights: Dict[str, float] = field(default_factory=lambda: {
-        "seo": 0.35,
-        "performance": 0.35,
-        "links": 0.20,
-        "security": 0.10
-    })
-
-    async def run(self, url: str, progress_cb: ProgressCB = None) -> Dict[str, Any]:
-        audited_url = _normalize_url(url)
-
-        # Stable failure shape (DO NOT break UI)
-        def fail(message: str) -> Dict[str, Any]:
-            return {
-                "audited_url": audited_url or "",
-                "overall_score": 0,
-                "grade": "F",
-                "error": message,
-                "breakdown": {},
-                "chart_data": [],
-                "dynamic": {"cards": [], "kv": []},
-            }
-
-        if not audited_url:
-            return fail("Empty URL")
-
-        await _maybe_progress(progress_cb, "starting", 5, {"url": audited_url})
-
-        # Fetch in thread to keep event loop free
-        await _maybe_progress(progress_cb, "fetching", 15, None)
-        try:
-            fetch = await asyncio.to_thread(_best_fetch, audited_url, self.timeout, self.user_agent, self.max_bytes)
-        except Exception as e:
-            await _maybe_progress(progress_cb, "error", 100, {"error": str(e)})
-            return fail(str(e))
-
-        final_url = fetch.get("final_url") or audited_url
-        status_code = _safe_int(fetch.get("status_code"), 0)
-        headers = fetch.get("headers") or {}
-        html = fetch.get("html") or ""
-        load_ms = _safe_int(fetch.get("load_ms"), 0)
-        size_bytes = _safe_int(fetch.get("bytes"), 0)
-        fetcher = fetch.get("fetcher", "unknown")
-
-        await _maybe_progress(progress_cb, "parsing", 40, None)
-
-        soup = _try_bs4_parse(html)
-
-        title = _extract_title(html, soup)
-        meta_desc = _has_meta_description(html, soup)
-        canonical = _canonical_url(html, final_url, soup)
-        h1_count = _count_h1(html, soup)
-        imgs_total, imgs_missing_alt = _image_alt_stats(html, soup)
-        links = _link_counts(html, final_url, soup)
-        resources = _resource_counts(html, soup)
-
-        https = _is_https(final_url)
-        server_header = str(headers.get("Server", "") or headers.get("server", "") or "")
-        hsts = bool(headers.get("Strict-Transport-Security") or headers.get("strict-transport-security"))
-
-        await _maybe_progress(progress_cb, "scoring", 60, None)
-
-        # -----------------------
-        # Scoring (safe & stable)
-        # -----------------------
-
-        # PERFORMANCE (time + size + complexity)
-        perf = 100
-        if load_ms > 8000:
-            perf -= 45
-        elif load_ms > 5000:
-            perf -= 35
-        elif load_ms > 3000:
-            perf -= 25
-        elif load_ms > 1500:
-            perf -= 15
-        elif load_ms > 800:
-            perf -= 8
-
-        if size_bytes > 3_000_000:
-            perf -= 25
-        elif size_bytes > 1_500_000:
-            perf -= 15
-        elif size_bytes > 800_000:
-            perf -= 8
-
-        # Complexity penalty
-        if resources["scripts"] > 25:
-            perf -= 10
-        if resources["styles"] > 12:
-            perf -= 6
-
-        perf = _clamp(perf)
-
-        # SEO
-        seo = 100
-        if not title:
-            seo -= 35
-        else:
-            if len(title) < 15:
-                seo -= 10
-            if len(title) > 65:
-                seo -= 10
-
-        if not meta_desc:
-            seo -= 25
-
-        if not canonical:
-            seo -= 5
-
-        if h1_count == 0:
-            seo -= 15
-        elif h1_count > 1:
-            seo -= 10
-
-        # Image ALT as SEO signal
-        if imgs_total >= 5:
-            ratio_missing = (imgs_missing_alt / max(imgs_total, 1))
-            if ratio_missing > 0.5:
-                seo -= 10
-            elif ratio_missing > 0.25:
-                seo -= 6
-
-        seo = _clamp(seo)
-
-        # LINKS
-        link_score = 100
-        if links["total"] == 0:
-            link_score -= 35
-        else:
-            if links["internal"] == 0:
-                link_score -= 25
-            if links["external"] > max(25, links["internal"] * 3):
-                link_score -= 10
-        link_score = _clamp(link_score)
-
-        # SECURITY
-        sec = 100
-        if not https:
-            sec -= 45
-        if status_code >= 400 or status_code == 0:
-            sec -= 25
-        if https and not hsts:
-            sec -= 5
-        sec = _clamp(sec)
-
-        # Competitors/AI placeholders (stable keys, safe defaults)
-        competitors = 0
-        ai = 0
-
-        # Weighted overall (stable)
-        w = self.weights
-        overall = int(
-            seo * float(w.get("seo", 0.35))
-            + perf * float(w.get("performance", 0.35))
-            + link_score * float(w.get("links", 0.20))
-            + sec * float(w.get("security", 0.10))
-        )
-        overall = _clamp(overall)
-        grade = _grade(overall)
-
-        await _maybe_progress(progress_cb, "building_output", 85, None)
-
-        # -----------------------
-        # Output (DO NOT change keys)
-        # -----------------------
-        breakdown = {
-            "seo": {
-                "score": seo,
-                "extras": {
-                    "title": title,
-                    "meta_description_present": meta_desc,
-                    "canonical": canonical,
-                    "h1_count": h1_count,
-                    "images_total": imgs_total,
-                    "images_missing_alt": imgs_missing_alt,
-                },
-            },
-            "performance": {
-                "score": perf,
-                "extras": {
-                    "load_ms": load_ms,
-                    "bytes": size_bytes,
-                    "scripts": resources["scripts"],
-                    "styles": resources["styles"],
-                    "fetcher": fetcher,
-                },
-            },
-            "links": {
-                "score": link_score,
-                "internal_links_count": links["internal"],
-                "external_links_count": links["external"],
-                "total_links_count": links["total"],
-            },
-            "security": {
-                "score": sec,
-                "https": https,
-                "hsts": hsts,
-                "status_code": status_code,
-                "server": _truncate(server_header, 120),
-            },
-            "competitors": {"score": competitors, "top_competitor_score": competitors},
-            "ai": {"score": ai},
-        }
-
-        # Chart.js-compatible (stable)
-        chart_data = [
-            {
-                "title": "Score Breakdown",
-                "type": "bar",
-                "data": {
-                    "labels": ["SEO", "Performance", "Links", "Security"],
-                    "datasets": [
-                        {
-                            "label": "Score",
-                            "data": [seo, perf, link_score, sec],
-                            "backgroundColor": ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"],
-                        }
-                    ],
-                },
-            }
-        ]
-
-        # dynamic.cards + dynamic.kv (stable)
-        dynamic_cards = [
-            {"title": "Page Title", "body": title or "No <title> found."},
-            {"title": "Load Time", "body": f"{load_ms} ms"},
-            {"title": "Page Size", "body": f"{size_bytes} bytes"},
-        ]
-
-        dynamic_kv = [
-            {"key": "final_url", "value": final_url},
-            {"key": "status_code", "value": status_code},
-            {"key": "https", "value": https},
-            {"key": "hsts", "value": hsts},
-            {"key": "internal_links", "value": links["internal"]},
-            {"key": "external_links", "value": links["external"]},
-            {"key": "total_links", "value": links["total"]},
-            {"key": "images_missing_alt", "value": imgs_missing_alt},
-            {"key": "fetcher", "value": fetcher},
-        ]
-
-        result = {
-            "audited_url": final_url,
-            "overall_score": overall,
-            "grade": grade,
-            "breakdown": breakdown,
-            "chart_data": chart_data,
-            "dynamic": {"cards": dynamic_cards, "kv": dynamic_kv},
-        }
-
-        await _maybe_progress(progress_cb, "completed", 100, result)
-        return result
+        return JSONResponse({"error": "URL is required"}, status_code=400)
+
+    async def progress_cb(status, percent, payload=None):
+        await ws_manager.send({
+            "type": "progress",
+            "status": status,
+            "percent": percent,
+            "payload": payload,
+        })
+
+    result = await runner.run(url, progress_cb=progress_cb)
+    return result
+
+# -----------------------------
+# Entry point (PORT FIX)
+# -----------------------------
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8080"))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
