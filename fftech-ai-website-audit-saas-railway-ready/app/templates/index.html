@@ -3,207 +3,335 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light">
   <title>Website Audit Pro</title>
+
+  <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
   <style>
-    :root {
-      --glass: rgba(255,255,255,0.06);
-      --glass-border: rgba(255,255,255,0.12);
-      --shadow: 0 12px 35px rgba(0,0,0,0.35);
+    :root{
       --radius: 18px;
+      --glass: rgba(255,255,255,.07);
+      --glassBorder: rgba(255,255,255,.12);
+      --shadow: 0 18px 45px rgba(0,0,0,.35);
+      --muted: rgba(255,255,255,.72);
+      --muted2: rgba(255,255,255,.62);
+      --bg0: rgba(2,6,23,1);
+      --bg1: rgba(3,7,18,1);
+      --brandA: rgba(14,165,233,.95);
+      --brandB: rgba(99,102,241,.90);
+      --good: #22c55e;
+      --warn: #fbbf24;
+      --bad:  #ef4444;
+      --info: #38bdf8;
     }
-    body {
-      min-height: 100vh;
+
+    body{
+      min-height:100vh;
       background:
-        radial-gradient(1200px 600px at 30% 20%, rgba(14,165,233,0.25), transparent 55%),
-        radial-gradient(900px 500px at 70% 10%, rgba(34,197,94,0.18), transparent 50%),
-        radial-gradient(800px 500px at 60% 80%, rgba(239,68,68,0.12), transparent 50%),
-        linear-gradient(180deg, rgba(2,6,23,1) 0%, rgba(3,7,18,1) 100%);
+        radial-gradient(1200px 600px at 25% 15%, rgba(14,165,233,.22), transparent 55%),
+        radial-gradient(900px 520px at 75% 8%, rgba(34,197,94,.16), transparent 52%),
+        radial-gradient(800px 520px at 65% 85%, rgba(239,68,68,.12), transparent 52%),
+        linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 100%);
     }
-    .app-shell { max-width: 1200px; margin: 0 auto; padding: 22px 16px 80px; }
-    .glass {
+
+    .app-shell{ max-width:1200px; margin:0 auto; padding: 22px 16px 70px; }
+
+    .glass{
       background: var(--glass);
-      border: 1px solid var(--glass-border);
+      border: 1px solid var(--glassBorder);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       backdrop-filter: blur(10px);
     }
-    .brand-badge {
-      width: 46px; height: 46px; border-radius: 14px;
-      display: grid; place-items: center; font-weight: 800;
-      background: linear-gradient(135deg, rgba(14,165,233,0.95), rgba(99,102,241,0.85));
-      border: 1px solid rgba(255,255,255,0.15);
-      box-shadow: 0 12px 30px rgba(14,165,233,0.22);
+
+    .brand-badge{
+      width:46px; height:46px;
+      border-radius: 14px;
+      display:grid; place-items:center;
+      font-weight: 900;
+      letter-spacing: .5px;
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border: 1px solid rgba(255,255,255,.16);
+      box-shadow: 0 18px 40px rgba(14,165,233,.22);
     }
-    .subtle { color: rgba(255,255,255,0.70); }
-    .muted-2 { color: rgba(255,255,255,0.65); }
-    .pill { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); padding: 6px 10px; border-radius: 999px; font-size: 12px; color: rgba(255,255,255,0.78); }
-    .score-ring {
-      width: 180px; height: 180px; border-radius: 999px; position: relative;
-      display: grid; place-items: center;
-      background: radial-gradient(circle at center, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 35%, transparent 60%),
-                  conic-gradient(from 180deg, rgba(14,165,233,0.95) var(--deg), rgba(255,255,255,0.08) 0);
-      border: 1px solid rgba(255,255,255,0.12);
-      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+
+    .subtle{ color: var(--muted); }
+    .muted-2{ color: var(--muted2); }
+
+    .pill{
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: rgba(255,255,255,.80);
+      user-select:none;
+      white-space:nowrap;
     }
-    .score-ring .inside {
-      width: 132px; height: 132px; border-radius: 999px;
-      background: rgba(2,6,23,0.75); border: 1px solid rgba(255,255,255,0.12);
-      display: grid; place-items: center; text-align: center; padding: 10px;
+
+    .btn-glow{
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border:none;
+      box-shadow: 0 18px 45px rgba(14,165,233,.22);
     }
-    .score-ring .inside .score { font-size: 40px; font-weight: 900; line-height: 1; }
-    .score-ring .inside .grade { font-weight: 800; margin-top: 4px; opacity: 0.9; }
-    .btn-glow {
-      background: linear-gradient(135deg, rgba(14,165,233,0.95), rgba(99,102,241,0.9));
-      border: none; box-shadow: 0 18px 40px rgba(14,165,233,0.22);
+    .btn-glow:hover{ filter: brightness(1.06); transform: translateY(-1px); }
+    .btn-glow:active{ transform: translateY(0); }
+
+    .progress { height: 10px; }
+    .progress-bar { transition: width .20s ease; }
+
+    .mini-card{
+      border-radius: 18px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      padding: 14px 14px;
+      height:100%;
     }
-    .btn-glow:hover { filter: brightness(1.05); }
-    .mini-card {
-      border-radius: 18px; border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.06); padding: 14px; height: 100%;
+    .mini-card .label{ font-size: 12px; opacity: .82; }
+    .mini-card .value{ font-size: 34px; font-weight: 900; line-height: 1.1; }
+    .mini-card .hint{ font-size: 12px; opacity: .72; margin-top: 8px; }
+
+    .kv-table td,.kv-table th{ border-color: rgba(255,255,255,.10)!important; }
+    .fade-in{ animation: fadeIn .30s ease both; }
+    @keyframes fadeIn{ from{opacity:0; transform: translateY(8px)} to{opacity:1; transform: translateY(0)} }
+
+    .score-ring{
+      width: 180px; height: 180px;
+      border-radius: 999px;
+      position:relative;
+      display:grid; place-items:center;
+      background:
+        radial-gradient(circle at center, rgba(255,255,255,.08) 0%, rgba(255,255,255,.04) 35%, transparent 60%),
+        conic-gradient(from 180deg, rgba(14,165,233,.95) var(--deg), rgba(255,255,255,.08) 0);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow: 0 18px 45px rgba(0,0,0,.35);
     }
-    .mini-card .label { font-size: 12px; opacity: 0.8; }
-    .mini-card .value { font-size: 34px; font-weight: 850; line-height: 1.1; }
-    .mini-card .hint { font-size: 12px; opacity: 0.72; margin-top: 8px; }
-    .kv-table td, .kv-table th { border-color: rgba(255,255,255,0.10) !important; }
-    .progress { height: 10px; border-radius: 999px; overflow: hidden; }
-    .progress-bar { transition: width .4s ease; }
-    .fade-in { animation: fadeIn .4s ease both; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-    .ssl-warning {
-      background: rgba(245, 158, 11, 0.15);
-      border: 1px solid rgba(245, 158, 11, 0.4);
-      color: #fde047;
-      border-radius: 12px;
-      padding: 12px 16px;
-      margin: 16px 0;
+    .score-ring .inside{
+      width:132px; height:132px;
+      border-radius:999px;
+      background: rgba(2,6,23,.75);
+      border:1px solid rgba(255,255,255,.12);
+      display:grid; place-items:center;
+      text-align:center;
+      padding: 10px;
     }
-    .error-box {
-      background: rgba(220, 53, 69, 0.25);
-      border: 1px solid rgba(220, 53, 69, 0.6);
-      color: #ffcccc;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-      font-weight: 500;
+    .score-ring .score{ font-size: 40px; font-weight: 950; line-height: 1; }
+    .score-ring .grade{ font-weight: 900; margin-top: 4px; opacity:.92; }
+    .score-ring .tiny{ font-size: 12px; opacity:.78; margin-top: 6px; }
+
+    .status-chip{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 6px 10px; border-radius: 999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      font-size: 12px;
     }
+    .dot{ width:8px; height:8px; border-radius:999px; background: rgba(255,255,255,.35); }
+    .dot.ok{ background: var(--good); box-shadow: 0 0 0 6px rgba(34,197,94,.16); }
+    .dot.warn{ background: var(--warn); box-shadow: 0 0 0 6px rgba(251,191,36,.16); }
+    .dot.bad{ background: var(--bad); box-shadow: 0 0 0 6px rgba(239,68,68,.16); }
+    .dot.info{ background: var(--info); box-shadow: 0 0 0 6px rgba(56,189,248,.16); }
+
+    .collapse-card{ cursor:pointer; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    /* Light theme tweaks */
+    [data-bs-theme="light"] body{
+      background:
+        radial-gradient(1200px 600px at 25% 15%, rgba(14,165,233,.22), transparent 55%),
+        radial-gradient(900px 520px at 75% 8%, rgba(34,197,94,.14), transparent 52%),
+        radial-gradient(800px 520px at 65% 85%, rgba(239,68,68,.10), transparent 52%),
+        linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(241,245,249,1) 100%);
+    }
+    [data-bs-theme="light"] .glass{
+      background: rgba(255,255,255,.72);
+      border:1px solid rgba(15,23,42,.10);
+      box-shadow: 0 12px 35px rgba(2,6,23,.10);
+    }
+    [data-bs-theme="light"] .score-ring .inside{
+      background: rgba(255,255,255,.86);
+      border:1px solid rgba(15,23,42,.10);
+    }
+    [data-bs-theme="light"] .pill, [data-bs-theme="light"] .status-chip{
+      color: rgba(15,23,42,.72);
+      border-color: rgba(15,23,42,.12);
+      background: rgba(255,255,255,.60);
+    }
+    [data-bs-theme="light"] .subtle{ color: rgba(15,23,42,.70); }
+    [data-bs-theme="light"] .muted-2{ color: rgba(15,23,42,.60); }
+    [data-bs-theme="light"] .mini-card{ background: rgba(255,255,255,.74); border-color: rgba(15,23,42,.10); }
+    [data-bs-theme="light"] .kv-table td, [data-bs-theme="light"] .kv-table th{ border-color: rgba(15,23,42,.10)!important; }
   </style>
 </head>
+
 <body>
   <div class="app-shell">
-    <!-- Header -->
+
+    <!-- HEADER -->
     <div class="d-flex align-items-center justify-content-between mb-4">
       <div class="d-flex align-items-center gap-3">
-        <div class="brand-badge text-white">FF</div>
+        <div class="brand-badge text-white" aria-hidden="true">FF</div>
         <div>
           <div class="h4 mb-0 fw-bold">Website Audit Pro</div>
-          <div class="subtle small">Fast & Professional Website Audit Tool</div>
+          <div class="subtle small">Runner.py results • WebSocket progress • PDF export</div>
         </div>
       </div>
+
       <div class="d-flex align-items-center gap-2">
         <span id="wsStatus" class="pill">WS: Disconnected</span>
-        <button class="btn btn-sm btn-outline-secondary" id="themeToggle">🌙 / ☀️</button>
+        <button class="btn btn-sm btn-outline-secondary" id="themeToggle" type="button" aria-label="Toggle theme">🌙 / ☀️</button>
       </div>
     </div>
 
-    <!-- Input Area -->
+    <!-- INPUT + PROGRESS -->
     <div class="glass p-4 mb-4">
       <div class="row g-3 align-items-end">
         <div class="col-lg-7">
           <label class="form-label fw-semibold">Website URL</label>
           <input id="urlInput" type="text" class="form-control form-control-lg"
                  placeholder="example.com or https://example.com"
-                 value="https://www.haier.com.pk" autofocus />
-          <div class="small muted-2 mt-1">Paste domain or full URL — system auto-normalizes</div>
+                 value="https://www.haier.com.pk/#/login" />
+          <div class="small muted-2 mt-1">Paste domain or full URL — the system normalizes it automatically.</div>
         </div>
+
         <div class="col-lg-5">
           <div class="d-grid gap-2 d-lg-flex justify-content-lg-end">
             <button id="startBtn" class="btn btn-lg btn-glow text-white fw-semibold" type="button">
               ▶ Start Audit
             </button>
             <button id="pdfBtn" class="btn btn-lg btn-outline-info fw-semibold" type="button" disabled>
-              ⬇ Download PDF Report
+              ⬇ Download Professional PDF
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Progress -->
-      <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,0.12)">
+      <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,.12)">
+
       <div class="d-flex align-items-center justify-content-between mb-2">
         <div class="fw-semibold">Progress</div>
-        <div class="subtle"><span id="progressText">0%</span> • <span id="statusText">idle</span></div>
-      </div>
-      <div class="progress glass">
-        <div id="progressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-chip" id="stageChip"><span class="dot info" id="stageDot"></span><span id="statusText">idle</span></span>
+          <span class="subtle"><span id="progressText">0%</span></span>
+        </div>
       </div>
 
-      <!-- Alerts & Error Area -->
+      <div class="progress glass" style="border-radius:999px;">
+        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+
+      <!-- Alerts -->
       <div id="alertArea" class="mt-3"></div>
+
+      <!-- Debug drawer -->
+      <div class="mt-3">
+        <button class="btn btn-sm btn-outline-secondary collapse-card" type="button" data-bs-toggle="collapse" data-bs-target="#debugCollapse" aria-expanded="false">
+          Debug (last message / last result)
+        </button>
+        <div class="collapse mt-2" id="debugCollapse">
+          <div class="glass p-3 mono small" id="debugBox">No messages yet.</div>
+        </div>
+      </div>
     </div>
 
-    <!-- Results Area -->
-    <div id="resultsArea" class="row g-4 mb-5" style="display:none;">
-      <!-- SSL Warning -->
-      <div id="sslWarning" class="ssl-warning d-none">
-        <strong>Notice:</strong> SSL certificate verification was relaxed due to site configuration issues. 
-        Audit results are still valid, but the site's certificate may be invalid or untrusted.
-      </div>
-
-      <!-- Big Error Box -->
-      <div id="errorBox" class="error-box d-none">
-        <strong>Audit Failed</strong><br>
-        <span id="errorMessage"></span>
-      </div>
-
+    <!-- RESULTS -->
+    <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
       <div class="col-lg-4">
-        <div class="glass p-4 text-center h-100">
-          <div class="score-ring mx-auto" id="scoreRing" style="--deg: 0deg;">
+        <div class="glass p-4 h-100 text-center">
+          <div class="score-ring mx-auto" id="scoreRing" style="--deg:0deg;">
             <div class="inside">
               <div class="score" id="overallScore">0</div>
               <div class="grade" id="gradeText">F</div>
-              <div class="small muted-2 mt-1" id="auditedUrl">Audited: —</div>
+              <div class="tiny" id="auditedUrl">Audited: -</div>
             </div>
+          </div>
+
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <span class="pill" id="lastRunAt">—</span>
+            <span class="pill" id="fetcherPill">fetcher: —</span>
+          </div>
+
+          <div class="mt-3 subtle small">
+            Overall score is computed from SEO, Performance, Links, and Security.
+          </div>
+
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <button id="copyJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Copy JSON</button>
+            <button id="openJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Open JSON</button>
           </div>
         </div>
       </div>
 
       <div class="col-lg-8">
         <div class="glass p-4 h-100">
-          <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="d-flex align-items-center justify-content-between mb-3">
             <div>
-              <h5 class="mb-0">Score Breakdown</h5>
-              <div class="subtle small">SEO • Performance • Links • Security</div>
+              <div class="h5 mb-0 fw-bold">Score Breakdown</div>
+              <div class="subtle small">Chart comes directly from runner.py chart_data (fallback to breakdown)</div>
             </div>
-            <span class="pill" id="lastRunAt">—</span>
+            <span class="pill" id="verdictPill">verdict: —</span>
           </div>
-          <canvas id="breakdownChart" height="140"></canvas>
+          <canvas id="breakdownChart" height="120"></canvas>
         </div>
       </div>
     </div>
 
-    <!-- Category Cards -->
+    <!-- CATEGORY CARDS -->
     <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
-      <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">SEO</div><div class="value" id="seoScore">0</div><div class="hint">Title, meta, H1, ALT</div></div></div>
-      <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">Performance</div><div class="value" id="perfScore">0</div><div class="hint">Speed, size, resources</div></div></div>
-      <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">Links</div><div class="value" id="linksScore">0</div><div class="hint">Internal / External</div></div></div>
-      <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">Security</div><div class="value" id="secScore">0</div><div class="hint">HTTPS, HSTS, status</div></div></div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">SEO</div>
+          <div class="value" id="seoScore">0</div>
+          <div class="hint">Title, meta description, H1, canonical, image ALT</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Performance</div>
+          <div class="value" id="perfScore">0</div>
+          <div class="hint">Load time, size, scripts, styles</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Links</div>
+          <div class="value" id="linksScore">0</div>
+          <div class="hint">Internal vs external link structure</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Security</div>
+          <div class="value" id="secScore">0</div>
+          <div class="hint">HTTPS, HSTS, status code, server</div>
+        </div>
+      </div>
     </div>
 
-    <!-- Dynamic Area -->
+    <!-- DYNAMIC OUTPUT -->
     <div id="dynamicArea" class="row g-3" style="display:none;">
       <div class="col-lg-6">
         <div class="glass p-4 h-100">
-          <h5 class="mb-3">Highlights</h5>
-          <div id="dynamicCards" class="d-grid gap-3"></div>
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Highlights</div>
+            <span class="pill">runner.dynamic.cards</span>
+          </div>
+          <div id="dynamicCards" class="d-grid gap-2"></div>
         </div>
       </div>
       <div class="col-lg-6">
         <div class="glass p-4 h-100">
-          <h5 class="mb-3">Details</h5>
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Details</div>
+            <span class="pill">runner.dynamic.kv</span>
+          </div>
           <div class="table-responsive">
-            <table class="table table-sm kv-table mb-0">
+            <table class="table table-sm kv-table align-middle mb-0">
               <tbody id="kvBody"></tbody>
             </table>
           </div>
@@ -212,264 +340,507 @@
     </div>
 
     <div class="text-center mt-5 subtle small">
-      © FF Tech • Real-time WebSocket Audit • Powered by Runner.py
+      © FF Tech • WebSocket <code>/ws</code> • REST <code>/api/audit/run</code> • PDF <code>/api/audit/pdf</code>
     </div>
+
   </div>
 
+  <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
   <script>
-    const WS_URL = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
+    // =========================================================
+    // WORLD-CLASS UI CONTROLLER (Runner.py Compatible)
+    // =========================================================
 
-    const els = {
-      urlInput: document.getElementById('urlInput'),
-      startBtn: document.getElementById('startBtn'),
-      pdfBtn: document.getElementById('pdfBtn'),
-      progressBar: document.getElementById('progressBar'),
-      progressText: document.getElementById('progressText'),
-      statusText: document.getElementById('statusText'),
-      wsStatus: document.getElementById('wsStatus'),
-      alertArea: document.getElementById('alertArea'),
-      resultsArea: document.getElementById('resultsArea'),
-      cardsArea: document.getElementById('cardsArea'),
-      dynamicArea: document.getElementById('dynamicArea'),
-      sslWarning: document.getElementById('sslWarning'),
-      errorBox: document.getElementById('errorBox'),
-      errorMessage: document.getElementById('errorMessage'),
-      overallScore: document.getElementById('overallScore'),
-      gradeText: document.getElementById('gradeText'),
-      auditedUrl: document.getElementById('auditedUrl'),
-      seoScore: document.getElementById('seoScore'),
-      perfScore: document.getElementById('perfScore'),
-      linksScore: document.getElementById('linksScore'),
-      secScore: document.getElementById('secScore'),
-      breakdownChart: document.getElementById('breakdownChart'),
-      dynamicCards: document.getElementById('dynamicCards'),
-      kvBody: document.getElementById('kvBody'),
-      lastRunAt: document.getElementById('lastRunAt'),
-      scoreRing: document.getElementById('scoreRing')
-    };
+    // ---- Config ----
+    const REST_FALLBACK_AFTER_MS = 9000;  // if WS doesn't yield a result soon, REST fallback runs
+    const AUTO_SCROLL_ON_RESULT = true;
 
+    // ---- State ----
     let ws = null;
-    let chart = null;
     let lastResult = null;
+    let chart = null;
+    let fallbackTimer = null;
     let auditInProgress = false;
 
-    const escapeHtml = (str) => String(str || "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'})[m]);
+    // ---- DOM helpers ----
+    const el = (id) => document.getElementById(id);
 
-    function showAlert(msg, type = 'info', persist = false) {
-      const div = document.createElement('div');
-      div.className = `alert alert-${type} alert-dismissible fade show alert-box`;
-      div.innerHTML = `
-        ${msg}
-        ${persist ? '' : '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>'}
-      `;
-      els.alertArea.prepend(div);
-      if (!persist) setTimeout(() => div.remove(), 8000);
+    // ---- Theme ----
+    const themeKey = "fftech_theme";
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-bs-theme", theme);
+      localStorage.setItem(themeKey, theme);
+    }
+    (function initTheme() {
+      const saved = localStorage.getItem(themeKey);
+      if (saved) setTheme(saved);
+    })();
+    el("themeToggle").addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-bs-theme") || "dark";
+      setTheme(current === "dark" ? "light" : "dark");
+    });
+
+    // ---- Safe text ----
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
     }
 
-    function setProgress(pct, status = 'working') {
-      const p = Math.max(0, Math.min(100, parseInt(pct) || 0));
-      els.progressBar.style.width = `${p}%`;
-      els.progressText.textContent = `${p}%`;
-      els.statusText.textContent = status;
-      els.progressBar.className = `progress-bar ${status === 'failed' ? 'bg-danger' : (p === 100 ? 'bg-success' : 'bg-info')}`;
+    // ---- Alerts ----
+    function showAlert(message, type="info", persist=false) {
+      const area = el("alertArea");
+      const div = document.createElement("div");
+      div.className = `alert alert-${type} mb-2 fade-in`;
+      div.innerHTML = `
+        <div class="d-flex align-items-start justify-content-between gap-3">
+          <div>${message}</div>
+          <button type="button" class="btn-close" aria-label="Close"></button>
+        </div>
+      `;
+      div.querySelector(".btn-close").onclick = () => div.remove();
+      area.prepend(div);
+      if (!persist) setTimeout(() => { try { div.remove(); } catch(e) {} }, 6500);
+    }
+
+    // ---- Progress UI ----
+    function setStage(status, percent) {
+      const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
+      el("progressBar").style.width = `${p}%`;
+      el("progressText").textContent = `${p}%`;
+      el("statusText").textContent = status || "working";
+
+      // Color logic
+      const bar = el("progressBar");
+      bar.classList.remove("bg-info", "bg-success", "bg-warning", "bg-danger");
+      if (status === "error") bar.classList.add("bg-danger");
+      else if (p >= 100) bar.classList.add("bg-success");
+      else bar.classList.add("bg-info");
+
+      // Stage dot
+      const dot = el("stageDot");
+      dot.classList.remove("ok","warn","bad","info");
+      if (status === "error") dot.classList.add("bad");
+      else if (p >= 100) dot.classList.add("ok");
+      else dot.classList.add("info");
     }
 
     function setWsStatus(connected) {
-      els.wsStatus.textContent = connected ? 'WS: Connected' : 'WS: Disconnected';
-      els.wsStatus.className = `pill ${connected ? 'bg-success' : 'bg-danger'}`;
+      el("wsStatus").textContent = connected ? "WS: Connected" : "WS: Disconnected";
+      el("wsStatus").style.opacity = connected ? "1" : "0.75";
     }
 
+    function wsUrl() {
+      const loc = window.location;
+      const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${loc.host}/ws`;
+    }
+
+    // ---- Debug ----
+    function debugSet(obj) {
+      el("debugBox").textContent = JSON.stringify(obj, null, 2);
+    }
+
+    // =========================================================
+    // Extract runner_result from any payload shape
+    // runner_result expected keys: audited_url, overall_score, grade, breakdown, chart_data, dynamic
+    // =========================================================
+    function extractRunnerResult(obj) {
+      if (!obj || typeof obj !== "object") return null;
+
+      // direct runner_result
+      if (obj.audited_url && typeof obj.overall_score !== "undefined") return obj;
+
+      // ws: {result: runner_result}
+      if (obj.result && obj.result.audited_url) return obj.result;
+
+      // ws: {payload: runner_result}
+      if (obj.payload && obj.payload.audited_url) return obj.payload;
+
+      // ws: {payload: {result: runner_result}}
+      if (obj.payload && obj.payload.result && obj.payload.result.audited_url) return obj.payload.result;
+
+      // rest: {ok:true, data: runner_result}
+      if (obj.data && obj.data.audited_url) return obj.data;
+
+      return null;
+    }
+
+    function extractError(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      return obj.error || (obj.payload && obj.payload.error) || null;
+    }
+
+    // =========================================================
+    // Render Runner.py result
+    // =========================================================
     function renderResult(r) {
       lastResult = r;
-      auditInProgress = false;
 
-      // Reset UI
-      els.errorBox.classList.add('d-none');
-      els.sslWarning.classList.add('d-none');
+      el("resultsArea").style.display = "";
+      el("cardsArea").style.display = "";
+      el("dynamicArea").style.display = "";
 
-      // Handle explicit error from backend
-      if (r.error) {
-        els.errorBox.classList.remove('d-none');
-        els.errorMessage.textContent = escapeHtml(r.error);
-        showAlert(`Audit failed: ${escapeHtml(r.error)}`, 'danger', true);
-        setProgress(100, 'failed');
-        els.resultsArea.style.display = 'none';
-        els.cardsArea.style.display = 'none';
-        els.dynamicArea.style.display = 'none';
-        els.pdfBtn.disabled = true;
-        return;
-      }
+      el("lastRunAt").textContent = new Date().toLocaleString();
 
-      // Show SSL relaxed notice if present
-      if (r.ssl_relaxed) {
-        els.sslWarning.classList.remove('d-none');
-      }
-
-      // Handle no data extracted (scores = 0)
+      // Score ring
       const score = parseInt(r.overall_score || 0);
-      if (score === 0 && !r.error) {
-        showAlert(
-          "Audit completed but no meaningful content was extracted. " +
-          "The site may have blocked the request, returned empty/invalid HTML, or failed to load properly.",
-          'warning',
-          true
-        );
+      const deg = Math.max(0, Math.min(360, (score / 100) * 360));
+      el("scoreRing").style.setProperty("--deg", `${deg}deg`);
+      el("overallScore").textContent = score;
+      el("gradeText").textContent = r.grade || "-";
+      el("auditedUrl").textContent = `Audited: ${r.audited_url || "-"}`;
+
+      // Breakdown
+      const breakdown = r.breakdown || {};
+      const seo = breakdown.seo?.score ?? 0;
+      const perf = breakdown.performance?.score ?? 0;
+      const links = breakdown.links?.score ?? 0;
+      const sec = breakdown.security?.score ?? 0;
+
+      el("seoScore").textContent = seo;
+      el("perfScore").textContent = perf;
+      el("linksScore").textContent = links;
+      el("secScore").textContent = sec;
+
+      // Fetcher pill (from breakdown.performance.extras.fetcher)
+      const fetcher = breakdown.performance?.extras?.fetcher ?? "—";
+      el("fetcherPill").textContent = `fetcher: ${fetcher}`;
+
+      // Verdict pill (simple)
+      el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
+
+      // Chart: prefer runner.chart_data
+      let labels = ["SEO", "Performance", "Links", "Security"];
+      let dataPoints = [seo, perf, links, sec];
+      let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
+
+      const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
+      if (chartSpec?.data?.labels && chartSpec?.data?.datasets?.[0]?.data) {
+        labels = chartSpec.data.labels;
+        dataPoints = chartSpec.data.datasets[0].data;
+        colors = chartSpec.data.datasets[0].backgroundColor || colors;
       }
 
-      // Show results
-      els.resultsArea.style.display = 'flex';
-      els.cardsArea.style.display = 'flex';
-      els.dynamicArea.style.display = 'flex';
-
-      // Overall score & ring
-      const deg = Math.min(360, (score / 100) * 360);
-      els.scoreRing.style.setProperty('--deg', `${deg}deg`);
-      els.overallScore.textContent = score;
-      els.gradeText.textContent = r.grade || 'F';
-      els.auditedUrl.textContent = `Audited: ${r.audited_url || '-'}`;
-      els.lastRunAt.textContent = new Date().toLocaleString();
-
-      // Category scores
-      const b = r.breakdown || {};
-      els.seoScore.textContent = b.seo?.score ?? 0;
-      els.perfScore.textContent = b.performance?.score ?? 0;
-      els.linksScore.textContent = b.links?.score ?? 0;
-      els.secScore.textContent = b.security?.score ?? 0;
-
-      // Chart
-      const chartData = r.chart_data?.[0]?.data || {
-        labels: ['SEO','Performance','Links','Security'],
-        datasets: [{ 
-          data: [b.seo?.score??0, b.performance?.score??0, b.links?.score??0, b.security?.score??0],
-          backgroundColor: ['#fbbf24','#38bdf8','#22c55e','#ef4444']
-        }]
-      };
-
+      const ctx = el("breakdownChart").getContext("2d");
       if (chart) chart.destroy();
-      chart = new Chart(els.breakdownChart, {
-        type: 'bar',
-        data: chartData,
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Score",
+            data: dataPoints,
+            backgroundColor: colors,
+            borderRadius: 12,
+            borderSkipped: false
+          }]
+        },
         options: {
           responsive: true,
           plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, max: 100 } }
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,.10)" } },
+            x: { grid: { display: false } }
+          }
         }
       });
 
       // Dynamic cards
-      els.dynamicCards.innerHTML = '';
-      (r.dynamic?.cards || []).forEach(c => {
-        els.dynamicCards.innerHTML += `
-          <div class="mini-card fade-in">
-            <div class="fw-bold mb-1">${escapeHtml(c.title || '')}</div>
-            <div class="subtle">${escapeHtml(c.body || '')}</div>
-          </div>`;
-      });
+      const dyn = r.dynamic || {};
+      const cards = dyn.cards || [];
+      const kv = dyn.kv || [];
+
+      const cardsWrap = el("dynamicCards");
+      cardsWrap.innerHTML = "";
+      for (const c of cards) {
+        const div = document.createElement("div");
+        div.className = "mini-card fade-in";
+        div.innerHTML = `
+          <div class="fw-semibold mb-1">${escapeHtml(c.title || "")}</div>
+          <div class="subtle">${escapeHtml(c.body || "")}</div>
+        `;
+        cardsWrap.appendChild(div);
+      }
 
       // KV table
-      els.kvBody.innerHTML = '';
-      (r.dynamic?.kv || []).forEach(item => {
-        els.kvBody.innerHTML += `
-          <tr>
-            <th>${escapeHtml(item.key || '')}</th>
-            <td>${escapeHtml(String(item.value ?? ''))}</td>
-          </tr>`;
-      });
+      const kvBody = el("kvBody");
+      kvBody.innerHTML = "";
+      for (const item of kv) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <th class="text-nowrap" style="width:40%">${escapeHtml(item.key || "")}</th>
+          <td>${escapeHtml(String(item.value ?? ""))}</td>
+        `;
+        kvBody.appendChild(tr);
+      }
 
-      els.pdfBtn.disabled = false;
-      setProgress(100, 'completed');
-      showAlert('Audit completed!', 'success');
+      // Enable PDF
+      el("pdfBtn").disabled = false;
+
+      // Final progress
+      setStage("completed", 100);
+
+      // Optional auto scroll
+      if (AUTO_SCROLL_ON_RESULT) {
+        setTimeout(() => {
+          el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 120);
+      }
     }
 
-    // WebSocket connection
-    function connectWebSocket() {
-      ws = new WebSocket(WS_URL);
+    // =========================================================
+    // WebSocket: connect + message handling
+    // Supports both formats:
+    // A) {status, progress, payload, result}
+    // B) {type:"progress", message, percent, payload}
+    // =========================================================
+    function ensureWs() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+      ws = new WebSocket(wsUrl());
+
       ws.onopen = () => setWsStatus(true);
-      ws.onmessage = e => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.status === 'completed' && msg.result) {
-            renderResult(msg.result);
-          } else if (msg.status === 'error' && msg.payload?.error) {
-            renderResult({ error: msg.payload.error });
-          } else if (msg.status && msg.progress !== undefined) {
-            setProgress(msg.progress, msg.status);
-          }
-        } catch (err) {
-          console.error("WebSocket message parse error:", err);
+
+      ws.onmessage = (event) => {
+        let msg = null;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        debugSet(msg);
+
+        // Normalize fields
+        const status = msg.status ?? msg.message ?? msg.type ?? "working";
+        const progress = msg.progress ?? msg.percent ?? 0;
+
+        setStage(status, progress);
+
+        const err = extractError(msg);
+        if (err) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          showAlert(buildHumanError(err), "danger", true);
+          return;
+        }
+
+        const r = extractRunnerResult(msg);
+        if (r) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          renderResult(r);
+          return;
         }
       };
-      ws.onclose = () => {
-        setWsStatus(false);
-        setTimeout(connectWebSocket, 3000); // auto-reconnect
-      };
+
+      ws.onclose = () => setWsStatus(false);
       ws.onerror = () => setWsStatus(false);
     }
 
-    connectWebSocket();
-
-    // Start Audit
-    els.startBtn.onclick = async () => {
-      const url = els.urlInput.value.trim();
-      if (!url) return showAlert('Please enter a URL', 'warning');
-
-      auditInProgress = true;
-      els.startBtn.disabled = true;
-      els.startBtn.textContent = 'Auditing...';
-      els.pdfBtn.disabled = true;
-      setProgress(0, 'starting');
-      els.alertArea.innerHTML = '';
-      els.resultsArea.style.display = 'none';
-      els.cardsArea.style.display = 'none';
-      els.dynamicArea.style.display = 'none';
-      els.errorBox.classList.add('d-none');
-
+    // =========================================================
+    // REST fallback: /api/audit/run
+    // =========================================================
+    async function runAuditRest(url) {
       try {
-        ws.send(JSON.stringify({ url }));
-      } catch (e) {
-        showAlert('WebSocket connection issue — please refresh the page', 'danger');
-      }
-    };
-
-    // PDF Download
-    els.pdfBtn.onclick = async () => {
-      const url = els.urlInput.value.trim();
-      if (!url) return;
-
-      els.pdfBtn.disabled = true;
-      els.pdfBtn.innerHTML = 'Generating PDF...';
-
-      try {
-        const res = await fetch('/api/audit/pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        setStage("rest_fallback", 20);
+        const res = await fetch("/api/audit/run", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
           body: JSON.stringify({ url })
         });
 
         if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(errText || `HTTP ${res.status}`);
+          const txt = await res.text();
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+
+        const j = await res.json();
+        debugSet(j);
+
+        const err = extractError(j);
+        if (err) throw new Error(err);
+
+        const r = extractRunnerResult(j);
+        if (!r) throw new Error("REST response did not include runner_result.");
+
+        renderResult(r);
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+        setStage("error", 100);
+      }
+    }
+
+    // =========================================================
+    // Start audit
+    // =========================================================
+    async function startAudit() {
+      const url = el("urlInput").value.trim();
+      if (!url) {
+        showAlert("Please enter a URL.", "warning");
+        return;
+      }
+
+      // Reset
+      lastResult = null;
+      auditInProgress = true;
+      el("pdfBtn").disabled = true;
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      setStage("starting", 1);
+      showAlert("Audit started… please wait.", "info");
+
+      // Ensure WS and send URL
+      ensureWs();
+      try {
+        ws.send(JSON.stringify({ url }));
+      } catch (e) {
+        // If WS isn't ready, fallback will handle
+      }
+
+      // Fallback timer
+      clearTimeout(fallbackTimer);
+      fallbackTimer = setTimeout(() => {
+        if (auditInProgress && !lastResult) {
+          showAlert("WebSocket is slow or blocked. Running REST fallback…", "warning");
+          runAuditRest(url);
+        }
+      }, REST_FALLBACK_AFTER_MS);
+    }
+
+    // =========================================================
+    // PDF download: /api/audit/pdf
+    // =========================================================
+    async function downloadPdf() {
+      const url = el("urlInput").value.trim();
+      if (!url) return showAlert("Please enter a URL.", "warning");
+      el("pdfBtn").disabled = true;
+      el("pdfBtn").innerText = "Generating PDF…";
+
+      try {
+        const payload = {
+          url,
+          client_name: "",
+          brand_name: "",
+          report_title: "",
+          website_name: "",
+          logo_path: ""
+        };
+
+        const res = await fetch("/api/audit/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          if (contentType.includes("application/json")) {
+            const j = await res.json();
+            detail = j.detail || JSON.stringify(j);
+          } else {
+            detail = await res.text();
+          }
+          throw new Error(detail);
         }
 
         const blob = await res.blob();
-        const urlObj = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = urlObj;
-        a.download = 'Website_Audit_Report.pdf';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(urlObj);
+        const cd = res.headers.get("content-disposition") || "";
+        let filename = "audit_report.pdf";
+        const match = cd.match(/filename="?([^"]+)"?/i);
+        if (match && match[1]) filename = match[1];
 
-        showAlert('PDF downloaded successfully!', 'success');
+        const link = document.createElement("a");
+        const objectUrl = URL.createObjectURL(blob);
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+
+        showAlert("PDF generated and downloaded ✅", "success");
       } catch (e) {
-        showAlert(`Failed to generate PDF: ${e.message}`, 'danger', true);
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
       } finally {
-        els.pdfBtn.disabled = false;
-        els.pdfBtn.innerHTML = '⬇ Download PDF Report';
+        el("pdfBtn").disabled = !lastResult;
+        el("pdfBtn").innerText = "⬇ Download Professional PDF";
       }
-    };
+    }
+
+    // =========================================================
+    // Copy / Open JSON
+    // =========================================================
+    el("copyJsonBtn").addEventListener("click", async () => {
+      if (!lastResult) return showAlert("No result to copy yet.", "warning");
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2));
+        showAlert("Result JSON copied ✅", "success");
+      } catch (e) {
+        showAlert("Clipboard not available in this browser context.", "warning");
+      }
+    });
+
+    el("openJsonBtn").addEventListener("click", () => {
+      if (!lastResult) return showAlert("No result to open yet.", "warning");
+      const w = window.open("", "_blank");
+      if (!w) return showAlert("Popup blocked. Allow popups to view JSON.", "warning");
+      w.document.write(`<pre>${escapeHtml(JSON.stringify(lastResult, null, 2))}</pre>`);
+      w.document.title = "Audit Result JSON";
+      w.document.close();
+    });
+
+    // =========================================================
+    // Human-friendly error hints (SSL, DNS, timeouts)
+    // =========================================================
+    function buildHumanError(raw) {
+      const msg = String(raw || "Unknown error");
+
+      // Common SSL errors
+      if (msg.includes("CERTIFICATE_VERIFY_FAILED") || msg.includes("unable to get local issuer certificate")) {
+        return `
+          <b>SSL certificate validation failed</b><br>
+          The target website's HTTPS certificate could not be verified from the server environment.<br><br>
+          <span class="subtle">Fix:</span> Ensure <code>certifi</code> is installed and your runner uses
+          <code>ssl.create_default_context(cafile=certifi.where())</code> (recommended).<br><br>
+          <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>
+        `;
+      }
+
+      // DNS / connectivity
+      if (msg.includes("Name or service not known") || msg.includes("Temporary failure in name resolution")) {
+        return `
+          <b>DNS / network resolution problem</b><br>
+          The server couldn't resolve the domain. This can happen due to transient network issues.<br><br>
+          <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>
+        `;
+      }
+
+      // Timeout
+      if (msg.toLowerCase().includes("timed out") || msg.toLowerCase().includes("timeout")) {
+        return `
+          <b>Request timed out</b><br>
+          The target site took too long to respond. Try again or reduce audit scope/timeout.<br><br>
+          <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>
+        `;
+      }
+
+      // Generic
+      return `<b>Audit failed</b><br><span class="mono">${escapeHtml(msg)}</span>`;
+    }
+
+    // =========================================================
+    // Wire buttons + initial WS
+    // =========================================================
+    el("startBtn").addEventListener("click", startAudit);
+    el("pdfBtn").addEventListener("click", downloadPdf);
+
+    setWsStatus(false);
+    ensureWs();
+    setStage("idle", 0);
   </script>
 </body>
 </html>
