@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl, field_validator
 
-# Import audit runner
+# Import your audit runner
 from app.audit.runner import WebsiteAuditRunner
 
 # ────────────────────────────────────────────────
@@ -66,7 +66,6 @@ class ConnectionManager:
                 await connection.send_json(message)
             except Exception:
                 dead.append(connection)
-
         for connection in dead:
             self.disconnect(connection)
 
@@ -107,7 +106,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()  # discard for now
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
@@ -128,20 +127,21 @@ async def run_audit(payload: AuditRequest):
     await manager.broadcast({"type": "progress", "message": "Audit completed", "percent": 100})
     return {"ok": True, "data": audit_result}
 
+
 # ────────────────────────────────────────────────
-# Entry point – Fix PORT issue
+# Entry point – Fixed for Railway/Docker PORT
 # ────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
 
-    # Read PORT from environment variable, default to 8000 if not set
+    # Read PORT from environment variable, default to 8000
     port = int(os.getenv("PORT", "8000"))
     logger.info(f"Starting server on 0.0.0.0:{port}")
 
     uvicorn.run(
-        "app.main:app",  # module path
+        "app.main:app",
         host="0.0.0.0",
         port=port,
         log_level="info",
-        # reload=True,   # For development only
+        # reload=True,  # dev only
     )
