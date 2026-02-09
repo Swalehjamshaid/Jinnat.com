@@ -1,147 +1,241 @@
 # -*- coding: utf-8 -*-
+"""
+main.py
+
+FastAPI entrypoint for:
+- GET /                -> serves index.html (Bootstrap + Chart.js UI)
+- WS  /ws              -> streams audit progress + final results
+- POST /api/audit/pdf  -> generates and downloads professional PDF report
+
+Works with:
+- app/audit/runner.py (WebsiteAuditRunner + PDF helper functions)
+- app/audit/pdf_report.py (reportlab-based PDF generator)
+"""
+
 from __future__ import annotations
 
+import json
 import os
-import logging
-from datetime import date
-from typing import Any, Dict, Set, Optional
+import re
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-import certifi
-import httpx
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, HttpUrl, field_validator
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
-# Import your audit runner
-from app.audit.runner import WebsiteAuditRunner
+from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
 
-# ────────────────────────────────────────────────
-# Logging
-# ────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)-7s | %(asctime)s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+
+# -----------------------------------------------------------------------------
+# App
+# -----------------------------------------------------------------------------
+app = FastAPI(title="Website Audit Pro", version="2.0")
+
+# Optional CORS (handy if UI hosted elsewhere; safe for Railway)
+# You can lock this down later.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-logger = logging.getLogger("website-audit")
-
-# ────────────────────────────────────────────────
-# Paths
-# ────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-INDEX_HTML = os.path.join(TEMPLATES_DIR, "index.html")
-
-# ────────────────────────────────────────────────
-# FastAPI App
-# ────────────────────────────────────────────────
-app = FastAPI(title="Website Audit Pro", version="1.0.0", docs_url="/docs")
-
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
-
-if os.path.isdir(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-# ────────────────────────────────────────────────
-# WebSocket Manager
-# ────────────────────────────────────────────────
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.add(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.discard(websocket)
-
-    async def broadcast(self, message: dict):
-        dead = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except Exception:
-                dead.append(connection)
-        for connection in dead:
-            self.disconnect(connection)
-
-manager = ConnectionManager()
-
-# ────────────────────────────────────────────────
-# Models
-# ────────────────────────────────────────────────
-class AuditRequest(BaseModel):
-    url: HttpUrl
-
-    @field_validator("url", mode="before")
-    @classmethod
-    def normalize_url(cls, v: Any) -> str:
-        v = str(v).strip()
-        if not v.startswith(("http://", "https://")):
-            return f"https://{v}"
-        return v
-
-# ────────────────────────────────────────────────
-# Routes
-# ────────────────────────────────────────────────
-@app.get("/health")
-async def health_check():
-    return {"status": "ok", "time": date.today().isoformat()}
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    if not os.path.isfile(INDEX_HTML):
-        logger.error(f"Template not found: {INDEX_HTML}")
-        return HTMLResponse("<h3>index.html not found</h3>", status_code=500)
-    return templates.TemplateResponse("index.html", {"request": request})
+# -----------------------------------------------------------------------------
+# Paths: adjust if your templates folder differs
+# -----------------------------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = BASE_DIR / "app" / "templates"
+INDEX_HTML_PATH = TEMPLATES_DIR / "index.html"
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+def _safe_filename(name: str, default: str = "audit_report") -> str:
+    """
+    Make a safe filename (no slashes, weird chars).
+    """
+    name = (name or "").strip()
+    if not name:
+        name = default
+    name = re.sub(r"[^a-zA-Z0-9_\-\.]+", "_", name)
+    name = name.strip("._-") or default
+    return name[:80]
+
+
+async def _ws_send_json(ws: WebSocket, payload: Dict[str, Any]) -> None:
+    """
+    Never let send exceptions crash server logic.
+    """
     try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-    except Exception as e:
-        logger.exception("WebSocket error")
-        manager.disconnect(websocket)
+        await ws.send_text(json.dumps(payload, ensure_ascii=False))
+    except Exception:
+        # Client likely disconnected
+        pass
 
 
-@app.post("/api/audit/run")
-async def run_audit(payload: AuditRequest):
-    await manager.broadcast({"type": "progress", "message": "Starting audit...", "percent": 5})
+# -----------------------------------------------------------------------------
+# Models
+# -----------------------------------------------------------------------------
+class PdfRequest(BaseModel):
+    url: str = Field(..., description="Website URL to audit")
+    client_name: Optional[str] = ""
+    brand_name: Optional[str] = ""
+    report_title: Optional[str] = ""
+    website_name: Optional[str] = ""
+    logo_path: Optional[str] = ""  # optional path on server filesystem
 
-    async def progress_cb(status: str, percent: int, payload: Optional[Dict] = None):
-        await manager.broadcast({"type": "progress", "message": status, "percent": percent, "payload": payload})
+
+# -----------------------------------------------------------------------------
+# Routes
+# -----------------------------------------------------------------------------
+@app.get("/", response_class=HTMLResponse)
+async def index() -> HTMLResponse:
+    """
+    Serve your index.html UI.
+    """
+    if not INDEX_HTML_PATH.exists():
+        return HTMLResponse(
+            content=f"<h3>index.html not found</h3><p>Expected at: {INDEX_HTML_PATH}</p>",
+            status_code=404,
+        )
+    return HTMLResponse(INDEX_HTML_PATH.read_text(encoding="utf-8"))
+
+
+@app.get("/health")
+async def health() -> Dict[str, Any]:
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# WebSocket: /ws
+# UI contract (from your index.html):
+# - client sends: {"url": "..."}
+# - server sends progress: {"status": "...", "progress": 0-100, "payload": {...}}
+# - final: {"status":"completed","progress":100,"result":{runner_result}}
+# -----------------------------------------------------------------------------
+@app.websocket("/ws")
+async def ws_audit(ws: WebSocket):
+    await ws.accept()
 
     runner = WebsiteAuditRunner()
-    audit_result = await runner.run(str(payload.url), progress_cb=progress_cb)
 
-    await manager.broadcast({"type": "progress", "message": "Audit completed", "percent": 100})
-    return {"ok": True, "data": audit_result}
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                await _ws_send_json(ws, {"status": "error", "progress": 100, "error": "Invalid JSON"})
+                continue
+
+            url = (msg.get("url") or "").strip()
+            if not url:
+                await _ws_send_json(ws, {"status": "error", "progress": 100, "error": "URL is required"})
+                continue
+
+            # Progress callback that streams to WebSocket
+            async def progress_cb(status: str, percent: int, payload: Optional[dict] = None):
+                await _ws_send_json(ws, {"status": status, "progress": int(percent), "payload": payload})
+
+            # Run audit
+            try:
+                result = await runner.run(url, progress_cb=progress_cb)
+
+                # Send a final "completed" frame with result (UI expects it)
+                await _ws_send_json(ws, {"status": "completed", "progress": 100, "result": result})
+            except Exception as e:
+                await _ws_send_json(ws, {"status": "error", "progress": 100, "error": str(e)})
+
+    except WebSocketDisconnect:
+        # client closed tab
+        return
+    except Exception:
+        # unexpected
+        return
 
 
-# ────────────────────────────────────────────────
-# Entry point – Fixed for Railway/Docker PORT
-# ────────────────────────────────────────────────
-if __name__ == "__main__":
-    import uvicorn
+# -----------------------------------------------------------------------------
+# REST: Optional quick audit endpoint (handy for testing / fallback)
+# -----------------------------------------------------------------------------
+@app.post("/api/audit/run")
+async def api_audit_run(payload: Dict[str, Any]) -> JSONResponse:
+    url = (payload.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
 
-    # Read PORT from environment variable, default to 8000
-    port = int(os.getenv("PORT", "8000"))
-    logger.info(f"Starting server on 0.0.0.0:{port}")
+    runner = WebsiteAuditRunner()
+    result = await runner.run(url, progress_cb=None)
+    return JSONResponse(result)
 
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=port,
-        log_level="info",
-        # reload=True,  # dev only
+
+# -----------------------------------------------------------------------------
+# REST: PDF generation endpoint used by your index.html button
+# POST /api/audit/pdf -> returns application/pdf bytes
+# -----------------------------------------------------------------------------
+@app.post("/api/audit/pdf")
+async def api_audit_pdf(req: PdfRequest):
+    url = (req.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+
+    runner = WebsiteAuditRunner()
+
+    # 1) Run audit (no progress needed for PDF)
+    try:
+        runner_result = await runner.run(url, progress_cb=None)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Audit failed: {e}")
+
+    # If runner returned stable failure shape with "error"
+    if runner_result.get("error"):
+        raise HTTPException(status_code=400, detail=f"Audit error: {runner_result['error']}")
+
+    # 2) Generate PDF to a temp file
+    report_title = (req.report_title or "").strip()
+    client_name = (req.client_name or "").strip()
+    brand_name = (req.brand_name or "").strip()
+    website_name = (req.website_name or "").strip()
+    logo_path = (req.logo_path or "").strip() or None
+
+    # Use a temp directory for safe file creation
+    tmp_dir = Path(tempfile.mkdtemp(prefix="audit_pdf_"))
+    filename_base = _safe_filename(website_name or runner_result.get("audited_url") or "audit_report")
+    pdf_path = tmp_dir / f"{filename_base}.pdf"
+
+    try:
+        generate_pdf_from_runner_result(
+            runner_result=runner_result,
+            output_path=str(pdf_path),
+            logo_path=logo_path,
+            report_title=report_title or "Website Audit Report",
+            client_name=client_name or "N/A",
+            brand_name=brand_name or "FF Tech",
+            website_name=website_name or None,
+            audit_date=None,
+        )
+    except RuntimeError as e:
+        # Common cause: reportlab not installed
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+
+    if not pdf_path.exists():
+        raise HTTPException(status_code=500, detail="PDF generation failed (file not created)")
+
+    # 3) Return PDF file
+    # Note: FileResponse will stream from disk efficiently.
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename=pdf_path.name,
+        headers={
+            # Extra safety for downloads
+            "Content-Disposition": f'attachment; filename="{pdf_path.name}"'
+        },
     )
