@@ -1,41 +1,24 @@
-# --- SSL & Security Fixes ---
-certifi==2026.1.30
-cryptography==44.0.0
-pyOpenSSL==24.3.0
-
-# --- High-Performance Networking ---
-# Use httpx for the audit engine (faster/supports HTTP/2)
-httpx[http2]==0.28.1 
-requests==2.32.3
-urllib3==2.3.0
-
-# --- Audit & Parsing ---
-beautifulsoup4==4.13.3
-lxml==5.3.1
-
-# --- Deployment & API (Railway Optimized) ---
-fastapi==0.115.8
-uvicorn[standard]==0.34.0
-pydantic==2.10.6
-python-dotenv==1.0.1
-
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt (Railway-safe)
 # Updated: 09 Feb 2026
 # =========================================================
 
 # -------------------------
-# Core API + Server
+# Core FastAPI Backend
 # -------------------------
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 gunicorn==23.0.0
 
-# Templates + form uploads (if you use them)
+# -------------------------
+# Templates + Uploads
+# -------------------------
 jinja2==3.1.5
 python-multipart==0.0.20
 
-# WebSockets (FastAPI/Starlette uses websockets underneath)
+# -------------------------
+# WebSocket Support
+# -------------------------
 websockets==14.1
 
 # -------------------------
@@ -46,7 +29,8 @@ pydantic-settings==2.7.0
 python-dotenv==1.0.1
 
 # -------------------------
-# HTTP + Networking
+# HTTP Clients (Web Fetching)
+# + SSL FIX with Certifi (required for HTTPS errors)
 # -------------------------
 requests==2.32.3
 httpx==0.28.1
@@ -60,30 +44,29 @@ beautifulsoup4==4.12.3
 lxml==5.3.0
 
 # -------------------------
-# JSON speedups (optional but fine)
+# JSON Performance (optional but safe)
 # -------------------------
 orjson==3.10.15
 ujson==5.10.0
 
 # -------------------------
-# PDF Export (your code uses ReportLab)
+# PDF Generation (your app uses ReportLab)
 # -------------------------
 reportlab==4.2.5
 
 # -------------------------
-# OPTIONAL: WeasyPrint (requires OS libs on Railway)
-# If you enable this, you'll need a Dockerfile / apt packages for cairo/pango.
+# OPTIONAL: WeasyPrint (skip unless you add OS libs)
 # -------------------------
 # weasyprint==63.0
 
 # -------------------------
-# OPTIONAL: Images/QR in PDF
+# OPTIONAL: Images / QR
 # -------------------------
 # pillow==10.4.0
 # qrcode==7.4.2
 
 # -------------------------
-# OPTIONAL: Exports (PPTX/XLSX)
+# OPTIONAL: PPTX/XLSX Exports
 # -------------------------
 # python-pptx==1.0.2
 # openpyxl==3.1.5
