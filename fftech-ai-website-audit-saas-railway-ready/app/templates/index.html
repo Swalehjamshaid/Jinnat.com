@@ -107,7 +107,7 @@
       </div>
     </div>
 
-    <!-- Input -->
+    <!-- Input Area -->
     <div class="glass p-4 mb-4">
       <div class="row g-3 align-items-end">
         <div class="col-lg-7">
@@ -139,16 +139,16 @@
         <div id="progressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
       </div>
 
-      <!-- Alerts -->
+      <!-- Alerts & Error Area -->
       <div id="alertArea" class="mt-3"></div>
     </div>
 
-    <!-- Results -->
+    <!-- Results Area -->
     <div id="resultsArea" class="row g-4 mb-5" style="display:none;">
       <!-- SSL Warning -->
       <div id="sslWarning" class="ssl-warning d-none">
         <strong>Notice:</strong> SSL certificate verification was relaxed due to site configuration issues. 
-        Audit results are still valid, but please be aware of potential certificate problems.
+        Audit results are still valid, but the site's certificate may be invalid or untrusted.
       </div>
 
       <!-- Big Error Box -->
@@ -183,6 +183,7 @@
       </div>
     </div>
 
+    <!-- Category Cards -->
     <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
       <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">SEO</div><div class="value" id="seoScore">0</div><div class="hint">Title, meta, H1, ALT</div></div></div>
       <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">Performance</div><div class="value" id="perfScore">0</div><div class="hint">Speed, size, resources</div></div></div>
@@ -190,6 +191,7 @@
       <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">Security</div><div class="value" id="secScore">0</div><div class="hint">HTTPS, HSTS, status</div></div></div>
     </div>
 
+    <!-- Dynamic Area -->
     <div id="dynamicArea" class="row g-3" style="display:none;">
       <div class="col-lg-6">
         <div class="glass p-4 h-100">
@@ -282,14 +284,11 @@
       lastResult = r;
       auditInProgress = false;
 
-      // Show SSL relaxed notice
-      if (r.ssl_relaxed) {
-        els.sslWarning.classList.remove('d-none');
-      } else {
-        els.sslWarning.classList.add('d-none');
-      }
+      // Reset UI
+      els.errorBox.classList.add('d-none');
+      els.sslWarning.classList.add('d-none');
 
-      // Handle error
+      // Handle explicit error from backend
       if (r.error) {
         els.errorBox.classList.remove('d-none');
         els.errorMessage.textContent = escapeHtml(r.error);
@@ -302,22 +301,28 @@
         return;
       }
 
-      // Handle no data (0 scores)
+      // Show SSL relaxed notice if present
+      if (r.ssl_relaxed) {
+        els.sslWarning.classList.remove('d-none');
+      }
+
+      // Handle no data extracted (scores = 0)
       const score = parseInt(r.overall_score || 0);
-      if (score === 0) {
+      if (score === 0 && !r.error) {
         showAlert(
-          "Audit completed but no content was extracted. The site may have blocked the request or returned empty/invalid HTML.",
+          "Audit completed but no meaningful content was extracted. " +
+          "The site may have blocked the request, returned empty/invalid HTML, or failed to load properly.",
           'warning',
           true
         );
       }
 
+      // Show results
       els.resultsArea.style.display = 'flex';
       els.cardsArea.style.display = 'flex';
       els.dynamicArea.style.display = 'flex';
-      els.errorBox.classList.add('d-none');
 
-      // Overall score
+      // Overall score & ring
       const deg = Math.min(360, (score / 100) * 360);
       els.scoreRing.style.setProperty('--deg', `${deg}deg`);
       els.overallScore.textContent = score;
@@ -335,7 +340,10 @@
       // Chart
       const chartData = r.chart_data?.[0]?.data || {
         labels: ['SEO','Performance','Links','Security'],
-        datasets: [{ data: [b.seo?.score??0, b.performance?.score??0, b.links?.score??0, b.security?.score??0], backgroundColor: ['#fbbf24','#38bdf8','#22c55e','#ef4444'] }]
+        datasets: [{ 
+          data: [b.seo?.score??0, b.performance?.score??0, b.links?.score??0, b.security?.score??0],
+          backgroundColor: ['#fbbf24','#38bdf8','#22c55e','#ef4444']
+        }]
       };
 
       if (chart) chart.destroy();
@@ -374,7 +382,7 @@
       showAlert('Audit completed!', 'success');
     }
 
-    // WebSocket
+    // WebSocket connection
     function connectWebSocket() {
       ws = new WebSocket(WS_URL);
       ws.onopen = () => setWsStatus(true);
@@ -384,18 +392,17 @@
           if (msg.status === 'completed' && msg.result) {
             renderResult(msg.result);
           } else if (msg.status === 'error' && msg.payload?.error) {
-            els.errorBox.classList.remove('d-none');
-            els.errorMessage.textContent = escapeHtml(msg.payload.error);
-            showAlert(`Error: ${escapeHtml(msg.payload.error)}`, 'danger', true);
-            setProgress(100, 'failed');
+            renderResult({ error: msg.payload.error });
           } else if (msg.status && msg.progress !== undefined) {
             setProgress(msg.progress, msg.status);
           }
-        } catch {}
+        } catch (err) {
+          console.error("WebSocket message parse error:", err);
+        }
       };
       ws.onclose = () => {
         setWsStatus(false);
-        setTimeout(connectWebSocket, 3000);
+        setTimeout(connectWebSocket, 3000); // auto-reconnect
       };
       ws.onerror = () => setWsStatus(false);
     }
@@ -421,7 +428,7 @@
       try {
         ws.send(JSON.stringify({ url }));
       } catch (e) {
-        showAlert('WebSocket issue — please refresh', 'warning');
+        showAlert('WebSocket connection issue — please refresh the page', 'danger');
       }
     };
 
@@ -440,7 +447,10 @@
           body: JSON.stringify({ url })
         });
 
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || `HTTP ${res.status}`);
+        }
 
         const blob = await res.blob();
         const urlObj = URL.createObjectURL(blob);
@@ -452,9 +462,9 @@
         a.remove();
         URL.revokeObjectURL(urlObj);
 
-        showAlert('PDF downloaded!', 'success');
+        showAlert('PDF downloaded successfully!', 'success');
       } catch (e) {
-        showAlert(`PDF failed: ${e.message}`, 'danger', true);
+        showAlert(`Failed to generate PDF: ${e.message}`, 'danger', true);
       } finally {
         els.pdfBtn.disabled = false;
         els.pdfBtn.innerHTML = '⬇ Download PDF Report';
