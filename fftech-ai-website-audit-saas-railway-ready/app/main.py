@@ -1,23 +1,20 @@
-# app/main.py (complete updated code to fix the PORT issue and integrate properly)
-
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import os
-import json
 import logging
 from datetime import date
-from typing import Any, Dict, Set
+from typing import Any, Dict, Set, Optional
 
 import certifi
 import httpx
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl, field_validator
 
-# Import the audit runner (unchanged)
+# Import audit runner
 from app.audit.runner import WebsiteAuditRunner
 
 # ────────────────────────────────────────────────
@@ -39,20 +36,14 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 INDEX_HTML = os.path.join(TEMPLATES_DIR, "index.html")
 
 # ────────────────────────────────────────────────
-# App & Templates
+# FastAPI App
 # ────────────────────────────────────────────────
-app = FastAPI(
-    title="Website Audit Pro",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url=None,
-)
+app = FastAPI(title="Website Audit Pro", version="1.0.0", docs_url="/docs")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
 
 # ────────────────────────────────────────────────
 # WebSocket Manager
@@ -79,9 +70,7 @@ class ConnectionManager:
         for connection in dead:
             self.disconnect(connection)
 
-
 manager = ConnectionManager()
-
 
 # ────────────────────────────────────────────────
 # Models
@@ -93,80 +82,9 @@ class AuditRequest(BaseModel):
     @classmethod
     def normalize_url(cls, v: Any) -> str:
         v = str(v).strip()
-        if not v:
-            raise ValueError("URL is required")
         if not v.startswith(("http://", "https://")):
             return f"https://{v}"
         return v
-
-
-# ────────────────────────────────────────────────
-# Helpers (kept for compatibility if needed elsewhere)
-# ────────────────────────────────────────────────
-def extract_title(html: str) -> str:
-    lower = html.lower()
-    start_tag = "<title"
-    end_tag = "</title>"
-
-    start_idx = lower.find(start_tag)
-    if start_idx == -1:
-        return ""
-
-    tag_close = lower.find(">", start_idx)
-    if tag_close == -1:
-        return ""
-
-    title_start = tag_close + 1
-    title_end = lower.find(end_tag, title_start)
-    if title_end == -1:
-        return ""
-
-    return html[title_start:title_end].strip()
-
-
-async def fetch_page(url: str, timeout: float = 25.0) -> dict[str, Any]:
-    headers = {"User-Agent": "Website-AuditBot/1.0 (audit; +https://example.com)"}
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            follow_redirects=True,
-            verify=certifi.where(),
-            headers=headers,
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return {
-                "ok": True,
-                "url": str(resp.url),
-                "status": resp.status_code,
-                "html": resp.text,
-                "ssl_relaxed": False,
-            }
-    except httpx.SSLError:
-        logger.warning(f"SSL verification failed for {url} → retrying without verification")
-    except Exception as e:
-        return {"ok": False, "error": "Fetch failed", "details": str(e)}
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            follow_redirects=True,
-            verify=False,
-            headers=headers,
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return {
-                "ok": True,
-                "url": str(resp.url),
-                "status": resp.status_code,
-                "html": resp.text,
-                "ssl_relaxed": True,
-            }
-    except Exception as e:
-        return {"ok": False, "error": "Fetch failed (even without SSL check)", "details": str(e)}
-
 
 # ────────────────────────────────────────────────
 # Routes
@@ -181,7 +99,6 @@ async def index(request: Request):
     if not os.path.isfile(INDEX_HTML):
         logger.error(f"Template not found: {INDEX_HTML}")
         return HTMLResponse("<h3>index.html not found</h3>", status_code=500)
-
     return templates.TemplateResponse("index.html", {"request": request})
 
 
@@ -202,43 +119,29 @@ async def websocket_endpoint(websocket: WebSocket):
 async def run_audit(payload: AuditRequest):
     await manager.broadcast({"type": "progress", "message": "Starting audit...", "percent": 5})
 
-    # Progress callback for WebSocket broadcast
     async def progress_cb(status: str, percent: int, payload: Optional[Dict] = None):
-        await manager.broadcast({
-            "type": "progress",
-            "message": status,
-            "percent": percent,
-            "payload": payload
-        })
+        await manager.broadcast({"type": "progress", "message": status, "percent": percent, "payload": payload})
 
-    # Use the unchanged runner
     runner = WebsiteAuditRunner()
     audit_result = await runner.run(str(payload.url), progress_cb=progress_cb)
 
     await manager.broadcast({"type": "progress", "message": "Audit completed", "percent": 100})
-
-    return {
-        "ok": True,
-        "data": audit_result,
-    }
-
+    return {"ok": True, "data": audit_result}
 
 # ────────────────────────────────────────────────
-# Entry point – FIXED to handle PORT correctly for Railway/etc.
+# Entry point – Fix PORT issue
 # ────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
 
-    # Fix: Read PORT from environment variable (fixes "$PORT not integer" error)
+    # Read PORT from environment variable, default to 8000 if not set
     port = int(os.getenv("PORT", "8000"))
-
     logger.info(f"Starting server on 0.0.0.0:{port}")
 
     uvicorn.run(
-        "app.main:app",  # Correct for app/ folder structure
+        "app.main:app",  # module path
         host="0.0.0.0",
         port=port,
         log_level="info",
-        # reload=True,   # Only for dev
-        # workers=2,     # Optional for production
+        # reload=True,   # For development only
     )
