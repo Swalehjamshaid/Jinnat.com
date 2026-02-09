@@ -28,11 +28,7 @@
         linear-gradient(180deg, rgba(2,6,23,1) 0%, rgba(3,7,18,1) 100%);
     }
 
-    .app-shell {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 22px 16px 60px;
-    }
+    .app-shell { max-width: 1200px; margin: 0 auto; padding: 22px 16px 60px; }
 
     .glass {
       background: var(--glass);
@@ -43,19 +39,16 @@
     }
 
     .brand-badge {
-      width: 46px;
-      height: 46px;
-      border-radius: 14px;
-      display: grid;
-      place-items: center;
-      font-weight: 800;
-      letter-spacing: 0.5px;
+      width: 46px; height: 46px; border-radius: 14px;
+      display: grid; place-items: center;
+      font-weight: 800; letter-spacing: 0.5px;
       background: linear-gradient(135deg, rgba(14,165,233,0.95), rgba(99,102,241,0.85));
       border: 1px solid rgba(255,255,255,0.15);
       box-shadow: 0 12px 30px rgba(14,165,233,0.22);
     }
 
     .subtle { color: rgba(255,255,255,0.70); }
+    .muted-2 { color: rgba(255,255,255,0.65); }
 
     .pill {
       border: 1px solid rgba(255,255,255,0.14);
@@ -67,12 +60,8 @@
     }
 
     .score-ring {
-      width: 180px;
-      height: 180px;
-      border-radius: 999px;
-      position: relative;
-      display: grid;
-      place-items: center;
+      width: 180px; height: 180px; border-radius: 999px;
+      position: relative; display: grid; place-items: center;
       background:
         radial-gradient(circle at center, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 35%, transparent 60%),
         conic-gradient(from 180deg, rgba(14,165,233,0.95) var(--deg), rgba(255,255,255,0.08) 0);
@@ -80,26 +69,13 @@
       box-shadow: 0 18px 40px rgba(0,0,0,0.35);
     }
     .score-ring .inside {
-      width: 132px;
-      height: 132px;
-      border-radius: 999px;
+      width: 132px; height: 132px; border-radius: 999px;
       background: rgba(2,6,23,0.75);
       border: 1px solid rgba(255,255,255,0.12);
-      display: grid;
-      place-items: center;
-      text-align: center;
-      padding: 10px;
+      display: grid; place-items: center; text-align: center; padding: 10px;
     }
-    .score-ring .inside .score {
-      font-size: 40px;
-      font-weight: 900;
-      line-height: 1;
-    }
-    .score-ring .inside .grade {
-      font-weight: 800;
-      margin-top: 4px;
-      opacity: 0.9;
-    }
+    .score-ring .inside .score { font-size: 40px; font-weight: 900; line-height: 1; }
+    .score-ring .inside .grade { font-weight: 800; margin-top: 4px; opacity: 0.9; }
 
     .btn-glow {
       background: linear-gradient(135deg, rgba(14,165,233,0.95), rgba(99,102,241,0.9));
@@ -120,8 +96,6 @@
     .mini-card .hint  { font-size: 12px; opacity: 0.72; margin-top: 8px; }
 
     .kv-table td, .kv-table th { border-color: rgba(255,255,255,0.10) !important; }
-    .muted-2 { color: rgba(255,255,255,0.65); }
-
     .progress { height: 10px; }
     .progress-bar { transition: width .25s ease; }
 
@@ -130,24 +104,6 @@
       from { opacity: 0; transform: translateY(6px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-
-    [data-bs-theme="light"] body {
-      background:
-        radial-gradient(1200px 600px at 30% 20%, rgba(14,165,233,0.22), transparent 55%),
-        radial-gradient(900px 500px at 70% 10%, rgba(34,197,94,0.16), transparent 50%),
-        radial-gradient(800px 500px at 60% 80%, rgba(239,68,68,0.10), transparent 50%),
-        linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(241,245,249,1) 100%);
-    }
-    [data-bs-theme="light"] .glass {
-      background: rgba(255,255,255,0.72);
-      border: 1px solid rgba(15,23,42,0.10);
-      box-shadow: 0 12px 35px rgba(2,6,23,0.10);
-    }
-    [data-bs-theme="light"] .subtle { color: rgba(15,23,42,0.65); }
-    [data-bs-theme="light"] .pill { color: rgba(15,23,42,0.65); border-color: rgba(15,23,42,0.12); }
-    [data-bs-theme="light"] .mini-card { background: rgba(255,255,255,0.74); border-color: rgba(15,23,42,0.10); }
-    [data-bs-theme="light"] .score-ring .inside { background: rgba(255,255,255,0.86); border-color: rgba(15,23,42,0.10); }
-    [data-bs-theme="light"] .kv-table td, [data-bs-theme="light"] .kv-table th { border-color: rgba(15,23,42,0.10) !important; }
   </style>
 </head>
 
@@ -160,7 +116,7 @@
         <div class="brand-badge text-white">FF</div>
         <div>
           <div class="h4 mb-0 fw-bold">Website Audit Pro</div>
-          <div class="subtle small">Live WebSocket audit + Professional PDF export • Railway Ready</div>
+          <div class="subtle small">Live WebSocket progress + REST audit result • Railway Ready</div>
         </div>
       </div>
 
@@ -198,9 +154,7 @@
       <!-- Progress -->
       <div class="d-flex align-items-center justify-content-between mb-2">
         <div class="fw-semibold">Progress</div>
-        <div class="subtle">
-          <span id="progressText">0%</span> • <span id="statusText">idle</span>
-        </div>
+        <div class="subtle"><span id="progressText">0%</span> • <span id="statusText">idle</span></div>
       </div>
       <div class="progress glass" style="border-radius:999px;">
         <div id="progressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
@@ -291,9 +245,8 @@
       </div>
     </div>
 
-    <!-- Footer -->
     <div class="text-center mt-5 subtle small">
-      © FF Tech • WebSocket auditing • PDF export via <code>POST /api/audit/pdf</code>
+      © FF Tech • Progress via <code>/ws</code> • Audit via <code>POST /api/audit/run</code>
     </div>
 
   </div>
@@ -309,10 +262,6 @@
     let lastResult = null;
     let chart = null;
 
-    // Track whether an audit is in progress + whether we rendered results
-    let auditInProgress = false;
-    let didRender = false;
-
     const el = (id) => document.getElementById(id);
 
     // -----------------------------
@@ -327,7 +276,6 @@
       const saved = localStorage.getItem(themeKey);
       if (saved) setTheme(saved);
     })();
-
     el("themeToggle").addEventListener("click", () => {
       const current = document.documentElement.getAttribute("data-bs-theme") || "dark";
       setTheme(current === "dark" ? "light" : "dark");
@@ -371,52 +319,66 @@
       const proto = loc.protocol === "https:" ? "wss:" : "ws:";
       return `${proto}//${loc.host}/ws`;
     }
-
     function setWsStatus(connected) {
       el("wsStatus").textContent = connected ? "WS: Connected" : "WS: Disconnected";
       el("wsStatus").style.opacity = connected ? "1" : "0.75";
     }
 
-    // Extract runner result from any server message shape
-    function extractResult(msg) {
-      // Common shapes:
-      // 1) {status, progress, result: {...}}
-      // 2) {status, progress, payload: {...runner_result...}}
-      // 3) {status, progress, payload: {result: {...}}}
-      // 4) {payload: {...}} during streaming
+    function escapeHtml(str) {
+      return String(str || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
 
-      if (!msg || typeof msg !== "object") return null;
+    // -----------------------------
+    // WS message handler: matches YOUR backend broadcast shape
+    // {type:"progress", message:"...", percent: 10, payload: {...}}
+    // -----------------------------
+    function handleWsMessage(msg) {
+      if (!msg || typeof msg !== "object") return;
 
-      if (msg.result && msg.result.audited_url) return msg.result;
+      if (msg.type === "progress") {
+        setProgress(msg.percent ?? 0, msg.message ?? "working");
 
-      if (msg.payload) {
-        // payload might be the result directly
-        if (msg.payload.audited_url) return msg.payload;
-        // or payload contains result
-        if (msg.payload.result && msg.payload.result.audited_url) return msg.payload.result;
+        // Sometimes runner sends final result inside payload at status "completed"
+        if (msg.payload && msg.payload.audited_url) {
+          renderResult(msg.payload);
+          showAlert("Audit completed ✅", "success");
+        }
+
+        // If runner sends an error payload
+        if (msg.payload && msg.payload.error) {
+          showAlert(`Audit failed: <b>${escapeHtml(msg.payload.error)}</b>`, "danger", true);
+        }
       }
-
-      // Sometimes server may send completed with payload only
-      if (msg.audited_url) return msg;
-
-      return null;
     }
 
-    function resetUIForRun() {
-      lastResult = null;
-      didRender = false;
-      auditInProgress = true;
+    function ensureWsConnected() {
+      // Keep a single WS connection
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-      el("pdfBtn").disabled = true;
-
-      el("resultsArea").style.display = "none";
-      el("cardsArea").style.display = "none";
-      el("dynamicArea").style.display = "none";
-
-      setProgress(1, "starting");
-      showAlert("Audit started… Please wait.", "info");
+      ws = new WebSocket(wsUrl());
+      ws.onopen = () => setWsStatus(true);
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          handleWsMessage(msg);
+        } catch (e) {
+          console.error("WS parse error", e);
+        }
+      };
+      ws.onclose = () => setWsStatus(false);
+      ws.onerror = () => setWsStatus(false);
     }
 
+    // -----------------------------
+    // Start Audit:
+    // 1) connect WS for progress
+    // 2) call REST /api/audit/run to run audit and get final result
+    // -----------------------------
     async function startAudit() {
       const url = el("urlInput").value.trim();
       if (!url) {
@@ -424,81 +386,25 @@
         return;
       }
 
-      resetUIForRun();
+      // Reset UI
+      lastResult = null;
+      el("pdfBtn").disabled = true;
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
 
-      // Close old WS if any
-      try { if (ws && ws.readyState === WebSocket.OPEN) ws.close(1000, "New audit started"); } catch(e) {}
+      setProgress(1, "starting");
+      showAlert("Audit started… Please wait.", "info");
 
-      // Open WS
-      ws = new WebSocket(wsUrl());
+      // Connect to WS (for progress)
+      ensureWsConnected();
 
-      ws.onopen = () => {
-        setWsStatus(true);
-        ws.send(JSON.stringify({ url }));
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          const progress = msg.progress ?? 0;
-          const status = msg.status ?? "working";
-          setProgress(progress, status);
-
-          // If server streams partial payloads, we can ignore until result exists
-          const result = extractResult(msg);
-
-          if (status === "completed") {
-            if (result) {
-              renderResult(result);
-              didRender = true;
-              auditInProgress = false;
-              showAlert("Audit completed ✅", "success");
-            } else {
-              // Completed but no result parsed -> fallback
-              showAlert("Audit completed but result payload not detected. Falling back to REST…", "warning");
-              fallbackRestAudit(url);
-            }
-          }
-
-          if (status === "error") {
-            auditInProgress = false;
-            const err = msg.error || (msg.payload && msg.payload.error) || "Unknown error";
-            showAlert(`Audit failed: <b>${escapeHtml(err)}</b>`, "danger", true);
-          }
-        } catch (e) {
-          console.error("WS parse error", e);
-          showAlert("WebSocket message parse failed. Falling back to REST…", "warning");
-          fallbackRestAudit(el("urlInput").value.trim());
-        }
-      };
-
-      ws.onclose = () => {
-        setWsStatus(false);
-        // If it closed before we rendered a result, fallback to REST once
-        if (auditInProgress && !didRender) {
-          showAlert("WebSocket closed early. Falling back to REST…", "warning");
-          fallbackRestAudit(el("urlInput").value.trim());
-        }
-      };
-
-      ws.onerror = () => {
-        setWsStatus(false);
-        showAlert("WebSocket error. Falling back to REST…", "warning");
-        fallbackRestAudit(el("urlInput").value.trim());
-      };
-    }
-
-    // REST fallback in case WS closes too fast / proxy issues
-    let restFallbackInFlight = false;
-    async function fallbackRestAudit(url) {
-      if (restFallbackInFlight) return;
-      restFallbackInFlight = true;
-
+      // Trigger audit via REST (THIS is required by your backend)
       try {
-        setProgress(30, "rest_fallback");
+        setProgress(5, "requesting");
         const res = await fetch("/api/audit/run", {
           method: "POST",
-          headers: {"Content-Type":"application/json"},
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url })
         });
 
@@ -507,17 +413,22 @@
           throw new Error(txt || `HTTP ${res.status}`);
         }
 
-        const data = await res.json();
-        renderResult(data);
-        didRender = true;
-        auditInProgress = false;
-        showAlert("Audit completed via REST ✅", "success");
+        const j = await res.json();
+
+        // Your backend returns: { ok: true, data: audit_result }
+        const result = j.data || j.result || j.payload || j;
+
+        if (result && result.audited_url) {
+          renderResult(result);
+          showAlert("Audit completed ✅", "success");
+        } else {
+          showAlert("Audit finished but result format was unexpected.", "warning", true);
+          console.warn("Unexpected response:", j);
+        }
       } catch (e) {
         console.error(e);
-        auditInProgress = false;
-        showAlert(`REST fallback failed: <b>${escapeHtml(e.message || String(e))}</b>`, "danger", true);
-      } finally {
-        restFallbackInFlight = false;
+        showAlert(`Audit request failed: <b>${escapeHtml(e.message || String(e))}</b>`, "danger", true);
+        setProgress(0, "error");
       }
     }
 
@@ -527,15 +438,12 @@
     function renderResult(result) {
       lastResult = result;
 
-      // Show sections
       el("resultsArea").style.display = "";
       el("cardsArea").style.display = "";
       el("dynamicArea").style.display = "";
 
-      // Timestamp
       el("lastRunAt").textContent = new Date().toLocaleString();
 
-      // Overall score ring
       const score = parseInt(result.overall_score || 0);
       const deg = Math.max(0, Math.min(360, (score / 100) * 360));
       el("scoreRing").style.setProperty("--deg", `${deg}deg`);
@@ -543,7 +451,6 @@
       el("gradeText").textContent = result.grade || "-";
       el("auditedUrl").textContent = `Audited: ${result.audited_url || "-"}`;
 
-      // Breakdown scores
       const breakdown = result.breakdown || {};
       const seo = breakdown.seo?.score ?? 0;
       const perf = breakdown.performance?.score ?? 0;
@@ -555,7 +462,6 @@
       el("linksScore").textContent = links;
       el("secScore").textContent = sec;
 
-      // Chart.js
       const ctx = el("breakdownChart").getContext("2d");
       const data = {
         labels: ["SEO", "Performance", "Links", "Security"],
@@ -574,22 +480,14 @@
         data,
         options: {
           responsive: true,
-          plugins: {
-            legend: { display: false },
-            tooltip: { enabled: true }
-          },
+          plugins: { legend: { display: false } },
           scales: {
-            y: {
-              beginAtZero: true,
-              max: 100,
-              grid: { color: "rgba(255,255,255,0.10)" }
-            },
+            y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,0.10)" } },
             x: { grid: { display: false } }
           }
         }
       });
 
-      // Dynamic cards
       const dyn = result.dynamic || {};
       const cards = dyn.cards || [];
       const kv = dyn.kv || [];
@@ -604,7 +502,6 @@
         cardsWrap.appendChild(div);
       }
 
-      // KV table
       const kvBody = el("kvBody");
       kvBody.innerHTML = "";
       for (const item of kv) {
@@ -614,98 +511,23 @@
         kvBody.appendChild(tr);
       }
 
-      // enable PDF
       el("pdfBtn").disabled = false;
-
-      // final progress
       setProgress(100, "completed");
     }
 
-    function escapeHtml(str) {
-      return String(str || "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
     // -----------------------------
-    // PDF Download
+    // PDF: (You haven't implemented /api/audit/pdf in your main.py)
+    // Keep button disabled or implement backend route later.
     // -----------------------------
     async function downloadPdf() {
-      const url = el("urlInput").value.trim();
-      if (!url) {
-        showAlert("Please enter a URL.", "warning");
-        return;
-      }
-
-      el("pdfBtn").disabled = true;
-      el("pdfBtn").innerText = "Generating PDF…";
-
-      try {
-        const payload = {
-          url,
-          client_name: "",
-          brand_name: "",
-          report_title: "",
-          website_name: "",
-          logo_path: ""
-        };
-
-        const res = await fetch("/api/audit/pdf", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-
-        const contentType = res.headers.get("content-type") || "";
-        if (!res.ok) {
-          let detail = `HTTP ${res.status}`;
-          if (contentType.includes("application/json")) {
-            const j = await res.json();
-            detail = j.detail || JSON.stringify(j);
-          } else {
-            detail = await res.text();
-          }
-          throw new Error(detail);
-        }
-
-        const blob = await res.blob();
-
-        const cd = res.headers.get("content-disposition") || "";
-        let filename = "audit_report.pdf";
-        const match = cd.match(/filename="?([^"]+)"?/i);
-        if (match && match[1]) filename = match[1];
-
-        const link = document.createElement("a");
-        const objectUrl = URL.createObjectURL(blob);
-        link.href = objectUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(objectUrl);
-
-        showAlert("PDF generated and downloaded successfully ✅", "success");
-
-      } catch (e) {
-        console.error(e);
-        showAlert(`Failed to generate PDF: <b>${escapeHtml(e.message || String(e))}</b>`, "danger", true);
-      } finally {
-        el("pdfBtn").disabled = !lastResult;
-        el("pdfBtn").innerText = "⬇ Download Professional PDF Report";
-      }
+      showAlert("PDF endpoint not implemented in current backend (main.py).", "warning", true);
     }
 
-    // -----------------------------
-    // Wire buttons
-    // -----------------------------
     el("startBtn").addEventListener("click", startAudit);
     el("pdfBtn").addEventListener("click", downloadPdf);
 
-    // Auto-connect WS status display
-    setWsStatus(false);
+    // Connect WS once for progress updates
+    ensureWsConnected();
   </script>
 </body>
 </html>
