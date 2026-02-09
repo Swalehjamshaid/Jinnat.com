@@ -1,115 +1,68 @@
-fastapi
-uvicorn
-# add your other deps here, e.g.:
-# jinja2
-# whatever is in app.audit.*
-
 # =========================================================
-# FF Tech Website Audit SaaS – requirements.txt (COMPREHENSIVE)
-# Last reviewed: 31 Jan 2026
-# Target: FastAPI backend on Railway
-#
-# Includes:
-# - Core API + WebSockets
-# - HTML parsing and audit checks
-# - PDF Export (ReportLab + WeasyPrint world-class option)
-# - Optional: PPTX/XLSX, screenshots, DB, caching, QA tools (commented)
+# FF Tech Website Audit SaaS – requirements.txt (Railway-safe)
+# Updated: 09 Feb 2026
 # =========================================================
 
-# ────────────────────────────────────────────────
-# Core Web Framework & Server
-# ────────────────────────────────────────────────
+# -------------------------
+# Core API + Server
+# -------------------------
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 gunicorn==23.0.0
+
+# Templates + form uploads (if you use them)
 jinja2==3.1.5
 python-multipart==0.0.20
+
+# WebSockets (FastAPI/Starlette uses websockets underneath)
 websockets==14.1
 
-# ────────────────────────────────────────────────
-# JSON Performance
-# ────────────────────────────────────────────────
-orjson==3.10.15
-ujson==5.10.0
-
-# ────────────────────────────────────────────────
-# Data Validation & Settings
-# ────────────────────────────────────────────────
+# -------------------------
+# Validation & Settings
+# -------------------------
 pydantic==2.10.4
 pydantic-settings==2.7.0
 python-dotenv==1.0.1
 
-# ────────────────────────────────────────────────
-# HTTP Clients & Networking
-# ────────────────────────────────────────────────
-httpx==0.28.1
+# -------------------------
+# HTTP + Networking
+# -------------------------
 requests==2.32.3
+httpx==0.28.1
 urllib3==2.3.0
 certifi==2024.12.14
 
-# ────────────────────────────────────────────────
-# HTML Parsing & Content Analysis
-# ────────────────────────────────────────────────
+# -------------------------
+# HTML Parsing / Analysis
+# -------------------------
 beautifulsoup4==4.12.3
 lxml==5.3.0
 
-# ────────────────────────────────────────────────
-# PDF Export (Choose your engine in code)
-# ────────────────────────────────────────────────
+# -------------------------
+# JSON speedups (optional but fine)
+# -------------------------
+orjson==3.10.15
+ujson==5.10.0
 
-# 1) ReportLab (reliable, simplest deployment)
+# -------------------------
+# PDF Export (your code uses ReportLab)
+# -------------------------
 reportlab==4.2.5
 
-# 2) WeasyPrint (world-class HTML/CSS PDF; supports pdf_variant + pdf_tags)
-# NOTE: Requires OS libs on Railway/Docker (Cairo/Pango/etc.) in addition to pip.
-weasyprint==63.0  # supports PDF variants via pdf_variant and tagging via pdf_tags in options [1](https://doc.courtbouillon.org/weasyprint/stable/api_reference.html)[2](https://deepwiki.com/Kozea/WeasyPrint/1-weasyprint-overview)
+# -------------------------
+# OPTIONAL: WeasyPrint (requires OS libs on Railway)
+# If you enable this, you'll need a Dockerfile / apt packages for cairo/pango.
+# -------------------------
+# weasyprint==63.0
 
-# Helpful for logos/QR in PDFs (optional)
+# -------------------------
+# OPTIONAL: Images/QR in PDF
+# -------------------------
 # pillow==10.4.0
 # qrcode==7.4.2
 
-# ────────────────────────────────────────────────
-# Optional – Exports (PNG/PPTX/XLSX)
-# ────────────────────────────────────────────────
+# -------------------------
+# OPTIONAL: Exports (PPTX/XLSX)
+# -------------------------
 # python-pptx==1.0.2
 # openpyxl==3.1.5
-
-# ────────────────────────────────────────────────
-# Optional – Advanced scraping / JS rendering
-# ────────────────────────────────────────────────
-# playwright==1.49.1
-# pillow==10.4.0
-
-# ────────────────────────────────────────────────
-# Optional – Database (user accounts, history, saved audits)
-# ────────────────────────────────────────────────
-# sqlalchemy==2.0.36
-# psycopg2-binary==2.9.10
-# asyncpg==0.30.0
-# alembic==1.14.1
-
-# ────────────────────────────────────────────────
-# Optional – Caching / Background Jobs
-# ────────────────────────────────────────────────
-# redis==5.2.1
-# rq==2.1.0
-
-# ────────────────────────────────────────────────
-# Optional – Logging/Observability
-# ────────────────────────────────────────────────
-# python-json-logger==2.0.7
-
-# ────────────────────────────────────────────────
-# Dev & QA (keep commented in production)
-# ────────────────────────────────────────────────
-# pytest==8.3.4
-# pytest-asyncio==0.25.2
-# ruff==0.8.4
-# black==24.10.0
-# mypy==1.14.0
-fastapi==0.111.1
-uvicorn[standard]==0.23.2
-httpx==0.26.0
-pydantic==2.4.0
-certifi
-
