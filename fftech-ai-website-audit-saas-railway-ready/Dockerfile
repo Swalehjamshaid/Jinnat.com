@@ -28,9 +28,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Ensure start.sh is executable
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-EXPOSE 8080
+# Optional: expose default port (Railway overrides this)
+EXPOSE 8000
 
+# Run the app (reads $PORT inside main.py)
 CMD ["/start.sh"]
