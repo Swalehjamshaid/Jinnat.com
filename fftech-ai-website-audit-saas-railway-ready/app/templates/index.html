@@ -55,9 +55,7 @@
       box-shadow: 0 12px 30px rgba(14,165,233,0.22);
     }
 
-    .subtle {
-      color: rgba(255,255,255,0.70);
-    }
+    .subtle { color: rgba(255,255,255,0.70); }
 
     .pill {
       border: 1px solid rgba(255,255,255,0.14);
@@ -66,13 +64,6 @@
       border-radius: 999px;
       font-size: 12px;
       color: rgba(255,255,255,0.78);
-    }
-
-    .metric {
-      font-size: 42px;
-      font-weight: 800;
-      line-height: 1;
-      letter-spacing: -0.5px;
     }
 
     .score-ring {
@@ -134,15 +125,12 @@
     .progress { height: 10px; }
     .progress-bar { transition: width .25s ease; }
 
-    .fade-in {
-      animation: fadeIn .35s ease both;
-    }
+    .fade-in { animation: fadeIn .35s ease both; }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(6px); }
       to   { opacity: 1; transform: translateY(0); }
     }
 
-    /* Light theme improvements */
     [data-bs-theme="light"] body {
       background:
         radial-gradient(1200px 600px at 30% 20%, rgba(14,165,233,0.22), transparent 55%),
@@ -210,7 +198,9 @@
       <!-- Progress -->
       <div class="d-flex align-items-center justify-content-between mb-2">
         <div class="fw-semibold">Progress</div>
-        <div class="subtle"><span id="progressText">0%</span> • <span id="statusText">idle</span></div>
+        <div class="subtle">
+          <span id="progressText">0%</span> • <span id="statusText">idle</span>
+        </div>
       </div>
       <div class="progress glass" style="border-radius:999px;">
         <div id="progressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
@@ -319,6 +309,10 @@
     let lastResult = null;
     let chart = null;
 
+    // Track whether an audit is in progress + whether we rendered results
+    let auditInProgress = false;
+    let didRender = false;
+
     const el = (id) => document.getElementById(id);
 
     // -----------------------------
@@ -383,6 +377,46 @@
       el("wsStatus").style.opacity = connected ? "1" : "0.75";
     }
 
+    // Extract runner result from any server message shape
+    function extractResult(msg) {
+      // Common shapes:
+      // 1) {status, progress, result: {...}}
+      // 2) {status, progress, payload: {...runner_result...}}
+      // 3) {status, progress, payload: {result: {...}}}
+      // 4) {payload: {...}} during streaming
+
+      if (!msg || typeof msg !== "object") return null;
+
+      if (msg.result && msg.result.audited_url) return msg.result;
+
+      if (msg.payload) {
+        // payload might be the result directly
+        if (msg.payload.audited_url) return msg.payload;
+        // or payload contains result
+        if (msg.payload.result && msg.payload.result.audited_url) return msg.payload.result;
+      }
+
+      // Sometimes server may send completed with payload only
+      if (msg.audited_url) return msg;
+
+      return null;
+    }
+
+    function resetUIForRun() {
+      lastResult = null;
+      didRender = false;
+      auditInProgress = true;
+
+      el("pdfBtn").disabled = true;
+
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+
+      setProgress(1, "starting");
+      showAlert("Audit started… Please wait.", "info");
+    }
+
     async function startAudit() {
       const url = el("urlInput").value.trim();
       if (!url) {
@@ -390,19 +424,14 @@
         return;
       }
 
-      // Reset UI
-      lastResult = null;
-      el("pdfBtn").disabled = true;
-      el("resultsArea").style.display = "none";
-      el("cardsArea").style.display = "none";
-      el("dynamicArea").style.display = "none";
-      setProgress(1, "starting");
+      resetUIForRun();
 
       // Close old WS if any
-      try { if (ws) ws.close(); } catch(e) {}
+      try { if (ws && ws.readyState === WebSocket.OPEN) ws.close(1000, "New audit started"); } catch(e) {}
 
       // Open WS
       ws = new WebSocket(wsUrl());
+
       ws.onopen = () => {
         setWsStatus(true);
         ws.send(JSON.stringify({ url }));
@@ -415,35 +444,81 @@
           const status = msg.status ?? "working";
           setProgress(progress, status);
 
-          // When runner streams payload or result
+          // If server streams partial payloads, we can ignore until result exists
+          const result = extractResult(msg);
+
           if (status === "completed") {
-            // some servers send {result: ...}, others send {payload: ...}
-            const result = msg.result || (msg.payload && msg.payload.audited_url ? msg.payload : null) || msg.payload || null;
-            // if completed message only includes minimal, we already have it in payload
-            if (result && result.audited_url) {
+            if (result) {
               renderResult(result);
-            } else if (msg.payload && msg.payload.audited_url) {
-              renderResult(msg.payload);
+              didRender = true;
+              auditInProgress = false;
+              showAlert("Audit completed ✅", "success");
+            } else {
+              // Completed but no result parsed -> fallback
+              showAlert("Audit completed but result payload not detected. Falling back to REST…", "warning");
+              fallbackRestAudit(url);
             }
           }
 
           if (status === "error") {
+            auditInProgress = false;
             const err = msg.error || (msg.payload && msg.payload.error) || "Unknown error";
-            showAlert(`Audit failed: <b>${err}</b>`, "danger", true);
+            showAlert(`Audit failed: <b>${escapeHtml(err)}</b>`, "danger", true);
           }
         } catch (e) {
           console.error("WS parse error", e);
+          showAlert("WebSocket message parse failed. Falling back to REST…", "warning");
+          fallbackRestAudit(el("urlInput").value.trim());
         }
       };
 
       ws.onclose = () => {
         setWsStatus(false);
+        // If it closed before we rendered a result, fallback to REST once
+        if (auditInProgress && !didRender) {
+          showAlert("WebSocket closed early. Falling back to REST…", "warning");
+          fallbackRestAudit(el("urlInput").value.trim());
+        }
       };
 
       ws.onerror = () => {
         setWsStatus(false);
-        showAlert("WebSocket error. Falling back to REST may be required.", "warning");
+        showAlert("WebSocket error. Falling back to REST…", "warning");
+        fallbackRestAudit(el("urlInput").value.trim());
       };
+    }
+
+    // REST fallback in case WS closes too fast / proxy issues
+    let restFallbackInFlight = false;
+    async function fallbackRestAudit(url) {
+      if (restFallbackInFlight) return;
+      restFallbackInFlight = true;
+
+      try {
+        setProgress(30, "rest_fallback");
+        const res = await fetch("/api/audit/run", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ url })
+        });
+
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        renderResult(data);
+        didRender = true;
+        auditInProgress = false;
+        showAlert("Audit completed via REST ✅", "success");
+      } catch (e) {
+        console.error(e);
+        auditInProgress = false;
+        showAlert(`REST fallback failed: <b>${escapeHtml(e.message || String(e))}</b>`, "danger", true);
+      } finally {
+        restFallbackInFlight = false;
+      }
     }
 
     // -----------------------------
@@ -569,15 +644,13 @@
       el("pdfBtn").innerText = "Generating PDF…";
 
       try {
-        // You can pass OPTIONAL fields; your main.py will accept them (safe)
         const payload = {
           url,
-          // Optional metadata fields:
-          client_name: "",      // fill if needed
-          brand_name: "",       // fill if needed
-          report_title: "",     // fill if needed
-          website_name: "",     // fill if needed
-          logo_path: ""         // fill if needed
+          client_name: "",
+          brand_name: "",
+          report_title: "",
+          website_name: "",
+          logo_path: ""
         };
 
         const res = await fetch("/api/audit/pdf", {
@@ -586,7 +659,6 @@
           body: JSON.stringify(payload)
         });
 
-        // If server returns JSON error, show it nicely
         const contentType = res.headers.get("content-type") || "";
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
@@ -599,16 +671,13 @@
           throw new Error(detail);
         }
 
-        // Successful: PDF bytes
         const blob = await res.blob();
 
-        // Try filename from header
         const cd = res.headers.get("content-disposition") || "";
         let filename = "audit_report.pdf";
         const match = cd.match(/filename="?([^"]+)"?/i);
         if (match && match[1]) filename = match[1];
 
-        // Download
         const link = document.createElement("a");
         const objectUrl = URL.createObjectURL(blob);
         link.href = objectUrl;
@@ -624,7 +693,7 @@
         console.error(e);
         showAlert(`Failed to generate PDF: <b>${escapeHtml(e.message || String(e))}</b>`, "danger", true);
       } finally {
-        el("pdfBtn").disabled = !lastResult; // enable only if audit exists
+        el("pdfBtn").disabled = !lastResult;
         el("pdfBtn").innerText = "⬇ Download Professional PDF Report";
       }
     }
@@ -637,7 +706,6 @@
 
     // Auto-connect WS status display
     setWsStatus(false);
-
   </script>
 </body>
 </html>
