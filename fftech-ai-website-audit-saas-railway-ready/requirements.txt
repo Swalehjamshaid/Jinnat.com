@@ -1,5 +1,6 @@
 # =========================================================
-# FF Tech Website Audit SaaS – requirements.txt (Railway-safe)
+# FF Tech Website Audit SaaS – requirements.txt
+# Railway / Docker / SSL-safe
 # Updated: 09 Feb 2026
 # =========================================================
 
@@ -29,13 +30,17 @@ pydantic-settings==2.7.0
 python-dotenv==1.0.1
 
 # -------------------------
-# HTTP Clients (Web Fetching)
-# + SSL FIX with Certifi (required for HTTPS errors)
+# HTTP Clients + SSL (CRITICAL SECTION)
 # -------------------------
 requests==2.32.3
 httpx==0.28.1
 urllib3==2.3.0
+
+# SSL certificate trust store (FIXES CERTIFICATE_VERIFY_FAILED)
 certifi==2024.12.14
+
+# Cryptography backend (important for modern TLS chains)
+cryptography==42.0.8
 
 # -------------------------
 # HTML Parsing / Analysis
@@ -44,29 +49,21 @@ beautifulsoup4==4.12.3
 lxml==5.3.0
 
 # -------------------------
-# JSON Performance (optional but safe)
+# JSON Performance
 # -------------------------
 orjson==3.10.15
 ujson==5.10.0
 
 # -------------------------
-# PDF Generation (your app uses ReportLab)
+# PDF Generation
 # -------------------------
 reportlab==4.2.5
 
 # -------------------------
-# OPTIONAL: WeasyPrint (skip unless you add OS libs)
-# -------------------------
-# weasyprint==63.0
-
-# -------------------------
-# OPTIONAL: Images / QR
+# OPTIONAL (Enable only if used)
 # -------------------------
 # pillow==10.4.0
 # qrcode==7.4.2
-
-# -------------------------
-# OPTIONAL: PPTX/XLSX Exports
-# -------------------------
 # python-pptx==1.0.2
 # openpyxl==3.1.5
+# weasyprint==63.0   # requires OS-level libs
