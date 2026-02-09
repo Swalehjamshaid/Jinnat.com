@@ -107,3 +107,9 @@ weasyprint==63.0  # supports PDF variants via pdf_variant and tagging via pdf_ta
 # ruff==0.8.4
 # black==24.10.0
 # mypy==1.14.0
+fastapi==0.111.1
+uvicorn[standard]==0.23.2
+httpx==0.26.0
+pydantic==2.4.0
+certifi
+
