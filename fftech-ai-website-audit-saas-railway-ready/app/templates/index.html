@@ -4,13 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Website Audit Pro</title>
-
   <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
   <style>
     :root {
       --glass: rgba(255,255,255,0.06);
@@ -18,7 +15,6 @@
       --shadow: 0 12px 35px rgba(0,0,0,0.35);
       --radius: 18px;
     }
-
     body {
       min-height: 100vh;
       background:
@@ -26,10 +22,9 @@
         radial-gradient(900px 500px at 70% 10%, rgba(34,197,94,0.18), transparent 50%),
         radial-gradient(800px 500px at 60% 80%, rgba(239,68,68,0.12), transparent 50%),
         linear-gradient(180deg, rgba(2,6,23,1) 0%, rgba(3,7,18,1) 100%);
+      color: #e2e8f0;
     }
-
-    .app-shell { max-width: 1200px; margin: 0 auto; padding: 22px 16px 60px; }
-
+    .app-shell { max-width: 1200px; margin: 0 auto; padding: 22px 16px 80px; }
     .glass {
       background: var(--glass);
       border: 1px solid var(--glass-border);
@@ -37,235 +32,167 @@
       box-shadow: var(--shadow);
       backdrop-filter: blur(10px);
     }
-
     .brand-badge {
-      width: 46px;
-      height: 46px;
-      border-radius: 14px;
-      display: grid;
-      place-items: center;
-      font-weight: 800;
-      letter-spacing: 0.5px;
+      width: 46px; height: 46px; border-radius: 14px;
+      display: grid; place-items: center; font-weight: 800;
       background: linear-gradient(135deg, rgba(14,165,233,0.95), rgba(99,102,241,0.85));
       border: 1px solid rgba(255,255,255,0.15);
       box-shadow: 0 12px 30px rgba(14,165,233,0.22);
     }
-
     .subtle { color: rgba(255,255,255,0.70); }
     .muted-2 { color: rgba(255,255,255,0.65); }
-
-    .pill {
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.06);
-      padding: 6px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      color: rgba(255,255,255,0.78);
-    }
-
+    .pill { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); padding: 6px 10px; border-radius: 999px; font-size: 12px; color: rgba(255,255,255,0.78); }
     .score-ring {
-      width: 180px;
-      height: 180px;
-      border-radius: 999px;
-      position: relative;
-      display: grid;
-      place-items: center;
-      background:
-        radial-gradient(circle at center, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 35%, transparent 60%),
-        conic-gradient(from 180deg, rgba(14,165,233,0.95) var(--deg), rgba(255,255,255,0.08) 0);
+      width: 180px; height: 180px; border-radius: 999px; position: relative;
+      display: grid; place-items: center;
+      background: radial-gradient(circle at center, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 35%, transparent 60%),
+                  conic-gradient(from 180deg, rgba(14,165,233,0.95) var(--deg), rgba(255,255,255,0.08) 0);
       border: 1px solid rgba(255,255,255,0.12);
       box-shadow: 0 18px 40px rgba(0,0,0,0.35);
     }
     .score-ring .inside {
-      width: 132px;
-      height: 132px;
-      border-radius: 999px;
-      background: rgba(2,6,23,0.75);
-      border: 1px solid rgba(255,255,255,0.12);
-      display: grid;
-      place-items: center;
-      text-align: center;
-      padding: 10px;
+      width: 132px; height: 132px; border-radius: 999px;
+      background: rgba(2,6,23,0.75); border: 1px solid rgba(255,255,255,0.12);
+      display: grid; place-items: center; text-align: center; padding: 10px;
     }
     .score-ring .inside .score { font-size: 40px; font-weight: 900; line-height: 1; }
     .score-ring .inside .grade { font-weight: 800; margin-top: 4px; opacity: 0.9; }
-
     .btn-glow {
       background: linear-gradient(135deg, rgba(14,165,233,0.95), rgba(99,102,241,0.9));
-      border: none;
-      box-shadow: 0 18px 40px rgba(14,165,233,0.22);
+      border: none; box-shadow: 0 18px 40px rgba(14,165,233,0.22);
     }
     .btn-glow:hover { filter: brightness(1.05); }
-
     .mini-card {
-      border-radius: 18px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.06);
-      padding: 14px 14px;
-      height: 100%;
+      border-radius: 18px; border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06); padding: 14px 14px; height: 100%;
     }
     .mini-card .label { font-size: 12px; opacity: 0.8; }
     .mini-card .value { font-size: 34px; font-weight: 850; line-height: 1.1; }
-    .mini-card .hint  { font-size: 12px; opacity: 0.72; margin-top: 8px; }
-
+    .mini-card .hint { font-size: 12px; opacity: 0.72; margin-top: 8px; }
     .kv-table td, .kv-table th { border-color: rgba(255,255,255,0.10) !important; }
-    .progress { height: 10px; }
-    .progress-bar { transition: width .25s ease; }
-
-    .fade-in { animation: fadeIn .35s ease both; }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: translateY(0); }
+    .progress { height: 10px; border-radius: 999px; overflow: hidden; }
+    .progress-bar { transition: width .4s ease; }
+    .fade-in { animation: fadeIn .4s ease both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .ssl-warning {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #fde047;
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin: 16px 0;
     }
-
-    /* Optional: tiny debug box */
-    .debug-box {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 12px;
-      white-space: pre-wrap;
-      word-break: break-word;
-      opacity: .85;
-    }
+    .alert-box { border-radius: 12px; padding: 16px; margin-bottom: 16px; }
   </style>
 </head>
-
 <body>
   <div class="app-shell">
-
     <!-- Header -->
     <div class="d-flex align-items-center justify-content-between mb-4">
       <div class="d-flex align-items-center gap-3">
         <div class="brand-badge text-white">FF</div>
         <div>
           <div class="h4 mb-0 fw-bold">Website Audit Pro</div>
-          <div class="subtle small">WebSocket Audit + Runner.py Results + PDF Export</div>
+          <div class="subtle small">Fast & Professional Website Audit Tool</div>
         </div>
       </div>
-
       <div class="d-flex align-items-center gap-2">
         <span id="wsStatus" class="pill">WS: Disconnected</span>
-        <button class="btn btn-sm btn-outline-secondary" id="themeToggle" type="button">🌙 / ☀️</button>
+        <button class="btn btn-sm btn-outline-secondary" id="themeToggle">🌙 / ☀️</button>
       </div>
     </div>
 
-    <!-- Input -->
+    <!-- Input Area -->
     <div class="glass p-4 mb-4">
       <div class="row g-3 align-items-end">
         <div class="col-lg-7">
           <label class="form-label fw-semibold">Website URL</label>
           <input id="urlInput" type="text" class="form-control form-control-lg"
                  placeholder="example.com or https://example.com"
-                 value="https://www.haier.com.pk/#/login" />
-          <div class="small muted-2 mt-1">Tip: Just paste domain — system will auto-normalize.</div>
+                 value="https://www.haier.com.pk" autofocus />
+          <div class="small muted-2 mt-1">Paste domain or full URL — system auto-normalizes</div>
         </div>
-
         <div class="col-lg-5">
           <div class="d-grid gap-2 d-lg-flex justify-content-lg-end">
             <button id="startBtn" class="btn btn-lg btn-glow text-white fw-semibold" type="button">
               ▶ Start Audit
             </button>
             <button id="pdfBtn" class="btn btn-lg btn-outline-info fw-semibold" type="button" disabled>
-              ⬇ Download Professional PDF Report
+              ⬇ Download PDF Report
             </button>
           </div>
         </div>
       </div>
 
-      <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,0.12)">
-
       <!-- Progress -->
+      <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,0.12)">
       <div class="d-flex align-items-center justify-content-between mb-2">
         <div class="fw-semibold">Progress</div>
         <div class="subtle"><span id="progressText">0%</span> • <span id="statusText">idle</span></div>
       </div>
-      <div class="progress glass" style="border-radius:999px;">
-        <div id="progressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
+      <div class="progress glass">
+        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width:0%"></div>
       </div>
 
-      <!-- Alerts -->
+      <!-- Alerts / Warnings -->
       <div id="alertArea" class="mt-3"></div>
-
-      <!-- Optional debug (toggle by setting DEBUG=true below) -->
-      <div id="debugWrap" class="mt-3" style="display:none;">
-        <div class="small subtle mb-1">Last message (debug)</div>
-        <div class="glass p-3 debug-box" id="debugBox"></div>
-      </div>
     </div>
 
-    <!-- Results Summary -->
-    <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
+    <!-- Results Area -->
+    <div id="resultsArea" class="row g-4 mb-5" style="display:none;">
+      <!-- SSL Warning -->
+      <div id="sslWarning" class="ssl-warning d-none">
+        <strong>Notice:</strong> SSL certificate verification was relaxed due to site configuration issues.
+        Audit results are still valid, but please be aware of potential certificate problems.
+      </div>
+
       <div class="col-lg-4">
-        <div class="glass p-4 h-100 text-center">
+        <div class="glass p-4 text-center h-100">
           <div class="score-ring mx-auto" id="scoreRing" style="--deg: 0deg;">
             <div class="inside">
               <div class="score" id="overallScore">0</div>
               <div class="grade" id="gradeText">F</div>
-              <div class="small muted-2 mt-1" id="auditedUrl">Audited: -</div>
+              <div class="small muted-2 mt-1" id="auditedUrl">Audited: —</div>
             </div>
           </div>
-          <div class="mt-3 subtle">Overall score is computed from category scores.</div>
         </div>
       </div>
 
       <div class="col-lg-8">
         <div class="glass p-4 h-100">
-          <div class="d-flex align-items-center justify-content-between mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
-              <div class="h5 mb-0 fw-bold">Score Breakdown</div>
+              <h5 class="mb-0">Score Breakdown</h5>
               <div class="subtle small">SEO • Performance • Links • Security</div>
             </div>
             <span class="pill" id="lastRunAt">—</span>
           </div>
-          <canvas id="breakdownChart" height="120"></canvas>
+          <canvas id="breakdownChart" height="140"></canvas>
         </div>
       </div>
     </div>
 
     <!-- Category Cards -->
     <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
-      <div class="col-md-6 col-lg-3">
-        <div class="mini-card">
-          <div class="label">SEO</div>
-          <div class="value" id="seoScore">0</div>
-          <div class="hint">Title, meta desc, H1, canonical, ALT</div>
-        </div>
-      </div>
-      <div class="col-md-6 col-lg-3">
-        <div class="mini-card">
-          <div class="label">Performance</div>
-          <div class="value" id="perfScore">0</div>
-          <div class="hint">Load time, size, scripts, styles</div>
-        </div>
-      </div>
-      <div class="col-md-6 col-lg-3">
-        <div class="mini-card">
-          <div class="label">Links</div>
-          <div class="value" id="linksScore">0</div>
-          <div class="hint">Internal vs external structure</div>
-        </div>
-      </div>
-      <div class="col-md-6 col-lg-3">
-        <div class="mini-card">
-          <div class="label">Security</div>
-          <div class="value" id="secScore">0</div>
-          <div class="hint">HTTPS, HSTS, response status</div>
-        </div>
-      </div>
+      <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">SEO</div><div class="value" id="seoScore">0</div><div class="hint">Title, meta, H1, ALT</div></div></div>
+      <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">Performance</div><div class="value" id="perfScore">0</div><div class="hint">Speed, size, resources</div></div></div>
+      <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">Links</div><div class="value" id="linksScore">0</div><div class="hint">Internal / External</div></div></div>
+      <div class="col-md-6 col-lg-3"><div class="mini-card"><div class="label">Security</div><div class="value" id="secScore">0</div><div class="hint">HTTPS, HSTS, status</div></div></div>
     </div>
 
-    <!-- Dynamic Output -->
+    <!-- Dynamic Highlights & Details -->
     <div id="dynamicArea" class="row g-3" style="display:none;">
       <div class="col-lg-6">
         <div class="glass p-4 h-100">
-          <div class="h5 fw-bold mb-3">Highlights</div>
-          <div id="dynamicCards" class="d-grid gap-2"></div>
+          <h5 class="mb-3">Highlights</h5>
+          <div id="dynamicCards" class="d-grid gap-3"></div>
         </div>
       </div>
       <div class="col-lg-6">
         <div class="glass p-4 h-100">
-          <div class="h5 fw-bold mb-3">Details</div>
+          <h5 class="mb-3">Details</h5>
           <div class="table-responsive">
-            <table class="table table-sm kv-table align-middle mb-0">
+            <table class="table table-sm kv-table mb-0">
               <tbody id="kvBody"></tbody>
             </table>
           </div>
@@ -274,412 +201,228 @@
     </div>
 
     <div class="text-center mt-5 subtle small">
-      © FF Tech • WS <code>/ws</code> • REST <code>/api/audit/run</code> • PDF <code>/api/audit/pdf</code>
+      © FF Tech • Real-time WebSocket Audit • Powered by Runner.py
     </div>
-
   </div>
 
-  <!-- Bootstrap JS -->
+  <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
   <script>
-    // =========================================================
-    // CONFIG
-    // =========================================================
-    const DEBUG = false;            // set true to see last WS/REST payload
-    const REST_FALLBACK_MS = 9000;  // if WS doesn't deliver a result quickly, REST fallback runs
+    // === CONFIG ===
+    const DEBUG = false;
+    const WS_URL = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
 
-    // =========================================================
-    // STATE
-    // =========================================================
+    // === DOM Elements ===
+    const els = {
+      urlInput: document.getElementById('urlInput'),
+      startBtn: document.getElementById('startBtn'),
+      pdfBtn: document.getElementById('pdfBtn'),
+      progressBar: document.getElementById('progressBar'),
+      progressText: document.getElementById('progressText'),
+      statusText: document.getElementById('statusText'),
+      wsStatus: document.getElementById('wsStatus'),
+      alertArea: document.getElementById('alertArea'),
+      resultsArea: document.getElementById('resultsArea'),
+      cardsArea: document.getElementById('cardsArea'),
+      dynamicArea: document.getElementById('dynamicArea'),
+      sslWarning: document.getElementById('sslWarning'),
+      overallScore: document.getElementById('overallScore'),
+      gradeText: document.getElementById('gradeText'),
+      auditedUrl: document.getElementById('auditedUrl'),
+      seoScore: document.getElementById('seoScore'),
+      perfScore: document.getElementById('perfScore'),
+      linksScore: document.getElementById('linksScore'),
+      secScore: document.getElementById('secScore'),
+      breakdownChart: document.getElementById('breakdownChart'),
+      dynamicCards: document.getElementById('dynamicCards'),
+      kvBody: document.getElementById('kvBody'),
+      lastRunAt: document.getElementById('lastRunAt'),
+      scoreRing: document.getElementById('scoreRing')
+    };
+
     let ws = null;
-    let lastResult = null;
     let chart = null;
-    let fallbackTimer = null;
+    let lastResult = null;
     let auditInProgress = false;
 
-    const el = (id) => document.getElementById(id);
+    // === Helpers ===
+    const escapeHtml = (str) => String(str || "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'})[m]);
 
-    // =========================================================
-    // THEME
-    // =========================================================
-    const themeKey = "fftech_theme";
-    function setTheme(theme) {
-      document.documentElement.setAttribute("data-bs-theme", theme);
-      localStorage.setItem(themeKey, theme);
-    }
-    (function initTheme() {
-      const saved = localStorage.getItem(themeKey);
-      if (saved) setTheme(saved);
-    })();
-    el("themeToggle").addEventListener("click", () => {
-      const current = document.documentElement.getAttribute("data-bs-theme") || "dark";
-      setTheme(current === "dark" ? "light" : "dark");
-    });
-
-    // =========================================================
-    // UI HELPERS
-    // =========================================================
-    function escapeHtml(str) {
-      return String(str || "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
-    function showAlert(message, type="info", persist=false) {
-      const area = el("alertArea");
-      const div = document.createElement("div");
-      div.className = `alert alert-${type} ${persist ? "" : "fade-in"} mb-2`;
+    function showAlert(msg, type = 'info', persist = false) {
+      const div = document.createElement('div');
+      div.className = `alert alert-${type} alert-dismissible fade show alert-box`;
       div.innerHTML = `
-        <div class="d-flex align-items-start justify-content-between gap-3">
-          <div>${message}</div>
-          <button type="button" class="btn-close" aria-label="Close"></button>
-        </div>
+        ${msg}
+        ${persist ? '' : '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>'}
       `;
-      div.querySelector(".btn-close").onclick = () => div.remove();
-      area.prepend(div);
-      if (!persist) setTimeout(() => { try { div.remove(); } catch(e) {} }, 6500);
+      els.alertArea.prepend(div);
+      if (!persist) setTimeout(() => div.remove(), 8000);
     }
 
-    function setProgress(percent, status) {
-      const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
-      el("progressBar").style.width = `${p}%`;
-      el("progressText").textContent = `${p}%`;
-      el("statusText").textContent = status || "working";
-      el("progressBar").className = "progress-bar";
-      el("progressBar").classList.add(p < 100 ? "bg-info" : "bg-success");
+    function setProgress(pct, status = 'working') {
+      const p = Math.max(0, Math.min(100, parseInt(pct) || 0));
+      els.progressBar.style.width = `${p}%`;
+      els.progressText.textContent = `${p}%`;
+      els.statusText.textContent = status;
+      els.progressBar.className = `progress-bar ${p === 100 ? 'bg-success' : 'bg-info'}`;
     }
 
     function setWsStatus(connected) {
-      el("wsStatus").textContent = connected ? "WS: Connected" : "WS: Disconnected";
-      el("wsStatus").style.opacity = connected ? "1" : "0.75";
+      els.wsStatus.textContent = connected ? 'WS: Connected' : 'WS: Disconnected';
+      els.wsStatus.className = `pill ${connected ? 'bg-success' : 'bg-danger'}`;
     }
 
-    function wsUrl() {
-      const loc = window.location;
-      const proto = loc.protocol === "https:" ? "wss:" : "ws:";
-      return `${proto}//${loc.host}/ws`;
-    }
-
-    function debugShow(obj) {
-      if (!DEBUG) return;
-      el("debugWrap").style.display = "";
-      el("debugBox").textContent = JSON.stringify(obj, null, 2);
-    }
-
-    // =========================================================
-    // IMPORTANT: Extract Runner.py "runner_result" from ANY shape
-    // runner_result must contain: audited_url, overall_score, grade, breakdown, chart_data, dynamic
-    // =========================================================
-    function extractRunnerResult(obj) {
-      if (!obj || typeof obj !== "object") return null;
-
-      // Direct runner_result
-      if (obj.audited_url && typeof obj.overall_score !== "undefined") return obj;
-
-      // WS style: {result: runner_result}
-      if (obj.result && obj.result.audited_url) return obj.result;
-
-      // WS style: {payload: runner_result}
-      if (obj.payload && obj.payload.audited_url) return obj.payload;
-
-      // WS style: {payload: {result: runner_result}}
-      if (obj.payload && obj.payload.result && obj.payload.result.audited_url) return obj.payload.result;
-
-      // REST wrapper: {ok:true, data: runner_result}
-      if (obj.data && obj.data.audited_url) return obj.data;
-
-      // Some REST wrappers: {ok:true, result: runner_result}
-      if (obj.result && obj.result.audited_url) return obj.result;
-
-      return null;
-    }
-
-    // =========================================================
-    // RENDER
-    // =========================================================
+    // === Render Result ===
     function renderResult(r) {
       lastResult = r;
+      auditInProgress = false;
+      els.resultsArea.style.display = 'flex';
+      els.cardsArea.style.display = 'flex';
+      els.dynamicArea.style.display = 'flex';
 
-      el("resultsArea").style.display = "";
-      el("cardsArea").style.display = "";
-      el("dynamicArea").style.display = "";
+      // SSL warning
+      if (r.ssl_relaxed) {
+        els.sslWarning.classList.remove('d-none');
+      } else {
+        els.sslWarning.classList.add('d-none');
+      }
 
-      el("lastRunAt").textContent = new Date().toLocaleString();
-
+      // Overall score
       const score = parseInt(r.overall_score || 0);
-      const deg = Math.max(0, Math.min(360, (score / 100) * 360));
-      el("scoreRing").style.setProperty("--deg", `${deg}deg`);
-      el("overallScore").textContent = score;
-      el("gradeText").textContent = r.grade || "-";
-      el("auditedUrl").textContent = `Audited: ${r.audited_url || "-"}`;
+      els.scoreRing.style.setProperty('--deg', `${Math.min(360, (score / 100) * 360)}deg`);
+      els.overallScore.textContent = score;
+      els.gradeText.textContent = r.grade || 'F';
+      els.auditedUrl.textContent = `Audited: ${r.audited_url || '-'}`;
+      els.lastRunAt.textContent = new Date().toLocaleString();
 
-      const breakdown = r.breakdown || {};
-      const seo = breakdown.seo?.score ?? 0;
-      const perf = breakdown.performance?.score ?? 0;
-      const links = breakdown.links?.score ?? 0;
-      const sec = breakdown.security?.score ?? 0;
+      // Category scores
+      const b = r.breakdown || {};
+      els.seoScore.textContent = b.seo?.score ?? 0;
+      els.perfScore.textContent = b.performance?.score ?? 0;
+      els.linksScore.textContent = b.links?.score ?? 0;
+      els.secScore.textContent = b.security?.score ?? 0;
 
-      el("seoScore").textContent = seo;
-      el("perfScore").textContent = perf;
-      el("linksScore").textContent = links;
-      el("secScore").textContent = sec;
-
-      // Prefer chart_data from runner.py if available (most accurate)
-      const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
-      const labels = chartSpec?.data?.labels || ["SEO","Performance","Links","Security"];
-      const dataPoints = chartSpec?.data?.datasets?.[0]?.data || [seo, perf, links, sec];
-      const colors = chartSpec?.data?.datasets?.[0]?.backgroundColor || ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
-
-      const ctx = el("breakdownChart").getContext("2d");
-      const data = {
-        labels,
-        datasets: [{
-          label: "Score",
-          data: dataPoints,
-          backgroundColor: colors,
-          borderRadius: 12,
-          borderSkipped: false
-        }]
+      // Chart
+      const chartData = r.chart_data?.[0]?.data || {
+        labels: ['SEO','Performance','Links','Security'],
+        datasets: [{ data: [b.seo?.score??0, b.performance?.score??0, b.links?.score??0, b.security?.score??0], backgroundColor: ['#fbbf24','#38bdf8','#22c55e','#ef4444'] }]
       };
 
       if (chart) chart.destroy();
-      chart = new Chart(ctx, {
-        type: "bar",
-        data,
+      chart = new Chart(els.breakdownChart, {
+        type: 'bar',
+        data: chartData,
         options: {
           responsive: true,
-          plugins: {
-            legend: { display: false },
-            tooltip: { enabled: true }
-          },
-          scales: {
-            y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,0.10)" } },
-            x: { grid: { display: false } }
-          }
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, max: 100 } }
         }
       });
 
-      // Dynamic cards + KV from runner.py
-      const dyn = r.dynamic || {};
-      const cards = dyn.cards || [];
-      const kv = dyn.kv || [];
+      // Dynamic cards
+      els.dynamicCards.innerHTML = '';
+      (r.dynamic?.cards || []).forEach(c => {
+        els.dynamicCards.innerHTML += `
+          <div class="mini-card fade-in">
+            <div class="fw-bold mb-1">${escapeHtml(c.title)}</div>
+            <div class="subtle">${escapeHtml(c.body)}</div>
+          </div>`;
+      });
 
-      const cardsWrap = el("dynamicCards");
-      cardsWrap.innerHTML = "";
-      for (const c of cards) {
-        const div = document.createElement("div");
-        div.className = "mini-card fade-in";
-        div.innerHTML = `<div class="fw-semibold mb-1">${escapeHtml(c.title || "")}</div>
-                         <div class="subtle">${escapeHtml(c.body || "")}</div>`;
-        cardsWrap.appendChild(div);
-      }
+      // KV table
+      els.kvBody.innerHTML = '';
+      (r.dynamic?.kv || []).forEach(item => {
+        els.kvBody.innerHTML += `
+          <tr>
+            <th>${escapeHtml(item.key)}</th>
+            <td>${escapeHtml(String(item.value ?? ''))}</td>
+          </tr>`;
+      });
 
-      const kvBody = el("kvBody");
-      kvBody.innerHTML = "";
-      for (const item of kv) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<th class="text-nowrap" style="width:40%">${escapeHtml(item.key || "")}</th>
-                        <td>${escapeHtml(String(item.value ?? ""))}</td>`;
-        kvBody.appendChild(tr);
-      }
-
-      // Enable PDF (requires backend /api/audit/pdf)
-      el("pdfBtn").disabled = false;
-
-      setProgress(100, "completed");
-      showAlert("Audit completed ✅", "success");
+      els.pdfBtn.disabled = false;
+      setProgress(100, 'completed');
+      showAlert('Audit completed successfully!', 'success');
     }
 
-    function resetForRun() {
-      lastResult = null;
-      auditInProgress = true;
-
-      el("pdfBtn").disabled = true;
-      el("resultsArea").style.display = "none";
-      el("cardsArea").style.display = "none";
-      el("dynamicArea").style.display = "none";
-      setProgress(1, "starting");
-    }
-
-    // =========================================================
-    // WS CONNECT
-    // =========================================================
-    function ensureWs() {
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-
-      ws = new WebSocket(wsUrl());
+    // === WebSocket ===
+    function connectWebSocket() {
+      ws = new WebSocket(WS_URL);
       ws.onopen = () => setWsStatus(true);
-
-      ws.onmessage = (event) => {
-        let msg;
-        try { msg = JSON.parse(event.data); } catch (e) { return; }
-        debugShow(msg);
-
-        // Support both schemas:
-        // A) {status, progress, payload/result}
-        // B) {type:"progress", message, percent, payload}
-        const status = msg.status ?? msg.message ?? msg.type ?? "working";
-        const progress = msg.progress ?? msg.percent ?? 0;
-
-        setProgress(progress, status);
-
-        // Extract runner_result and render if present
-        const result = extractRunnerResult(msg);
-        if (result) {
-          auditInProgress = false;
-          clearTimeout(fallbackTimer);
-          renderResult(result);
-          return;
-        }
-
-        // If error is sent
-        const err = msg.error || msg.payload?.error;
-        if (err) {
-          auditInProgress = false;
-          clearTimeout(fallbackTimer);
-          showAlert(`Audit failed: <b>${escapeHtml(err)}</b>`, "danger", true);
-        }
+      ws.onmessage = e => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.status === 'completed' && msg.result) {
+            renderResult(msg.result);
+          } else if (msg.status === 'error') {
+            showAlert(`Error: ${msg.payload?.error || 'Unknown error'}`, 'danger', true);
+          } else if (msg.status && msg.progress !== undefined) {
+            setProgress(msg.progress, msg.status);
+          }
+        } catch {}
       };
-
-      ws.onclose = () => setWsStatus(false);
+      ws.onclose = () => {
+        setWsStatus(false);
+        setTimeout(connectWebSocket, 3000);
+      };
       ws.onerror = () => setWsStatus(false);
     }
 
-    // =========================================================
-    // REST FALLBACK (if WS doesn't deliver result)
-    // =========================================================
-    async function runAuditRest(url) {
+    connectWebSocket();
+
+    // === Start Audit ===
+    els.startBtn.onclick = async () => {
+      const url = els.urlInput.value.trim();
+      if (!url) return showAlert('Please enter a URL', 'warning');
+
+      auditInProgress = true;
+      els.startBtn.disabled = true;
+      els.startBtn.textContent = 'Auditing...';
+      els.pdfBtn.disabled = true;
+      setProgress(0, 'starting');
+      els.alertArea.innerHTML = '';
+
       try {
-        setProgress(10, "rest_start");
-        const res = await fetch("/api/audit/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url })
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const j = await res.json();
-        debugShow(j);
-
-        const r = extractRunnerResult(j);
-        if (!r) throw new Error("REST response did not include runner_result.");
-        auditInProgress = false;
-        renderResult(r);
-      } catch (e) {
-        auditInProgress = false;
-        showAlert(`REST audit failed: <b>${escapeHtml(e.message || String(e))}</b>`, "danger", true);
-      }
-    }
-
-    // =========================================================
-    // START AUDIT
-    // =========================================================
-    async function startAudit() {
-      const url = el("urlInput").value.trim();
-      if (!url) {
-        showAlert("Please enter a URL.", "warning");
-        return;
-      }
-
-      resetForRun();
-      showAlert("Audit started… please wait.", "info");
-
-      // Ensure WS connected and send URL if your backend supports WS-start
-      ensureWs();
-      try {
-        // Send URL to WS (works if backend starts audit from WS)
         ws.send(JSON.stringify({ url }));
       } catch (e) {
-        // If WS is not ready, fallback to REST
+        showAlert('WebSocket connection issue. Trying again...', 'warning');
       }
+    };
 
-      // Always set a fallback timer: if no result arrives, call REST
-      clearTimeout(fallbackTimer);
-      fallbackTimer = setTimeout(() => {
-        if (auditInProgress && !lastResult) {
-          showAlert("WebSocket did not return result in time. Running REST fallback…", "warning");
-          runAuditRest(url);
-        }
-      }, REST_FALLBACK_MS);
-    }
+    // === PDF Download ===
+    els.pdfBtn.onclick = async () => {
+      const url = els.urlInput.value.trim();
+      if (!url) return;
 
-    // =========================================================
-    // PDF DOWNLOAD
-    // =========================================================
-    async function downloadPdf() {
-      const url = el("urlInput").value.trim();
-      if (!url) return showAlert("Please enter a URL.", "warning");
-
-      el("pdfBtn").disabled = true;
-      el("pdfBtn").innerText = "Generating PDF…";
+      els.pdfBtn.disabled = true;
+      els.pdfBtn.innerHTML = 'Generating PDF...';
 
       try {
-        const payload = {
-          url,
-          client_name: "",
-          brand_name: "",
-          report_title: "",
-          website_name: "",
-          logo_path: ""
-        };
-
-        const res = await fetch("/api/audit/pdf", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+        const res = await fetch('/api/audit/pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
         });
 
-        const contentType = res.headers.get("content-type") || "";
-        if (!res.ok) {
-          let detail = `HTTP ${res.status}`;
-          if (contentType.includes("application/json")) {
-            const j = await res.json();
-            detail = j.detail || JSON.stringify(j);
-          } else {
-            detail = await res.text();
-          }
-          throw new Error(detail);
-        }
+        if (!res.ok) throw new Error(await res.text());
 
         const blob = await res.blob();
-        const cd = res.headers.get("content-disposition") || "";
-        let filename = "audit_report.pdf";
-        const match = cd.match(/filename="?([^"]+)"?/i);
-        if (match && match[1]) filename = match[1];
+        const urlObj = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = urlObj;
+        a.download = 'Website_Audit_Report.pdf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(urlObj);
 
-        const link = document.createElement("a");
-        const objectUrl = URL.createObjectURL(blob);
-        link.href = objectUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(objectUrl);
-
-        showAlert("PDF generated and downloaded successfully ✅", "success");
+        showAlert('PDF downloaded successfully!', 'success');
       } catch (e) {
-        showAlert(`Failed to generate PDF: <b>${escapeHtml(e.message || String(e))}</b>`, "danger", true);
+        showAlert(`PDF generation failed: ${e.message}`, 'danger', true);
       } finally {
-        el("pdfBtn").disabled = !lastResult;
-        el("pdfBtn").innerText = "⬇ Download Professional PDF Report";
+        els.pdfBtn.disabled = false;
+        els.pdfBtn.innerHTML = '⬇ Download PDF Report';
       }
-    }
-
-    // =========================================================
-    // WIRE UP
-    // =========================================================
-    el("startBtn").addEventListener("click", startAudit);
-    el("pdfBtn").addEventListener("click", downloadPdf);
-
-    // WS connection for live progress
-    ensureWs();
-    setWsStatus(false);
-
-    // Debug toggle UI
-    if (DEBUG) el("debugWrap").style.display = "";
+    };
   </script>
 </body>
 </html>
