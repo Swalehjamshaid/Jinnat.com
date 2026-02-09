@@ -1,3 +1,24 @@
+# --- SSL & Security Fixes ---
+certifi==2026.1.30
+cryptography==44.0.0
+pyOpenSSL==24.3.0
+
+# --- High-Performance Networking ---
+# Use httpx for the audit engine (faster/supports HTTP/2)
+httpx[http2]==0.28.1 
+requests==2.32.3
+urllib3==2.3.0
+
+# --- Audit & Parsing ---
+beautifulsoup4==4.13.3
+lxml==5.3.1
+
+# --- Deployment & API (Railway Optimized) ---
+fastapi==0.115.8
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+python-dotenv==1.0.1
+
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt (Railway-safe)
 # Updated: 09 Feb 2026
