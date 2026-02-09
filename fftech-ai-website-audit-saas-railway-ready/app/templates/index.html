@@ -80,7 +80,8 @@
       padding: 12px 16px;
       margin: 16px 0;
     }
-    .alert-box { border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .alert-box { border-radius: 12px; padding: 16px; margin-bottom: 16px; font-weight: 500; }
+    .error-box { background: rgba(220, 53, 69, 0.2); border: 1px solid rgba(220, 53, 69, 0.6); color: #ffcccc; }
   </style>
 </head>
 <body>
@@ -133,9 +134,16 @@
     </div>
 
     <div id="resultsArea" class="row g-4 mb-5" style="display:none;">
+      <!-- SSL Warning -->
       <div id="sslWarning" class="ssl-warning d-none">
         <strong>Notice:</strong> SSL certificate verification was relaxed due to site configuration issues. 
-        Audit results are still valid, but please be aware of potential certificate problems.
+        Audit results are still valid, but the site's certificate may be invalid or untrusted.
+      </div>
+
+      <!-- Error Box (big red for failures) -->
+      <div id="errorBox" class="error-box d-none alert-box">
+        <strong>Audit Failed</strong><br>
+        <span id="errorMessage"></span>
       </div>
 
       <div class="col-lg-4">
@@ -213,6 +221,8 @@
       cardsArea: document.getElementById('cardsArea'),
       dynamicArea: document.getElementById('dynamicArea'),
       sslWarning: document.getElementById('sslWarning'),
+      errorBox: document.getElementById('errorBox'),
+      errorMessage: document.getElementById('errorMessage'),
       overallScore: document.getElementById('overallScore'),
       gradeText: document.getElementById('gradeText'),
       auditedUrl: document.getElementById('auditedUrl'),
@@ -250,7 +260,7 @@
       els.progressBar.style.width = `${p}%`;
       els.progressText.textContent = `${p}%`;
       els.statusText.textContent = status;
-      els.progressBar.className = `progress-bar ${p === 100 ? 'bg-success' : 'bg-info'}`;
+      els.progressBar.className = `progress-bar ${p === 100 ? 'bg-success' : (status === 'failed' ? 'bg-danger' : 'bg-info')}`;
     }
 
     function setWsStatus(connected) {
@@ -262,7 +272,7 @@
       lastResult = r;
       auditInProgress = false;
 
-      // Handle SSL relaxed
+      // Show SSL relaxed notice
       if (r.ssl_relaxed) {
         els.sslWarning.classList.remove('d-none');
       } else {
@@ -271,6 +281,8 @@
 
       // Handle error from runner
       if (r.error) {
+        els.errorBox.classList.remove('d-none');
+        els.errorMessage.textContent = escapeHtml(r.error);
         showAlert(`Audit failed: ${escapeHtml(r.error)}`, 'danger', true);
         setProgress(100, 'failed');
         els.resultsArea.style.display = 'none';
@@ -280,7 +292,7 @@
         return;
       }
 
-      // Handle no data (empty HTML or blocked site)
+      // Handle no data (scores 0 but no error)
       const score = parseInt(r.overall_score || 0);
       if (score === 0) {
         showAlert(
@@ -293,6 +305,7 @@
       els.resultsArea.style.display = 'flex';
       els.cardsArea.style.display = 'flex';
       els.dynamicArea.style.display = 'flex';
+      els.errorBox.classList.add('d-none');
 
       // Overall score
       const deg = Math.min(360, (score / 100) * 360);
@@ -361,6 +374,8 @@
           if (msg.status === 'completed' && msg.result) {
             renderResult(msg.result);
           } else if (msg.status === 'error' && msg.message) {
+            els.errorBox.classList.remove('d-none');
+            els.errorMessage.textContent = escapeHtml(msg.message);
             showAlert(`Error: ${escapeHtml(msg.message)}`, 'danger', true);
             setProgress(100, 'failed');
           } else if (msg.status && msg.progress !== undefined) {
@@ -391,6 +406,7 @@
       els.resultsArea.style.display = 'none';
       els.cardsArea.style.display = 'none';
       els.dynamicArea.style.display = 'none';
+      els.errorBox.classList.add('d-none');
 
       try {
         ws.send(JSON.stringify({ url }));
