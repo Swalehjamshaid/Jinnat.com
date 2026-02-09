@@ -1,118 +1,105 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Website Audit Pro - Cinematic Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    /* Smooth progress bar animation */
-    #progressBar {
-      transition: width 0.3s ease;
-    }
-    .grade-A { color: #16a34a; font-weight: bold; }
-    .grade-B { color: #f59e0b; font-weight: bold; }
-    .grade-C { color: #f97316; font-weight: bold; }
-    .grade-D { color: #ef4444; font-weight: bold; }
-    .grade-F { color: #b91c1c; font-weight: bold; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Website Audit Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1f1f1f; color: #f5f5f5; margin: 0; padding: 0; }
+        .container { max-width: 900px; margin: 2rem auto; padding: 1rem; }
+        h1 { text-align: center; }
+        input[type=text] { width: 70%; padding: 0.5rem; font-size: 1rem; }
+        button { padding: 0.6rem 1rem; font-size: 1rem; margin-left: 0.5rem; cursor: pointer; }
+        .progress-bar { width: 100%; background: #333; height: 25px; border-radius: 5px; margin-top: 1rem; overflow: hidden; }
+        .progress-fill { height: 100%; background: #3b82f6; width: 0%; transition: width 0.2s; }
+        .section { margin-top: 2rem; }
+        .section h2 { margin-bottom: 0.5rem; }
+        .grid { display: grid; gap: 1rem; }
+        .card { padding: 1rem; background: #2d2d2d; border-radius: 6px; }
+        .error { color: #f87171; font-weight: bold; margin-top: 1rem; }
+    </style>
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen p-6 font-sans">
+<body>
+<div class="container">
+    <h1>Website Audit Pro</h1>
+    <div>
+        <input type="text" id="auditUrl" placeholder="Enter website URL..." />
+        <button id="runAuditBtn">Run Audit</button>
+    </div>
+    <div class="progress-bar">
+        <div id="progressFill" class="progress-fill"></div>
+    </div>
+    <div id="progressText" style="margin-top:5px;">0%</div>
+    <div id="errorMessage" class="error"></div>
 
-  <div class="max-w-7xl mx-auto">
-    <h1 class="text-4xl font-extrabold text-center mb-8 text-blue-400">Website Audit Dashboard</h1>
-
-    <!-- URL input -->
-    <div class="flex mb-6">
-      <input id="auditUrl" type="text" placeholder="Enter website URL"
-             class="flex-1 p-3 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900">
-      <button id="runAudit" class="bg-blue-600 hover:bg-blue-700 px-6 rounded-r-md font-semibold">Run Audit</button>
+    <div class="section">
+        <h2>Summary</h2>
+        <div>Audited URL: <span id="auditedUrl"></span></div>
+        <div>Overall Score: <span id="overallScore"></span></div>
+        <div>Grade: <span id="grade"></span></div>
     </div>
 
-    <!-- Progress -->
-    <div class="mb-6">
-      <div class="text-gray-300 font-medium mb-1">Progress: <span id="progressText">0%</span></div>
-      <div class="w-full bg-gray-700 h-5 rounded">
-        <div id="progressBar" class="bg-blue-500 h-5 rounded" style="width:0%"></div>
-      </div>
+    <div class="section">
+        <h2>Breakdown</h2>
+        <div id="breakdownList" class="grid"></div>
     </div>
 
-    <!-- Error message -->
-    <div id="errorMessage" class="text-red-500 font-bold my-4"></div>
-
-    <!-- Audit Result -->
-    <div id="auditResult" class="space-y-8 mt-8">
-
-      <!-- Basic Info -->
-      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
-        <h2 class="text-2xl font-semibold mb-4 text-blue-400">Basic Info</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div><strong>Audited URL:</strong> <span id="auditedUrl"></span></div>
-          <div><strong>Overall Score:</strong> <span id="overallScore"></span></div>
-          <div><strong>Grade:</strong> <span id="grade"></span></div>
-        </div>
-      </div>
-
-      <!-- Breakdown -->
-      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
-        <h2 class="text-2xl font-semibold mb-4 text-blue-400">Breakdown</h2>
-        <div id="breakdownList" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-      </div>
-
-      <!-- Dynamic Cards -->
-      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
-        <h2 class="text-2xl font-semibold mb-4 text-blue-400">Dynamic Cards</h2>
-        <div id="dynamicCards" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
-      </div>
-
-      <!-- Dynamic Key-Value -->
-      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
-        <h2 class="text-2xl font-semibold mb-4 text-blue-400">Key-Value Data</h2>
-        <div id="dynamicKV" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-      </div>
-
-      <!-- Chart -->
-      <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
-        <h2 class="text-2xl font-semibold mb-4 text-blue-400">Chart</h2>
-        <canvas id="chartCanvas"></canvas>
-      </div>
-
+    <div class="section">
+        <h2>Dynamic Cards</h2>
+        <div id="dynamicCards" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));"></div>
     </div>
-  </div>
 
-  <script>
-    const runBtn = document.getElementById("runAudit");
-    const auditUrlInput = document.getElementById("auditUrl");
-    const progressBar = document.getElementById("progressBar");
-    const progressText = document.getElementById("progressText");
-    const errorMessage = document.getElementById("errorMessage");
+    <div class="section">
+        <h2>Key-Value Pairs</h2>
+        <div id="dynamicKV" class="grid"></div>
+    </div>
 
-    const auditedUrlElem = document.getElementById("auditedUrl");
-    const overallScoreElem = document.getElementById("overallScore");
-    const gradeElem = document.getElementById("grade");
-    const breakdownList = document.getElementById("breakdownList");
-    const dynamicCards = document.getElementById("dynamicCards");
-    const dynamicKV = document.getElementById("dynamicKV");
+    <div class="section">
+        <h2>Chart</h2>
+        <canvas id="chartCanvas" height="150"></canvas>
+    </div>
+</div>
 
-    let ws;
-    let chart;
+<script>
+let ws;
+let chart;
 
-    function getGradeClass(grade) {
-      return grade ? `grade-${grade.toUpperCase()}` : '';
+const auditUrlInput = document.getElementById("auditUrl");
+const runBtn = document.getElementById("runAuditBtn");
+const progressFill = document.getElementById("progressFill");
+const progressText = document.getElementById("progressText");
+const errorMessage = document.getElementById("errorMessage");
+const auditedUrlElem = document.getElementById("auditedUrl");
+const overallScoreElem = document.getElementById("overallScore");
+const gradeElem = document.getElementById("grade");
+const breakdownList = document.getElementById("breakdownList");
+const dynamicCards = document.getElementById("dynamicCards");
+const dynamicKV = document.getElementById("dynamicKV");
+
+function getGradeClass(grade) {
+    switch((grade||"").toUpperCase()) {
+        case "A": return "text-green-400";
+        case "B": return "text-lime-400";
+        case "C": return "text-yellow-400";
+        case "D": return "text-orange-400";
+        case "F": return "text-red-400";
+        default: return "";
     }
+}
 
-    runBtn.addEventListener("click", () => {
-      const url = auditUrlInput.value.trim();
-      if (!url) return alert("Please enter a website URL.");
+runBtn.addEventListener("click", () => {
+    const url = auditUrlInput.value.trim();
+    if (!url) return alert("Please enter a website URL.");
 
-      if (ws) ws.close();
-      ws = new WebSocket(`ws://${location.host}/ws`);
+    if (ws) ws.close();
 
-      ws.onopen = () => {
+    const protocol = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${protocol}://${location.host}/ws`);
+
+    ws.onopen = () => {
         ws.send(JSON.stringify({ url }));
         errorMessage.textContent = "";
-        progressBar.style.width = "0%";
+        progressFill.style.width = "0%";
         progressText.textContent = "0%";
 
         auditedUrlElem.textContent = "";
@@ -122,92 +109,86 @@
         dynamicCards.innerHTML = "";
         dynamicKV.innerHTML = "";
         if (chart) chart.destroy();
-      };
+    };
 
-      ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        progressBar.style.width = msg.progress + "%";
+        progressFill.style.width = msg.progress + "%";
         progressText.textContent = msg.progress + "%";
 
         if (msg.status === "error") {
-          errorMessage.textContent = msg.payload?.error || "Unknown error";
-          return;
+            errorMessage.textContent = msg.payload?.error || "Unknown error";
+            return;
         }
 
         if (msg.status === "completed") {
-          const result = msg.result;
+            const result = msg.result;
 
-          auditedUrlElem.textContent = result.audited_url || "";
-          overallScoreElem.textContent = result.overall_score || "";
-          gradeElem.textContent = result.grade || "";
-          gradeElem.className = getGradeClass(result.grade);
+            auditedUrlElem.textContent = result.audited_url || "";
+            overallScoreElem.textContent = result.overall_score || "";
+            gradeElem.textContent = result.grade || "";
+            gradeElem.className = getGradeClass(result.grade);
 
-          // Breakdown
-          breakdownList.innerHTML = "";
-          if (result.breakdown) {
-            for (const [k, v] of Object.entries(result.breakdown)) {
-              const div = document.createElement("div");
-              div.className = "bg-gray-700 p-2 rounded hover:bg-gray-600 transition";
-              div.textContent = `${k}: ${v}`;
-              breakdownList.appendChild(div);
+            breakdownList.innerHTML = "";
+            if (result.breakdown) {
+                for (const [k, v] of Object.entries(result.breakdown)) {
+                    const div = document.createElement("div");
+                    div.className = "card";
+                    div.textContent = `${k}: ${v}`;
+                    breakdownList.appendChild(div);
+                }
             }
-          }
 
-          // Dynamic cards
-          dynamicCards.innerHTML = "";
-          if (result.dynamic?.cards) {
-            result.dynamic.cards.forEach(card => {
-              const div = document.createElement("div");
-              div.className = "bg-blue-700 p-4 rounded shadow hover:bg-blue-600 transition";
-              div.innerHTML = `<div class="font-semibold text-lg">${card.title || "Title"}</div>
-                               <div class="text-2xl font-bold mt-1">${card.value || ""}</div>`;
-              dynamicCards.appendChild(div);
-            });
-          }
+            dynamicCards.innerHTML = "";
+            if (result.dynamic?.cards) {
+                result.dynamic.cards.forEach(card => {
+                    const div = document.createElement("div");
+                    div.className = "card";
+                    div.innerHTML = `<div><strong>${card.title || "Title"}</strong></div>
+                                     <div style="font-size:1.5rem">${card.value || ""}</div>`;
+                    dynamicCards.appendChild(div);
+                });
+            }
 
-          // Dynamic KV
-          dynamicKV.innerHTML = "";
-          if (result.dynamic?.kv) {
-            result.dynamic.kv.forEach(kv => {
-              const div = document.createElement("div");
-              div.className = "bg-gray-700 p-2 rounded hover:bg-gray-600 transition";
-              div.textContent = `${kv.key}: ${kv.value}`;
-              dynamicKV.appendChild(div);
-            });
-          }
+            dynamicKV.innerHTML = "";
+            if (result.dynamic?.kv) {
+                result.dynamic.kv.forEach(kv => {
+                    const div = document.createElement("div");
+                    div.className = "card";
+                    div.textContent = `${kv.key}: ${kv.value}`;
+                    dynamicKV.appendChild(div);
+                });
+            }
 
-          // Chart
-          if (result.chart_data) {
-            const ctx = document.getElementById("chartCanvas").getContext("2d");
-            chart = new Chart(ctx, {
-              type: "bar",
-              data: {
-                labels: result.chart_data.map(d => d.label || d.name || "Metric"),
-                datasets: [{
-                  label: "Score",
-                  data: result.chart_data.map(d => d.value || 0),
-                  backgroundColor: "rgba(59, 130, 246, 0.8)"
-                }]
-              },
-              options: {
-                responsive: true,
-                scales: {
-                  y: { beginAtZero: true, max: 100 }
-                },
-                plugins: { legend: { display: false } }
-              }
-            });
-          }
+            if (result.chart_data) {
+                const ctx = document.getElementById("chartCanvas").getContext("2d");
+                chart = new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: result.chart_data.map(d => d.label || d.name || "Metric"),
+                        datasets: [{
+                            label: "Score",
+                            data: result.chart_data.map(d => d.value || 0),
+                            backgroundColor: "rgba(59, 130, 246, 0.8)"
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: { y: { beginAtZero: true, max: 100 } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
         }
-      };
+    };
 
-      ws.onerror = (e) => {
+    ws.onerror = (e) => {
         errorMessage.textContent = "WebSocket error";
         console.error(e);
-      };
+    };
 
-      ws.onclose = () => console.log("WebSocket closed");
-    });
-  </script>
+    ws.onclose = () => console.log("WebSocket closed");
+});
+</script>
 </body>
 </html>
