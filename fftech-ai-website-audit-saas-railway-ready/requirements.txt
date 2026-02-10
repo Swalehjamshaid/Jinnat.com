@@ -13,10 +13,10 @@ gunicorn==23.0.0
 jinja2==3.1.5
 python-multipart==0.0.20
 
-# WebSocket support (used in /ws endpoint)
+# WebSocket support
 websockets==14.1
 
-# Validation & Config
+# Validation & Configuration
 pydantic==2.10.4
 pydantic-settings==2.7.0
 python-dotenv==1.0.1
@@ -28,7 +28,7 @@ urllib3==2.3.0
 certifi==2024.12.14          # Fixes CERTIFICATE_VERIFY_FAILED
 cryptography==42.0.8         # Modern TLS support
 
-# HTML Parsing / Analysis (used in runner.py)
+# HTML Parsing & Analysis (used in runner.py)
 beautifulsoup4==4.12.3
 lxml==5.3.0
 
@@ -36,12 +36,12 @@ lxml==5.3.0
 orjson==3.10.15
 ujson==5.10.0
 
-# PDF Generation (fixed your PDF download issue)
+# PDF Generation (required for /api/audit/pdf endpoint)
 reportlab==4.2.5
 
-# Optional packages (uncomment if you need them later)
-# pillow==10.4.0              # Image processing
-# qrcode==7.4.2               # QR code generation
-# python-pptx==1.0.2          # PowerPoint export
-# openpyxl==3.1.5             # Excel export
-# weasyprint==63.0            # Alternative HTML-to-PDF (requires OS libs: cairo/pango)
+# Optional packages (uncomment only if you actually use them)
+# pillow==10.4.0               # Image processing
+# qrcode==7.4.2                # QR code generation
+# python-pptx==1.0.2           # PowerPoint export
+# openpyxl==3.1.5              # Excel export
+# weasyprint==63.0             # Alternative HTML-to-PDF (requires system libs: cairo/pango)
