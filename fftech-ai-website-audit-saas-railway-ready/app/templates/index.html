@@ -164,6 +164,7 @@
         <button class="btn btn-sm btn-outline-secondary" id="themeToggle" type="button" aria-label="Toggle theme">🌙 / ☀️</button>
       </div>
     </div>
+
     <!-- INPUT + PROGRESS -->
     <div class="glass p-4 mb-4">
       <div class="row g-3 align-items-end">
@@ -171,7 +172,7 @@
           <label class="form-label fw-semibold">Website URL</label>
           <input id="urlInput" type="text" class="form-control form-control-lg"
                  placeholder="example.com or https://example.com"
-                 value="https://www.haier.com.pk" />
+                 value="https://www.apple.com" />
           <div class="small muted-2 mt-1">Paste domain or full URL — the system normalizes it automatically.</div>
         </div>
         <div class="col-lg-5">
@@ -209,7 +210,7 @@
       </div>
     </div>
 
-    <!-- RESULTS AREA – hidden when error -->
+    <!-- RESULTS AREA – shown only on success -->
     <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
       <div class="col-lg-4">
         <div class="glass p-4 h-100 text-center">
@@ -238,7 +239,7 @@
           <div class="d-flex align-items-center justify-content-between mb-3">
             <div>
               <div class="h5 mb-0 fw-bold">Score Breakdown</div>
-              <div class="subtle small">Chart comes directly from runner.py chart_data (fallback to breakdown)</div>
+              <div class="subtle small">Chart comes directly from runner.py chart_data</div>
             </div>
             <span class="pill" id="verdictPill">verdict: —</span>
           </div>
@@ -247,13 +248,13 @@
       </div>
     </div>
 
-    <!-- CATEGORY CARDS – hidden when error -->
+    <!-- CATEGORY CARDS – shown only on success -->
     <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
       <div class="col-md-6 col-lg-3">
         <div class="mini-card">
           <div class="label">SEO</div>
           <div class="value" id="seoScore">0</div>
-          <div class="hint">Title, meta description, H1, canonical, image ALT</div>
+          <div class="hint">Title, meta, H1, canonical, image ALT</div>
         </div>
       </div>
       <div class="col-md-6 col-lg-3">
@@ -279,7 +280,7 @@
       </div>
     </div>
 
-    <!-- DYNAMIC OUTPUT – hidden when error -->
+    <!-- DYNAMIC OUTPUT – shown only on success -->
     <div id="dynamicArea" class="row g-3" style="display:none;">
       <div class="col-lg-6">
         <div class="glass p-4 h-100">
@@ -314,7 +315,8 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     // =========================================================
-    // FIXED CONTROLLER – hides results on error, no crash
+    // CONTROLLER – Shows ALL runner.py results on success
+    // Hides everything cleanly on error
     // =========================================================
     const REST_FALLBACK_AFTER_MS = 9000;
     const AUTO_SCROLL_ON_RESULT = true;
@@ -412,7 +414,7 @@
       auditInProgress = false;
       clearTimeout(fallbackTimer);
 
-      // Reset and hide all result areas by default
+      // Reset and hide everything by default
       el("resultsArea").style.display = "none";
       el("cardsArea").style.display = "none";
       el("dynamicArea").style.display = "none";
@@ -425,14 +427,14 @@
         return;
       }
 
-      // Only show results if no error
+      // Show all result sections only on success
       el("resultsArea").style.display = "";
       el("cardsArea").style.display = "";
       el("dynamicArea").style.display = "";
 
       el("lastRunAt").textContent = new Date().toLocaleString();
 
-      // Safe data access
+      // Safe data access (all runner.py fields)
       const breakdown = r.breakdown || {};
       const perfExtras = (breakdown.performance || {}).extras || {};
       const seoExtras = (breakdown.seo || {}).extras || {};
@@ -461,16 +463,18 @@
 
       el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
 
-      // Chart
+      // Chart – uses runner.py chart_data or fallback
       let labels = ["SEO", "Performance", "Links", "Security"];
       let dataPoints = [seo, perf, links, sec];
       let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
+
       const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
       if (chartSpec?.data?.labels && chartSpec?.data?.datasets?.[0]?.data) {
         labels = chartSpec.data.labels;
         dataPoints = chartSpec.data.datasets[0].data;
         colors = chartSpec.data.datasets[0].backgroundColor || colors;
       }
+
       const ctx = el("breakdownChart").getContext("2d");
       if (chart) chart.destroy();
       chart = new Chart(ctx, {
@@ -486,7 +490,7 @@
         }
       });
 
-      // Dynamic cards
+      // Dynamic cards – directly from runner.dynamic.cards
       const dyn = r.dynamic || {};
       const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
       const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
@@ -501,7 +505,7 @@
         cardsWrap.appendChild(div);
       }
 
-      // KV table
+      // KV table – directly from runner.dynamic.kv
       const kvBody = el("kvBody");
       kvBody.innerHTML = "";
       for (const item of kv) {
@@ -511,7 +515,7 @@
         kvBody.appendChild(tr);
       }
 
-      // Enable PDF
+      // Enable PDF button
       el("pdfBtn").disabled = false;
 
       setStage("completed", 100);
@@ -520,6 +524,7 @@
         setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
       }
 
+      // Optional warning for zero-score success
       if (score === 0) {
         showAlert("Audit completed but no content was extracted (empty or blocked page).", "warning", true);
       }
