@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Website Audit Pro</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --radius: 16px;
       --shadow: 0 8px 32px rgba(0,0,0,0.25);
-      --glass: rgba(30, 41, 59, 0.75);
+      --glass: rgba(30, 41, 59, 0.85);
       --glass-border: rgba(255,255,255,0.08);
       --primary: #0d6efd;
       --success: #22c55e;
@@ -22,7 +22,7 @@
       background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
       color: #e2e8f0;
       min-height: 100vh;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
     }
     .app-shell {
       max-width: 1280px;
@@ -53,7 +53,7 @@
       align-items: center;
       justify-content: center;
       margin: 0 auto;
-      box-shadow: 0 0 30px rgba(34,197,94,0.2);
+      box-shadow: 0 0 30px rgba(34,197,94,0.25);
     }
     .score-inner {
       width: 160px;
@@ -67,12 +67,12 @@
       box-shadow: inset 0 4px 15px rgba(0,0,0,0.5);
     }
     .score-number {
-      font-size: 4rem;
+      font-size: 4.5rem;
       font-weight: 800;
       line-height: 1;
     }
     .score-grade {
-      font-size: 2.5rem;
+      font-size: 2.8rem;
       font-weight: 700;
       color: var(--primary);
     }
@@ -107,14 +107,31 @@
 
   <!-- Header -->
   <div class="text-center mb-5">
-    <h1 class="display-4 fw-bold text-white">Website Audit Report</h1>
+    <h1 class="display-4 fw-bold text-white">Website Audit Pro</h1>
     <p class="lead text-muted" id="auditedUrl">Audited: —</p>
   </div>
 
+  <!-- Progress & Alerts -->
+  <div class="glass-card mb-4">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Progress</h5>
+        <div class="d-flex align-items-center gap-3">
+          <span class="badge bg-info" id="statusText">Idle</span>
+          <span class="badge bg-secondary" id="progressText">0%</span>
+        </div>
+      </div>
+      <div class="progress" style="height: 10px;">
+        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+      <div id="alertArea" class="mt-3"></div>
+    </div>
+  </div>
+
   <!-- Overall Score -->
-  <div class="glass-card mb-5">
+  <div class="glass-card mb-5" id="resultsArea" style="display:none;">
     <div class="card-header text-center">
-      <h3 class="mb-0">Overall Performance</h3>
+      <h3 class="mb-0">Overall Score</h3>
     </div>
     <div class="card-body text-center py-5">
       <div class="score-ring mx-auto" id="scoreRing">
@@ -128,8 +145,8 @@
     </div>
   </div>
 
-  <!-- Category Cards -->
-  <div class="row g-4 mb-5" id="cardsArea">
+  <!-- Category Scores -->
+  <div class="row g-4 mb-5" id="cardsArea" style="display:none;">
     <div class="col-md-3">
       <div class="glass-card category-card h-100">
         <div class="card-body text-center">
@@ -168,18 +185,18 @@
     </div>
   </div>
 
-  <!-- Score Breakdown Chart -->
-  <div class="glass-card mb-5">
+  <!-- Chart -->
+  <div class="glass-card mb-5" id="resultsArea" style="display:none;">
     <div class="card-header">
-      <h4 class="mb-0">Score Breakdown</h4>
+      <h4 class="mb-0">Score Breakdown Chart</h4>
     </div>
     <div class="card-body">
       <canvas id="breakdownChart" height="180"></canvas>
     </div>
   </div>
 
-  <!-- Highlights (Cards) -->
-  <div class="glass-card mb-5" id="dynamicArea">
+  <!-- Highlights (Dynamic Cards) -->
+  <div class="glass-card mb-5" id="dynamicArea" style="display:none;">
     <div class="card-header">
       <h4 class="mb-0">Key Highlights</h4>
     </div>
@@ -189,7 +206,7 @@
   </div>
 
   <!-- Detailed KV Table -->
-  <div class="glass-card mb-5" id="dynamicArea">
+  <div class="glass-card mb-5" id="dynamicArea" style="display:none;">
     <div class="card-header">
       <h4 class="mb-0">Detailed Information</h4>
     </div>
@@ -208,7 +225,7 @@
 
   <!-- Footer -->
   <footer>
-    <p>© FF Tech • Website Audit Pro • Results from Runner.py</p>
+    <p>© FF Tech • Website Audit Pro • Powered by Runner.py</p>
   </footer>
 
 </div>
@@ -217,124 +234,181 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-  // ====================================================
-  // RENDER FUNCTION – Displays ALL data beautifully
-  // ====================================================
+// ====================================================
+// MAIN SCRIPT – Full rendering of runner.py data
+// ====================================================
 
-  let chart = null;
+let chart = null;
 
-  const el = id => document.getElementById(id);
+const el = id => document.getElementById(id);
 
-  function escapeHtml(str) {
-    return String(str ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function normalizeUrl(input) {
+  let url = (input || "").trim();
+  if (!url) return "";
+  if (!/^https?:\/\//i.test(url)) {
+    url = "https://" + url;
+  }
+  return url;
+}
+
+function showAlert(message, type = "info", persist = false) {
+  const area = el("alertArea");
+  const div = document.createElement("div");
+  div.className = `alert alert-${type} mb-2 fade-in`;
+  div.innerHTML = `
+    <div class="d-flex align-items-start justify-content-between gap-3">
+      <div>${message}</div>
+      <button type="button" class="btn-close" aria-label="Close"></button>
+    </div>`;
+  div.querySelector(".btn-close").onclick = () => div.remove();
+  area.appendChild(div);
+  if (!persist) setTimeout(() => div.remove(), 8000);
+}
+
+function setStage(status, percent) {
+  const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
+  el("progressBar").style.width = `${p}%`;
+  el("progressText").textContent = `${p}%`;
+  el("statusText").textContent = status || "Working";
+}
+
+function renderResult(r) {
+  // Reset UI
+  el("cardsArea").style.display = "none";
+  el("dynamicArea").style.display = "none";
+  el("pdfBtn").disabled = true;
+
+  const error = r.error || (r.payload && r.payload.error);
+  if (error) {
+    showAlert(`Audit failed: ${escapeHtml(error)}`, "danger", true);
+    setStage("failed", 100);
+    return;
   }
 
-  function renderAuditResult(data) {
-    // Hide everything by default
-    el("cardsArea")?.style.display = "none";
-    el("dynamicArea")?.style.display = "none";
+  // Show results
+  el("cardsArea").style.display = "";
+  el("dynamicArea").style.display = "";
 
-    if (!data || data.error) {
-      alert("Audit failed: " + (data?.error || "Unknown error"));
-      return;
+  const breakdown = r.breakdown || {};
+  const perfExtras = (breakdown.performance || {}).extras || {};
+  const seoExtras = (breakdown.seo || {}).extras || {};
+
+  // Overall
+  const score = parseInt(r.overall_score || 0);
+  el("overallScore").textContent = score;
+  el("gradeText").textContent = r.grade || "—";
+  el("auditedUrl").textContent = `Audited: ${r.audited_url || "—"}`;
+  const deg = Math.min(360, score * 3.6);
+  el("scoreRing").style.setProperty("--deg", `${deg}deg`);
+
+  // Fetcher & Verdict
+  const fetcher = perfExtras.fetcher ?? "—";
+  el("fetcherPill").textContent = `Fetcher: ${fetcher}`;
+  el("verdictPill").textContent = score >= 90 ? "Excellent" : score >= 80 ? "Very Good" : score >= 70 ? "Good" : "Needs Improvement";
+
+  // Category scores
+  el("seoScore").textContent = breakdown.seo?.score ?? "—";
+  el("perfScore").textContent = breakdown.performance?.score ?? "—";
+  el("linksScore").textContent = breakdown.links?.score ?? "—";
+  el("secScore").textContent = breakdown.security?.score ?? "—";
+
+  // Chart
+  let chartData = {
+    labels: ["SEO", "Performance", "Links", "Security"],
+    datasets: [{
+      label: "Score",
+      data: [
+        breakdown.seo?.score ?? 0,
+        breakdown.performance?.score ?? 0,
+        breakdown.links?.score ?? 0,
+        breakdown.security?.score ?? 0
+      ],
+      backgroundColor: ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"]
+    }]
+  };
+
+  if (r.chart_data?.[0]?.data) {
+    chartData = r.chart_data[0].data;
+  }
+
+  if (chart) chart.destroy();
+  chart = new Chart(el("breakdownChart"), {
+    type: "bar",
+    data: chartData,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,0.1)" } },
+        x: { grid: { display: false } }
+      }
     }
+  });
 
-    // Show all sections
-    el("cardsArea").style.display = "";
-    el("dynamicArea").style.display = "";
-
-    // Overall Score & Grade
-    const score = data.overall_score || 0;
-    const grade = data.grade || "—";
-    el("overallScore").textContent = score;
-    el("gradeText").textContent = grade;
-    el("auditedUrl").textContent = `Audited: ${data.audited_url || "—"}`;
-
-    const deg = Math.min(360, score * 3.6);
-    el("scoreRing").style.setProperty("--deg", `${deg}deg`);
-
-    // Fetcher & Verdict
-    const fetcher = data.breakdown?.performance?.extras?.fetcher || "—";
-    el("fetcherPill").textContent = `Fetcher: ${fetcher}`;
-
-    el("verdictPill").textContent = score >= 90 ? "Excellent" : score >= 80 ? "Good" : "Needs Improvement";
-
-    // Category Scores
-    const breakdown = data.breakdown || {};
-    el("seoScore").textContent = breakdown.seo?.score ?? "—";
-    el("perfScore").textContent = breakdown.performance?.score ?? "—";
-    el("linksScore").textContent = breakdown.links?.score ?? "—";
-    el("secScore").textContent = breakdown.security?.score ?? "—";
-
-    // Chart
-    const chartSpec = data.chart_data?.[0] || {
-      data: {
-        labels: ["SEO", "Performance", "Links", "Security"],
-        datasets: [{
-          label: "Score",
-          data: [
-            breakdown.seo?.score ?? 0,
-            breakdown.performance?.score ?? 0,
-            breakdown.links?.score ?? 0,
-            breakdown.security?.score ?? 0
-          ],
-          backgroundColor: ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"]
-        }]
-      }
-    };
-
-    if (chart) chart.destroy();
-    chart = new Chart(el("breakdownChart"), {
-      type: chartSpec.type || "bar",
-      data: chartSpec.data,
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,0.1)" } },
-          x: { grid: { display: false } }
-        }
-      }
-    });
-
-    // Dynamic Cards (Highlights)
-    const cardsContainer = el("dynamicCards");
-    cardsContainer.innerHTML = "";
-    (data.dynamic?.cards || []).forEach(card => {
-      const col = document.createElement("div");
-      col.className = "col-md-4";
-      col.innerHTML = `
-        <div class="glass-card h-100">
-          <div class="card-body">
-            <h5 class="text-primary mb-2">${escapeHtml(card.title || "")}</h5>
-            <p class="text-white mb-0">${escapeHtml(card.body || "")}</p>
-          </div>
+  // Dynamic Cards
+  const cardsContainer = el("dynamicCards");
+  cardsContainer.innerHTML = "";
+  (r.dynamic?.cards || []).forEach(card => {
+    const col = document.createElement("div");
+    col.className = "col-md-4";
+    col.innerHTML = `
+      <div class="glass-card h-100">
+        <div class="card-body">
+          <h5 class="text-primary mb-2">${escapeHtml(card.title || "")}</h5>
+          <p class="text-white mb-0">${escapeHtml(card.body || "")}</p>
         </div>
-      `;
-      cardsContainer.appendChild(col);
-    });
+      </div>
+    `;
+    cardsContainer.appendChild(col);
+  });
 
-    // KV Table
-    const kvBody = el("kvBody");
-    kvBody.innerHTML = "";
-    (data.dynamic?.kv || []).forEach(item => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <th>${escapeHtml(item.key || "")}</th>
-        <td>${escapeHtml(item.value ?? "—")}</td>
-      `;
-      kvBody.appendChild(tr);
-    });
-  }
+  // KV Table
+  const kvBody = el("kvBody");
+  kvBody.innerHTML = "";
+  (r.dynamic?.kv || []).forEach(item => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <th>${escapeHtml(item.key || "")}</th>
+      <td>${escapeHtml(item.value ?? "—")}</td>
+    `;
+    kvBody.appendChild(tr);
+  });
 
-  // For testing – paste your JSON here
-  const sampleData = {
+  el("pdfBtn").disabled = false;
+  setStage("completed", 100);
+}
+
+async function startAudit() {
+  const input = el("urlInput").value.trim();
+  if (!input) return showAlert("Please enter a domain or URL.", "warning");
+
+  const url = normalizeUrl(input);
+
+  setStage("starting", 5);
+  showAlert(`Auditing ${url}...`, "info");
+
+  // Your WebSocket or REST logic here
+  // For example:
+  // ws.send(JSON.stringify({ url }));
+  // or fetch('/api/audit/run', { method: 'POST', body: JSON.stringify({ url }) })
+
+  // When result arrives, call:
+  // renderResult(resultData);
+}
+
+// Example: simulate result (remove in production)
+setTimeout(() => {
+  renderResult({
     "audited_url": "https://www.apple.com",
     "overall_score": 92,
     "grade": "A+",
@@ -343,13 +417,11 @@
       "performance": { "score": 100, "extras": { "load_ms": 0, "bytes": 238140, "scripts": 15, "styles": 7, "fetcher": "pre-fetched" } },
       "links": { "score": 100, "internal_links_count": 102, "external_links_count": 27, "total_links_count": 129 },
       "security": { "score": 95, "https": true, "hsts": false, "status_code": 200, "server": "" },
-      "competitors": { "score": 0, "top_competitor_score": 0 },
+      "competitors": { "score": 0 },
       "ai": { "score": 0 }
     },
     "chart_data": [
       {
-        "title": "Score Breakdown",
-        "type": "bar",
         "data": {
           "labels": ["SEO", "Performance", "Links", "Security"],
           "datasets": [{
@@ -378,10 +450,10 @@
         { "key": "fetcher", "value": "pre-fetched" }
       ]
     }
-  };
+  });
+}, 1500);
 
-  // Render the data (in real app, this would come from WebSocket / API)
-  renderAuditResult(sampleData);
+// Add your WebSocket / start button logic here
 </script>
 </body>
 </html>
