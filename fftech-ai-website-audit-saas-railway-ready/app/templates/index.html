@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light">
   <title>Website Audit Pro</title>
-  <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root{
@@ -210,7 +208,8 @@
         </div>
       </div>
     </div>
-    <!-- RESULTS -->
+
+    <!-- RESULTS AREA – hidden when error -->
     <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
       <div class="col-lg-4">
         <div class="glass p-4 h-100 text-center">
@@ -247,7 +246,8 @@
         </div>
       </div>
     </div>
-    <!-- CATEGORY CARDS -->
+
+    <!-- CATEGORY CARDS – hidden when error -->
     <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
       <div class="col-md-6 col-lg-3">
         <div class="mini-card">
@@ -278,7 +278,8 @@
         </div>
       </div>
     </div>
-    <!-- DYNAMIC OUTPUT -->
+
+    <!-- DYNAMIC OUTPUT – hidden when error -->
     <div id="dynamicArea" class="row g-3" style="display:none;">
       <div class="col-lg-6">
         <div class="glass p-4 h-100">
@@ -303,15 +304,17 @@
         </div>
       </div>
     </div>
+
     <div class="text-center mt-5 subtle small">
       © FF Tech • WebSocket <code>/ws</code> • REST <code>/api/audit/run</code> • PDF <code>/api/audit/pdf</code>
     </div>
   </div>
+
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     // =========================================================
-    // CONTROLLER – FIXED VERSION (no more 'resources' error)
+    // FIXED CONTROLLER – hides results on error, no crash
     // =========================================================
     const REST_FALLBACK_AFTER_MS = 9000;
     const AUTO_SCROLL_ON_RESULT = true;
@@ -409,7 +412,7 @@
       auditInProgress = false;
       clearTimeout(fallbackTimer);
 
-      // Reset UI
+      // Reset and hide all result areas by default
       el("resultsArea").style.display = "none";
       el("cardsArea").style.display = "none";
       el("dynamicArea").style.display = "none";
@@ -417,19 +420,19 @@
 
       const error = extractError(r);
       if (error) {
-        showAlert(`Audit failed: ${escapeHtml(error)}`, "danger", true);
+        showAlert(buildHumanError(error), "danger", true);
         setStage("failed", 100);
         return;
       }
 
-      // Show results area
+      // Only show results if no error
       el("resultsArea").style.display = "";
       el("cardsArea").style.display = "";
       el("dynamicArea").style.display = "";
 
       el("lastRunAt").textContent = new Date().toLocaleString();
 
-      // Safe access to data
+      // Safe data access
       const breakdown = r.breakdown || {};
       const perfExtras = (breakdown.performance || {}).extras || {};
       const seoExtras = (breakdown.seo || {}).extras || {};
@@ -453,25 +456,21 @@
       el("linksScore").textContent = links;
       el("secScore").textContent = sec;
 
-      // fetcher pill
       const fetcher = perfExtras.fetcher ?? "—";
       el("fetcherPill").textContent = `fetcher: ${fetcher}`;
 
-      // verdict
       el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
 
-      // Chart – safe fallback
+      // Chart
       let labels = ["SEO", "Performance", "Links", "Security"];
       let dataPoints = [seo, perf, links, sec];
       let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
-
       const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
       if (chartSpec?.data?.labels && chartSpec?.data?.datasets?.[0]?.data) {
         labels = chartSpec.data.labels;
         dataPoints = chartSpec.data.datasets[0].data;
         colors = chartSpec.data.datasets[0].backgroundColor || colors;
       }
-
       const ctx = el("breakdownChart").getContext("2d");
       if (chart) chart.destroy();
       chart = new Chart(ctx, {
@@ -487,7 +486,7 @@
         }
       });
 
-      // Dynamic cards – safe
+      // Dynamic cards
       const dyn = r.dynamic || {};
       const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
       const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
@@ -512,18 +511,16 @@
         kvBody.appendChild(tr);
       }
 
-      // Enable PDF button
+      // Enable PDF
       el("pdfBtn").disabled = false;
 
-      // Final stage
       setStage("completed", 100);
 
       if (AUTO_SCROLL_ON_RESULT) {
         setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
       }
 
-      // Warning if score is 0 but no error
-      if (score === 0 && !error) {
+      if (score === 0) {
         showAlert("Audit completed but no content was extracted (empty or blocked page).", "warning", true);
       }
     }
@@ -545,7 +542,6 @@
       return `<b>Audit failed</b><br><span class="mono">${escapeHtml(msg)}</span>`;
     }
 
-    // WebSocket setup
     function ensureWs() {
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
       ws = new WebSocket(wsUrl());
@@ -575,7 +571,6 @@
       ws.onerror = () => setWsStatus(false);
     }
 
-    // REST fallback
     async function runAuditRest(url) {
       try {
         setStage("rest_fallback", 20);
@@ -658,12 +653,12 @@
       }
     }
 
-    // Copy / Open JSON
     el("copyJsonBtn").addEventListener("click", async () => {
       if (!lastResult) return showAlert("No result to copy yet.", "warning");
       try { await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2)); showAlert("Result JSON copied ✅", "success"); }
       catch { showAlert("Clipboard not available in this browser context.", "warning"); }
     });
+
     el("openJsonBtn").addEventListener("click", () => {
       if (!lastResult) return showAlert("No result to open yet.", "warning");
       const w = window.open("", "_blank");
@@ -672,11 +667,9 @@
       w.document.title = "Audit Result JSON"; w.document.close();
     });
 
-    // Wire events
     el("startBtn").addEventListener("click", startAudit);
     el("pdfBtn").addEventListener("click", downloadPdf);
 
-    // Init
     setWsStatus(false);
     ensureWs();
     setStage("idle", 0);
