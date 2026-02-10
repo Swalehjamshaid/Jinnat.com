@@ -249,9 +249,9 @@ async def api_audit_pdf(req: PdfRequest):
     logger.info(f"Generating PDF at: {pdf_path}")
 
     try:
-        # IMPORTANT FIX: Pass runner_result positionally (no 'audit_data=' keyword)
+        # FIXED HERE: Pass runner_result positionally (no 'runner_result=' keyword)
         pdf_generated_path = generate_pdf_from_runner_result(
-            runner_result,  # ← positional first argument
+            runner_result,  # ← positional argument (matches pdf_report.py / runner.py signature)
             output_path=str(pdf_path),
             logo_path=logo_path,
             report_title=report_title,
