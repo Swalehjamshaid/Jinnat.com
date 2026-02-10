@@ -1,194 +1,712 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <title>Website Audit Pro</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; background: #1f1f1f; color: #f5f5f5; margin: 0; padding: 0; }
-        .container { max-width: 900px; margin: 2rem auto; padding: 1rem; }
-        h1 { text-align: center; }
-        input[type=text] { width: 70%; padding: 0.5rem; font-size: 1rem; }
-        button { padding: 0.6rem 1rem; font-size: 1rem; margin-left: 0.5rem; cursor: pointer; }
-        .progress-bar { width: 100%; background: #333; height: 25px; border-radius: 5px; margin-top: 1rem; overflow: hidden; }
-        .progress-fill { height: 100%; background: #3b82f6; width: 0%; transition: width 0.2s; }
-        .section { margin-top: 2rem; }
-        .section h2 { margin-bottom: 0.5rem; }
-        .grid { display: grid; gap: 1rem; }
-        .card { padding: 1rem; background: #2d2d2d; border-radius: 6px; }
-        .error { color: #f87171; font-weight: bold; margin-top: 1rem; }
-    </style>
-</head>
-<body>
-<div class="container">
-    <h1>Website Audit Pro</h1>
-    <div>
-        <input type="text" id="auditUrl" placeholder="Enter website URL..." />
-        <button id="runAuditBtn">Run Audit</button>
-    </div>
-    <div class="progress-bar">
-        <div id="progressFill" class="progress-fill"></div>
-    </div>
-    <div id="progressText" style="margin-top:5px;">0%</div>
-    <div id="errorMessage" class="error"></div>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light">
+  <title>Website Audit Pro</title>
 
-    <div class="section">
-        <h2>Summary</h2>
-        <div>Audited URL: <span id="auditedUrl"></span></div>
-        <div>Overall Score: <span id="overallScore"></span></div>
-        <div>Grade: <span id="grade"></span></div>
-    </div>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
-    <div class="section">
-        <h2>Breakdown</h2>
-        <div id="breakdownList" class="grid"></div>
-    </div>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-    <div class="section">
-        <h2>Dynamic Cards</h2>
-        <div id="dynamicCards" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));"></div>
-    </div>
-
-    <div class="section">
-        <h2>Key-Value Pairs</h2>
-        <div id="dynamicKV" class="grid"></div>
-    </div>
-
-    <div class="section">
-        <h2>Chart</h2>
-        <canvas id="chartCanvas" height="150"></canvas>
-    </div>
-</div>
-
-<script>
-let ws;
-let chart;
-
-const auditUrlInput = document.getElementById("auditUrl");
-const runBtn = document.getElementById("runAuditBtn");
-const progressFill = document.getElementById("progressFill");
-const progressText = document.getElementById("progressText");
-const errorMessage = document.getElementById("errorMessage");
-const auditedUrlElem = document.getElementById("auditedUrl");
-const overallScoreElem = document.getElementById("overallScore");
-const gradeElem = document.getElementById("grade");
-const breakdownList = document.getElementById("breakdownList");
-const dynamicCards = document.getElementById("dynamicCards");
-const dynamicKV = document.getElementById("dynamicKV");
-
-function getGradeClass(grade) {
-    switch((grade||"").toUpperCase()) {
-        case "A": return "text-green-400";
-        case "B": return "text-lime-400";
-        case "C": return "text-yellow-400";
-        case "D": return "text-orange-400";
-        case "F": return "text-red-400";
-        default: return "";
+  <style>
+    :root{
+      --radius: 18px;
+      --glass: rgba(255,255,255,.07);
+      --glassBorder: rgba(255,255,255,.12);
+      --shadow: 0 18px 45px rgba(0,0,0,.35);
+      --muted: rgba(255,255,255,.72);
+      --muted2: rgba(255,255,255,.62);
+      --bg0: rgba(2,6,23,1);
+      --bg1: rgba(3,7,18,1);
+      --brandA: rgba(14,165,233,.95);
+      --brandB: rgba(99,102,241,.90);
+      --good: #22c55e;
+      --warn: #fbbf24;
+      --bad:  #ef4444;
+      --info: #38bdf8;
     }
-}
 
-runBtn.addEventListener("click", () => {
-    const url = auditUrlInput.value.trim();
-    if (!url) return alert("Please enter a website URL.");
+    body{
+      min-height:100vh;
+      background:
+        radial-gradient(1200px 600px at 25% 15%, rgba(14,165,233,.22), transparent 55%),
+        radial-gradient(900px 520px at 75% 8%, rgba(34,197,94,.16), transparent 52%),
+        radial-gradient(800px 520px at 65% 85%, rgba(239,68,68,.12), transparent 52%),
+        linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 100%);
+    }
 
-    if (ws) ws.close();
+    .app-shell{ max-width:1200px; margin:0 auto; padding: 22px 16px 70px; }
 
-    const protocol = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${protocol}://${location.host}/ws`);
+    .glass{
+      background: var(--glass);
+      border: 1px solid var(--glassBorder);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
 
-    ws.onopen = () => {
-        ws.send(JSON.stringify({ url }));
-        errorMessage.textContent = "";
-        progressFill.style.width = "0%";
-        progressText.textContent = "0%";
+    .brand-badge{
+      width:46px; height:46px;
+      border-radius: 14px;
+      display:grid; place-items:center;
+      font-weight: 900;
+      letter-spacing: .5px;
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border: 1px solid rgba(255,255,255,.16);
+      box-shadow: 0 18px 40px rgba(14,165,233,.22);
+    }
 
-        auditedUrlElem.textContent = "";
-        overallScoreElem.textContent = "";
-        gradeElem.textContent = "";
-        breakdownList.innerHTML = "";
-        dynamicCards.innerHTML = "";
-        dynamicKV.innerHTML = "";
-        if (chart) chart.destroy();
-    };
+    .subtle{ color: var(--muted); }
+    .muted-2{ color: var(--muted2); }
 
-    ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        progressFill.style.width = msg.progress + "%";
-        progressText.textContent = msg.progress + "%";
+    .pill{
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: rgba(255,255,255,.80);
+      user-select:none;
+      white-space:nowrap;
+    }
 
-        if (msg.status === "error") {
-            errorMessage.textContent = msg.payload?.error || "Unknown error";
-            return;
+    .btn-glow{
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border:none;
+      box-shadow: 0 18px 45px rgba(14,165,233,.22);
+    }
+    .btn-glow:hover{ filter: brightness(1.06); transform: translateY(-1px); }
+    .btn-glow:active{ transform: translateY(0); }
+
+    .progress { height: 10px; }
+    .progress-bar { transition: width .20s ease; }
+
+    .mini-card{
+      border-radius: 18px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      padding: 14px 14px;
+      height:100%;
+    }
+    .mini-card .label{ font-size: 12px; opacity: .82; }
+    .mini-card .value{ font-size: 34px; font-weight: 900; line-height: 1.1; }
+    .mini-card .hint{ font-size: 12px; opacity: .72; margin-top: 8px; }
+
+    .kv-table td,.kv-table th{ border-color: rgba(255,255,255,.10)!important; }
+    .fade-in{ animation: fadeIn .30s ease both; }
+    @keyframes fadeIn{ from{opacity:0; transform: translateY(8px)} to{opacity:1; transform: translateY(0)} }
+
+    .score-ring{
+      width: 180px; height: 180px;
+      border-radius: 999px;
+      position:relative;
+      display:grid; place-items:center;
+      background:
+        radial-gradient(circle at center, rgba(255,255,255,.08) 0%, rgba(255,255,255,.04) 35%, transparent 60%),
+        conic-gradient(from 180deg, rgba(14,165,233,.95) var(--deg), rgba(255,255,255,.08) 0);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow: 0 18px 45px rgba(0,0,0,.35);
+    }
+    .score-ring .inside{
+      width:132px; height:132px;
+      border-radius:999px;
+      background: rgba(2,6,23,.75);
+      border:1px solid rgba(255,255,255,.12);
+      display:grid; place-items:center;
+      text-align:center;
+      padding: 10px;
+    }
+    .score-ring .score{ font-size: 40px; font-weight: 950; line-height: 1; }
+    .score-ring .grade{ font-weight: 900; margin-top: 4px; opacity:.92; }
+    .score-ring .tiny{ font-size: 12px; opacity:.78; margin-top: 6px; }
+
+    .status-chip{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 6px 10px; border-radius: 999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      font-size: 12px;
+    }
+    .dot{ width:8px; height:8px; border-radius:999px; background: rgba(255,255,255,.35); }
+    .dot.ok{ background: var(--good); box-shadow: 0 0 0 6px rgba(34,197,94,.16); }
+    .dot.warn{ background: var(--warn); box-shadow: 0 0 0 6px rgba(251,191,36,.16); }
+    .dot.bad{ background: var(--bad); box-shadow: 0 0 0 6px rgba(239,68,68,.16); }
+    .dot.info{ background: var(--info); box-shadow: 0 0 0 6px rgba(56,189,248,.16); }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    /* Light theme tweaks */
+    [data-bs-theme="light"] body{
+      background:
+        radial-gradient(1200px 600px at 25% 15%, rgba(14,165,233,.22), transparent 55%),
+        radial-gradient(900px 520px at 75% 8%, rgba(34,197,94,.14), transparent 52%),
+        radial-gradient(800px 520px at 65% 85%, rgba(239,68,68,.10), transparent 52%),
+        linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(241,245,249,1) 100%);
+    }
+    [data-bs-theme="light"] .glass{
+      background: rgba(255,255,255,.72);
+      border:1px solid rgba(15,23,42,.10);
+      box-shadow: 0 12px 35px rgba(2,6,23,.10);
+    }
+    [data-bs-theme="light"] .score-ring .inside{
+      background: rgba(255,255,255,.86);
+      border:1px solid rgba(15,23,42,.10);
+    }
+    [data-bs-theme="light"] .pill, [data-bs-theme="light"] .status-chip{
+      color: rgba(15,23,42,.72);
+      border-color: rgba(15,23,42,.12);
+      background: rgba(255,255,255,.60);
+    }
+    [data-bs-theme="light"] .subtle{ color: rgba(15,23,42,.70); }
+    [data-bs-theme="light"] .muted-2{ color: rgba(15,23,42,.60); }
+    [data-bs-theme="light"] .mini-card{ background: rgba(255,255,255,.74); border-color: rgba(15,23,42,.10); }
+    [data-bs-theme="light"] .kv-table td, [data-bs-theme="light"] .kv-table th{ border-color: rgba(15,23,42,.10)!important; }
+  </style>
+</head>
+
+<body>
+  <div class="app-shell">
+
+    <!-- HEADER -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <div class="d-flex align-items-center gap-3">
+        <div class="brand-badge text-white" aria-hidden="true">FF</div>
+        <div>
+          <div class="h4 mb-0 fw-bold">Website Audit Pro</div>
+          <div class="subtle small">Runner.py results • WebSocket progress • PDF export</div>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <span id="wsStatus" class="pill">WS: Disconnected</span>
+        <button class="btn btn-sm btn-outline-secondary" id="themeToggle" type="button" aria-label="Toggle theme">🌙 / ☀️</button>
+      </div>
+    </div>
+
+    <!-- INPUT + PROGRESS -->
+    <div class="glass p-4 mb-4">
+      <div class="row g-3 align-items-end">
+        <div class="col-lg-7">
+          <label class="form-label fw-semibold">Website URL</label>
+          <input id="urlInput" type="text" class="form-control form-control-lg"
+                 placeholder="example.com or https://example.com"
+                 value="https://www.haier.com.pk/#/login" />
+          <div class="small muted-2 mt-1">Paste domain or full URL — the system normalizes it automatically.</div>
+        </div>
+
+        <div class="col-lg-5">
+          <div class="d-grid gap-2 d-lg-flex justify-content-lg-end">
+            <button id="startBtn" class="btn btn-lg btn-glow text-white fw-semibold" type="button">
+              ▶ Start Audit
+            </button>
+            <button id="pdfBtn" class="btn btn-lg btn-outline-info fw-semibold" type="button" disabled>
+              ⬇ Download Professional PDF
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,.12)">
+
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="fw-semibold">Progress</div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-chip" id="stageChip"><span class="dot info" id="stageDot"></span><span id="statusText">idle</span></span>
+          <span class="subtle"><span id="progressText">0%</span></span>
+        </div>
+      </div>
+
+      <div class="progress glass" style="border-radius:999px;">
+        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+
+      <!-- Alerts -->
+      <div id="alertArea" class="mt-3"></div>
+
+      <!-- Debug drawer -->
+      <div class="mt-3">
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#debugCollapse" aria-expanded="false">
+          Debug (last message / last result)
+        </button>
+        <div class="collapse mt-2" id="debugCollapse">
+          <div class="glass p-3 mono small" id="debugBox">No messages yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-lg-4">
+        <div class="glass p-4 h-100 text-center">
+          <div class="score-ring mx-auto" id="scoreRing" style="--deg:0deg;">
+            <div class="inside">
+              <div class="score" id="overallScore">0</div>
+              <div class="grade" id="gradeText">F</div>
+              <div class="tiny" id="auditedUrl">Audited: -</div>
+            </div>
+          </div>
+
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <span class="pill" id="lastRunAt">—</span>
+            <span class="pill" id="fetcherPill">fetcher: —</span>
+          </div>
+
+          <div class="mt-3 subtle small">
+            Overall score is computed from SEO, Performance, Links, and Security.
+          </div>
+
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <button id="copyJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Copy JSON</button>
+            <button id="openJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Open JSON</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-8">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <div class="h5 mb-0 fw-bold">Score Breakdown</div>
+              <div class="subtle small">Chart comes directly from runner.py chart_data (fallback to breakdown)</div>
+            </div>
+            <span class="pill" id="verdictPill">verdict: —</span>
+          </div>
+          <canvas id="breakdownChart" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- CATEGORY CARDS -->
+    <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">SEO</div>
+          <div class="value" id="seoScore">0</div>
+          <div class="hint">Title, meta description, H1, canonical, image ALT</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Performance</div>
+          <div class="value" id="perfScore">0</div>
+          <div class="hint">Load time, size, scripts, styles</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Links</div>
+          <div class="value" id="linksScore">0</div>
+          <div class="hint">Internal vs external structure</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Security</div>
+          <div class="value" id="secScore">0</div>
+          <div class="hint">HTTPS, HSTS, response status</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DYNAMIC OUTPUT -->
+    <div id="dynamicArea" class="row g-3" style="display:none;">
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Highlights</div>
+            <span class="pill">runner.dynamic.cards</span>
+          </div>
+          <div id="dynamicCards" class="d-grid gap-2"></div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Details</div>
+            <span class="pill">runner.dynamic.kv</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="kvBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center mt-5 subtle small">
+      © FF Tech • WebSocket <code>/ws</code> • REST <code>/api/audit/run</code> • PDF <code>/api/audit/pdf</code>
+    </div>
+
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // =========================================================
+    // CONTROLLER (Works with updated app/main.py + runner.py)
+    // =========================================================
+    const REST_FALLBACK_AFTER_MS = 9000;
+    const AUTO_SCROLL_ON_RESULT = true;
+
+    let ws = null;
+    let lastResult = null;
+    let chart = null;
+    let fallbackTimer = null;
+    let auditInProgress = false;
+
+    const el = (id) => document.getElementById(id);
+
+    // Theme toggle
+    const themeKey = "fftech_theme";
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-bs-theme", theme);
+      localStorage.setItem(themeKey, theme);
+    }
+    (function initTheme() {
+      const saved = localStorage.getItem(themeKey);
+      if (saved) setTheme(saved);
+    })();
+    el("themeToggle").addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-bs-theme") || "dark";
+      setTheme(current === "dark" ? "light" : "dark");
+    });
+
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    }
+
+    function showAlert(message, type="info", persist=false) {
+      const area = el("alertArea");
+      const div = document.createElement("div");
+      div.className = `alert alert-${type} mb-2 fade-in`;
+      div.innerHTML = `
+        <div class="d-flex align-items-start justify-content-between gap-3">
+          <div>${message}</div>
+          <button type="button" class="btn-close" aria-label="Close"></button>
+        </div>`;
+      div.querySelector(".btn-close").onclick = () => div.remove();
+      area.prepend(div);
+      if (!persist) setTimeout(() => { try { div.remove(); } catch(e) {} }, 6500);
+    }
+
+    function setStage(status, percent) {
+      const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
+      el("progressBar").style.width = `${p}%`;
+      el("progressText").textContent = `${p}%`;
+      el("statusText").textContent = status || "working";
+      const bar = el("progressBar");
+      bar.classList.remove("bg-info","bg-success","bg-warning","bg-danger");
+      if (status === "error") bar.classList.add("bg-danger");
+      else if (p >= 100) bar.classList.add("bg-success");
+      else bar.classList.add("bg-info");
+      const dot = el("stageDot");
+      dot.classList.remove("ok","warn","bad","info");
+      if (status === "error") dot.classList.add("bad");
+      else if (p >= 100) dot.classList.add("ok");
+      else dot.classList.add("info");
+    }
+
+    function setWsStatus(connected) {
+      el("wsStatus").textContent = connected ? "WS: Connected" : "WS: Disconnected";
+      el("wsStatus").style.opacity = connected ? "1" : "0.75";
+    }
+
+    function wsUrl() {
+      const loc = window.location;
+      const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${loc.host}/ws`;
+    }
+
+    function debugSet(obj) {
+      el("debugBox").textContent = JSON.stringify(obj, null, 2);
+    }
+
+    // Extract runner_result in any reasonable shape
+    function extractRunnerResult(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      if (obj.audited_url && typeof obj.overall_score !== "undefined") return obj;
+      if (obj.result && obj.result.audited_url) return obj.result;
+      if (obj.payload && obj.payload.audited_url) return obj.payload;
+      if (obj.data && obj.data.audited_url) return obj.data;
+      return null;
+    }
+
+    function extractError(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      return obj.error || (obj.payload && obj.payload.error) || null;
+    }
+
+    function renderResult(r) {
+      lastResult = r;
+      el("resultsArea").style.display = "";
+      el("cardsArea").style.display = "";
+      el("dynamicArea").style.display = "";
+      el("lastRunAt").textContent = new Date().toLocaleString();
+
+      const score = parseInt(r.overall_score || 0);
+      const deg = Math.max(0, Math.min(360, (score / 100) * 360));
+      el("scoreRing").style.setProperty("--deg", `${deg}deg`);
+      el("overallScore").textContent = score;
+      el("gradeText").textContent = r.grade || "-";
+      el("auditedUrl").textContent = `Audited: ${r.audited_url || "-"}`;
+
+      const breakdown = r.breakdown || {};
+      const seo = breakdown.seo?.score ?? 0;
+      const perf = breakdown.performance?.score ?? 0;
+      const links = breakdown.links?.score ?? 0;
+      const sec = breakdown.security?.score ?? 0;
+
+      el("seoScore").textContent = seo;
+      el("perfScore").textContent = perf;
+      el("linksScore").textContent = links;
+      el("secScore").textContent = sec;
+
+      // fetcher pill (if provided in performance extras)
+      const fetcher = breakdown.performance?.extras?.fetcher ?? "—";
+      el("fetcherPill").textContent = `fetcher: ${fetcher}`;
+
+      // verdict
+      el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
+
+      // Chart preferring runner.chart_data
+      let labels = ["SEO", "Performance", "Links", "Security"];
+      let dataPoints = [seo, perf, links, sec];
+      let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
+      const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
+      if (chartSpec?.data?.labels && chartSpec?.data?.datasets?.[0]?.data) {
+        labels = chartSpec.data.labels;
+        dataPoints = chartSpec.data.datasets[0].data;
+        colors = chartSpec.data.datasets[0].backgroundColor || colors;
+      }
+
+      const ctx = el("breakdownChart").getContext("2d");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [{ label: "Score", data: dataPoints, backgroundColor: colors, borderRadius: 12, borderSkipped: false }] },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,.10)" } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+
+      // dynamic cards
+      const dyn = r.dynamic || {};
+      const cards = dyn.cards || [];
+      const kv = dyn.kv || [];
+      const cardsWrap = el("dynamicCards");
+      cardsWrap.innerHTML = "";
+      for (const c of cards) {
+        const div = document.createElement("div");
+        div.className = "mini-card fade-in";
+        div.innerHTML = `<div class="fw-semibold mb-1">${escapeHtml(c.title || "")}</div>
+                         <div class="subtle">${escapeHtml(c.body || "")}</div>`;
+        cardsWrap.appendChild(div);
+      }
+
+      // KV table
+      const kvBody = el("kvBody");
+      kvBody.innerHTML = "";
+      for (const item of kv) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<th class="text-nowrap" style="width:40%">${escapeHtml(item.key || "")}</th>
+                        <td>${escapeHtml(String(item.value ?? ""))}</td>`;
+        kvBody.appendChild(tr);
+      }
+
+      // Enable PDF
+      el("pdfBtn").disabled = false;
+
+      // final progress
+      setStage("completed", 100);
+      if (AUTO_SCROLL_ON_RESULT) {
+        setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+      }
+    }
+
+    function buildHumanError(raw) {
+      const msg = String(raw || "Unknown error");
+      if (msg.includes("CERTIFICATE_VERIFY_FAILED") || msg.includes("unable to get local issuer certificate")) {
+        return `
+          <b>SSL certificate validation failed</b><br>
+          The target website's HTTPS certificate could not be verified from the server environment.<br>
+          Ensure the backend uses <code>certifi</code> CA bundle in SSL contexts (already applied in runner).<br>
+          <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>`;
+      }
+      if (msg.includes("Name or service not known") || msg.includes("Temporary failure in name resolution")) {
+        return `<b>DNS / network resolution problem</b><br>
+                The server couldn't resolve the domain (try again later).<br>
+                <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>`;
+      }
+      if (msg.toLowerCase().includes("timeout")) {
+        return `<b>Request timed out</b><br>
+                The target site took too long to respond.<br>
+                <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>`;
+      }
+      return `<b>Audit failed</b><br><span class="mono">${escapeHtml(msg)}</span>`;
+    }
+
+    // WebSocket
+    function ensureWs() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+      ws = new WebSocket(wsUrl());
+      ws.onopen = () => setWsStatus(true);
+      ws.onmessage = (event) => {
+        let msg = null;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        debugSet(msg);
+
+        const status = msg.status ?? msg.message ?? msg.type ?? "working";
+        const progress = msg.progress ?? msg.percent ?? 0;
+        setStage(status, progress);
+
+        const err = extractError(msg);
+        if (err) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          showAlert(buildHumanError(err), "danger", true);
+          return;
         }
 
-        if (msg.status === "completed") {
-            const result = msg.result;
-
-            auditedUrlElem.textContent = result.audited_url || "";
-            overallScoreElem.textContent = result.overall_score || "";
-            gradeElem.textContent = result.grade || "";
-            gradeElem.className = getGradeClass(result.grade);
-
-            breakdownList.innerHTML = "";
-            if (result.breakdown) {
-                for (const [k, v] of Object.entries(result.breakdown)) {
-                    const div = document.createElement("div");
-                    div.className = "card";
-                    div.textContent = `${k}: ${v}`;
-                    breakdownList.appendChild(div);
-                }
-            }
-
-            dynamicCards.innerHTML = "";
-            if (result.dynamic?.cards) {
-                result.dynamic.cards.forEach(card => {
-                    const div = document.createElement("div");
-                    div.className = "card";
-                    div.innerHTML = `<div><strong>${card.title || "Title"}</strong></div>
-                                     <div style="font-size:1.5rem">${card.value || ""}</div>`;
-                    dynamicCards.appendChild(div);
-                });
-            }
-
-            dynamicKV.innerHTML = "";
-            if (result.dynamic?.kv) {
-                result.dynamic.kv.forEach(kv => {
-                    const div = document.createElement("div");
-                    div.className = "card";
-                    div.textContent = `${kv.key}: ${kv.value}`;
-                    dynamicKV.appendChild(div);
-                });
-            }
-
-            if (result.chart_data) {
-                const ctx = document.getElementById("chartCanvas").getContext("2d");
-                chart = new Chart(ctx, {
-                    type: "bar",
-                    data: {
-                        labels: result.chart_data.map(d => d.label || d.name || "Metric"),
-                        datasets: [{
-                            label: "Score",
-                            data: result.chart_data.map(d => d.value || 0),
-                            backgroundColor: "rgba(59, 130, 246, 0.8)"
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: { y: { beginAtZero: true, max: 100 } },
-                        plugins: { legend: { display: false } }
-                    }
-                });
-            }
+        const r = extractRunnerResult(msg);
+        if (r) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          renderResult(r);
         }
-    };
+      };
+      ws.onclose = () => setWsStatus(false);
+      ws.onerror = () => setWsStatus(false);
+    }
 
-    ws.onerror = (e) => {
-        errorMessage.textContent = "WebSocket error";
-        console.error(e);
-    };
+    // REST fallback
+    async function runAuditRest(url) {
+      try {
+        setStage("rest_fallback", 20);
+        const res = await fetch("/api/audit/run", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ url })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const j = await res.json();
+        debugSet(j);
 
-    ws.onclose = () => console.log("WebSocket closed");
-});
-</script>
+        const err = extractError(j);
+        if (err) throw new Error(err);
+
+        const r = extractRunnerResult(j);
+        if (!r) throw new Error("REST response did not include runner_result.");
+        renderResult(r);
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+        setStage("error", 100);
+      }
+    }
+
+    async function startAudit() {
+      const url = el("urlInput").value.trim();
+      if (!url) {
+        showAlert("Please enter a URL.", "warning"); return;
+      }
+
+      // Reset
+      lastResult = null; auditInProgress = true;
+      el("pdfBtn").disabled = true;
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      setStage("starting", 1);
+      showAlert("Audit started… please wait.", "info");
+
+      ensureWs();
+      try { ws.send(JSON.stringify({ url })); } catch (e) { /* WS not ready; fallback below */ }
+
+      clearTimeout(fallbackTimer);
+      fallbackTimer = setTimeout(() => {
+        if (auditInProgress && !lastResult) {
+          showAlert("WebSocket is slow or blocked. Running REST fallback…", "warning");
+          runAuditRest(url);
+        }
+      }, REST_FALLBACK_AFTER_MS);
+    }
+
+    async function downloadPdf() {
+      const url = el("urlInput").value.trim();
+      if (!url) return showAlert("Please enter a URL.", "warning");
+      el("pdfBtn").disabled = true; el("pdfBtn").innerText = "Generating PDF…";
+
+      try {
+        const payload = { url, client_name:"", brand_name:"", report_title:"", website_name:"", logo_path:"" };
+        const res = await fetch("/api/audit/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          if (ct.includes("application/json")) { const j = await res.json(); detail = j.detail || JSON.stringify(j); }
+          else { detail = await res.text(); }
+          throw new Error(detail);
+        }
+
+        const blob = await res.blob();
+        const cd = res.headers.get("content-disposition") || "";
+        let filename = "audit_report.pdf";
+        const match = cd.match(/filename="?([^"]+)"?/i);
+        if (match && match[1]) filename = match[1];
+
+        const link = document.createElement("a");
+        const objectUrl = URL.createObjectURL(blob);
+        link.href = objectUrl; link.download = filename;
+        document.body.appendChild(link); link.click(); link.remove();
+        URL.revokeObjectURL(objectUrl);
+
+        showAlert("PDF generated and downloaded ✅", "success");
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+      } finally {
+        el("pdfBtn").disabled = !lastResult;
+        el("pdfBtn").innerText = "⬇ Download Professional PDF";
+      }
+    }
+
+    // Copy / Open JSON
+    el("copyJsonBtn").addEventListener("click", async () => {
+      if (!lastResult) return showAlert("No result to copy yet.", "warning");
+      try { await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2)); showAlert("Result JSON copied ✅", "success"); }
+      catch { showAlert("Clipboard not available in this browser context.", "warning"); }
+    });
+    el("openJsonBtn").addEventListener("click", () => {
+      if (!lastResult) return showAlert("No result to open yet.", "warning");
+      const w = window.open("", "_blank");
+      if (!w) return showAlert("Popup blocked. Allow popups to view JSON.", "warning");
+      w.document.write(`<pre>${escapeHtml(JSON.stringify(lastResult, null, 2))}</pre>`);
+      w.document.title = "Audit Result JSON"; w.document.close();
+    });
+
+    // Wire
+    el("startBtn").addEventListener("click", startAudit);
+    el("pdfBtn").addEventListener("click", downloadPdf);
+
+    setWsStatus(false);
+    ensureWs();
+    setStage("idle", 0);
+  </script>
 </body>
 </html>
