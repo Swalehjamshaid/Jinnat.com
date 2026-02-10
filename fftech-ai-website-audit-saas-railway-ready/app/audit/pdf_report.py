@@ -2,11 +2,10 @@
 """
 app/audit/pdf_report.py
 World-class 5-page PDF Audit Report generator using WeasyPrint.
-- Beautiful, print-ready layout (A4, headers/footers, page numbers)
-- Full-color score chart (inline SVG)
-- 5 structured pages with all runner.py data
-- Supports PDF/UA accessibility and metadata
-- Uses WeasyPrint (HTML/CSS → PDF) – best for professional reports in 2025/2026
+- Beautiful, print-ready layout with colors, graphs, and organized text
+- 5 structured pages: Cover, Summary + Graph, Category Scores, Highlights + Details, Notes
+- Full integration with runner.py data (overall_score, grade, breakdown, chart_data, dynamic)
+- Supports logo, accessibility tags, and metadata
 """
 
 from __future__ import annotations
@@ -60,7 +59,7 @@ def _score_color(score: int) -> str:
     return "#ef4444"              # Needs Improvement - red
 
 def _svg_score_chart(categories: List[Dict[str, Any]]) -> str:
-    """Inline SVG bar chart for scores"""
+    """Inline SVG bar chart for scores - colored and organized"""
     w, h = 760, 280
     pad = 60
     chart_w = w - pad * 2
@@ -91,7 +90,7 @@ def _svg_score_chart(categories: List[Dict[str, Any]]) -> str:
 """.strip()
 
 # ========================================
-# CSS – Professional, Print-Ready
+# CSS – Professional, Print-Ready, Colored
 # ========================================
 
 def _build_css() -> str:
@@ -151,7 +150,7 @@ tr:nth-child(even) { background: #f8fafc; }
     """.strip()
 
 # ========================================
-# Build HTML – 5-Page Professional Report
+# Build HTML – 5-Page Structure with Graphs, Colors, Organized Text
 # ========================================
 
 def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = None) -> str:
@@ -161,21 +160,65 @@ def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = 
     audited_url = _safe_str(data.get("audited_url", "N/A"))
     breakdown = data.get("breakdown", {})
     dynamic = data.get("dynamic", {})
+    chart_data = data.get("chart_data", [{}])[0].get("data", {})
 
-    # Score color
-    score_color = _score_color(overall_score)
-
-    # Categories for chart
+    # Category scores with extras
     categories = [
-        {"name": "SEO", "score": breakdown.get("seo", {}).get("score", 0)},
-        {"name": "Performance", "score": breakdown.get("performance", {}).get("score", 0)},
-        {"name": "Links", "score": breakdown.get("links", {}).get("score", 0)},
-        {"name": "Security", "score": breakdown.get("security", {}).get("score", 0)},
+        {"name": "SEO", "score": breakdown.get("seo", {}).get("score", 0), "extras": breakdown.get("seo", {}).get("extras", {})},
+        {"name": "Performance", "score": breakdown.get("performance", {}).get("score", 0), "extras": breakdown.get("performance", {}).get("extras", {})},
+        {"name": "Links", "score": breakdown.get("links", {}).get("score", 0), "extras": breakdown.get("links", {})},
+        {"name": "Security", "score": breakdown.get("security", {}).get("score", 0), "extras": breakdown.get("security", {})},
     ]
 
     chart_svg = _svg_score_chart(categories)
 
-    # Cards
+    # Category table rows with colors
+    category_rows = ""
+    for cat in categories:
+        score = cat["score"]
+        color_cls = 'good' if score >= 80 else 'fair' if score >= 70 else 'bad'
+        category_rows += f"""
+        <tr>
+            <th>{cat["name"]}</th>
+            <td><span class="badge {color_cls}">{score}</span></td>
+        </tr>
+        """
+
+    # Extras details (organized)
+    seo_extras = breakdown.get("seo", {}).get("extras", {})
+    perf_extras = breakdown.get("performance", {}).get("extras", {})
+    links_extras = breakdown.get("links", {})
+    sec_extras = breakdown.get("security", {})
+
+    extras_html = f"""
+    <h3>SEO Details</h3>
+    <p>Title: {seo_extras.get("title", "N/A")}</p>
+    <p>Meta Description: {seo_extras.get("meta_description_present", "N/A")}</p>
+    <p>Canonical: {seo_extras.get("canonical", "N/A")}</p>
+    <p>H1 Count: {seo_extras.get("h1_count", "N/A")}</p>
+    <p>Images Total: {seo_extras.get("images_total", "N/A")}</p>
+    <p>Images Missing Alt: {seo_extras.get("images_missing_alt", "N/A")}</p>
+    
+    <h3>Performance Details</h3>
+    <p>Load Time: {perf_extras.get("load_ms", "N/A")} ms</p>
+    <p>Page Size: {perf_extras.get("bytes", "N/A")} bytes</p>
+    <p>Scripts: {perf_extras.get("scripts", "N/A")}</p>
+    <p>Styles: {perf_extras.get("styles", "N/A")}</p>
+    <p>Fetcher: {perf_extras.get("fetcher", "N/A")}</p>
+    
+    <h3>Links Details</h3>
+    <p>Internal Links: {links_extras.get("internal_links_count", "N/A")}</p>
+    <p>External Links: {links_extras.get("external_links_count", "N/A")}</p>
+    <p>Total Links: {links_extras.get("total_links_count", "N/A")}</p>
+    
+    <h3>Security Details</h3>
+    <p>HTTPS: {sec_extras.get("https", "N/A")}</p>
+    <p>HSTS: {sec_extras.get("hsts", "N/A")}</p>
+    <p>Status Code: {sec_extras.get("status_code", "N/A")}</p>
+    <p>Server: {sec_extras.get("server", "N/A")}</p>
+    """
+
+    # Highlights cards (colored and organized)
     cards_html = ""
     for card in dynamic.get("cards", []):
         title = _html_escape(card.get("title", "N/A"))
@@ -187,12 +230,13 @@ def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = 
         </div>
         """
 
-    # KV table
+    # KV table rows with colors for values
     kv_rows = ""
     for item in dynamic.get("kv", []):
         key = _html_escape(item.get("key", "N/A"))
         value = _html_escape(str(item.get("value", "N/A")))
-        kv_rows += f"<tr><th>{key}</th><td>{value}</td></tr>"
+        color_cls = 'good' if "true" in value.lower() or _safe_int(value, 0) > 0 else ''
+        kv_rows += f"<tr><th>{key}</th><td class=\"{color_cls}\">{value}</td></tr>"
 
     logo_tag = f'<img src="{logo_path}" style="max-width:120px; margin-bottom:1em;" alt="Logo">' if logo_path else ""
 
@@ -211,7 +255,7 @@ def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = 
     {logo_tag}
     <h1>{_html_escape(report_title)}</h1>
     <p style="font-size:14pt; margin:1em 0;"><b>Audited URL:</b> {audited_url}</p>
-    <div style="font-size:32pt; color:{score_color}; margin:1.5em 0;">
+    <div style="font-size:32pt; color:{_score_color(overall_score)}; margin:1.5em 0;">
         {overall_score} / 100 <span style="font-size:24pt;">({grade})</span>
     </div>
     <p style="font-size:16pt; color:#334155;">Generated on {dt.date.today().strftime('%B %d, %Y')}</p>
@@ -219,9 +263,9 @@ def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = 
 
 <div class="page-break"></div>
 
-<!-- Page 2: Summary + Chart -->
+<!-- Page 2: Executive Summary + Graph -->
 <h2>Executive Summary</h2>
-<p>This report provides a comprehensive audit of the website based on SEO, Performance, Links, and Security metrics. Overall performance is rated <b>{grade}</b> with a score of <b>{overall_score}/100</b>.</p>
+<p>This report provides a comprehensive audit of the website based on SEO, Performance, Links, and Security metrics. Overall performance is rated <span style="color:{_score_color(overall_score)};">{grade}</span> with a score of <b>{overall_score}/100</b>.</p>
 
 <h3>Score Breakdown</h3>
 <div style="text-align:center;">
@@ -230,21 +274,21 @@ def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = 
 
 <div class="page-break"></div>
 
-<!-- Page 3: Category Scores + Highlights -->
+<!-- Page 3: Category Scores -->
 <h2>Category Scores</h2>
-<div class="grid" style="display:grid; grid-template-columns:repeat(2,1fr); gap:1rem;">
-    <div class="score-card"><h3>SEO</h3><p><b>{breakdown.get("seo", {}).get("score", "N/A")}</b></p></div>
-    <div class="score-card"><h3>Performance</h3><p><b>{breakdown.get("performance", {}).get("score", "N/A")}</b></p></div>
-    <div class="score-card"><h3>Links</h3><p><b>{breakdown.get("links", {}).get("score", "N/A")}</b></p></div>
-    <div class="score-card"><h3>Security</h3><p><b>{breakdown.get("security", {}).get("score", "N/A")}</b></p></div>
-</div>
-
-<h2>Highlights</h2>
-{cards_html}
+<table>
+    <thead><tr><th>Category</th><th>Score</th></tr></thead>
+    <tbody>{category_rows}</tbody>
+</table>
 
 <div class="page-break"></div>
 
-<!-- Page 4: Detailed KV -->
+<!-- Page 4: Highlights + Details -->
+<h2>Highlights</h2>
+<div style="display:grid; grid-template-columns:repeat(2,1fr); gap:1em;">
+    {cards_html}
+</div>
+
 <h2>Detailed Information</h2>
 <table>
     <thead><tr><th>Property</th><th>Value</th></tr></thead>
@@ -253,7 +297,10 @@ def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = 
 
 <div class="page-break"></div>
 
-<!-- Page 5: Footer / Notes -->
+<!-- Page 5: Detailed Findings + Notes -->
+<h2>Detailed Findings</h2>
+{extras_html}
+
 <h2>Notes & Methodology</h2>
 <p>This report was generated automatically using advanced web auditing tools. Scores are indicative and should be reviewed in context of business goals. Contact FF Tech for manual audit services.</p>
 <p style="text-align:center; margin-top:4cm; color:#64748b; font-size:10pt;">
@@ -265,7 +312,7 @@ def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = 
 """.strip()
 
 # ========================================
-# Public API (unchanged signature)
+# Public API (unchanged)
 # ========================================
 
 def generate_audit_pdf(
@@ -273,7 +320,7 @@ def generate_audit_pdf(
     audit_data: Dict[str, Any],
     output_path: str,
     logo_path: Optional[str] = None,
-    report_title: str = "Website Audit Professional Report",
+    report_title: str = "Website Audit Report",
     lang: str = "en",
     pdf_variant: str = "pdf/ua-1",
     tag_pdf: bool = True,
