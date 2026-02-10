@@ -1,67 +1,58 @@
-# ===================================================================
-# Environment
-# -------------------------------------------------------------------
-# Python: 3.11 (works with 3.12 too)
-# ===================================================================
-
-# --- Core Web & Parsing ---
-requests>=2.32,<3
-beautifulsoup4>=4.12,<5
-lxml>=5.1,<6                  # Fast & robust HTML/XML parsing
-soupsieve>=2.5,<3             # Better CSS selectors for BS4
-html5lib>=1.1,<2
-
-# Optional: faster HTML parsing (great for large audits)
-# selectolax is blazing fast for HTML parsing; keep optional
-# python-selectolax>=0.3,<0.4
-
-# --- SSL & Security ---
-certifi>=2024.2.2
-cryptography>=42,<45          # For future HTTPS checks, certificate parsing
-
-# --- HTTP (sync + optional async for speed) ---
-# requests stays for sync; httpx is optional for async batches
-httpx>=0.27,<1                # Optional but recommended for concurrency
-brotli>=1.1,<2                # Improves compression/transfer checks (optional)
-
-# --- PDF Generation ---
-reportlab>=4.2,<5
-Pillow>=10.3,<11              # Images in PDFs
-
-# --- Utilities ---
-python-dateutil>=2.9,<3
-tenacity>=9,<10               # Robust retries around flaky endpoints (optional)
-tldextract>=5.1,<6            # Domain & subdomain parsing (useful in audits)
-validators>=0.22,<0.23        # URL, email, etc. validation
-
-# --- FastAPI & ASGI Server ---
-fastapi>=0.115,<1
-uvicorn[standard]>=0.30,<1    # Includes uvloop, httptools, websockets stack
-orjson>=3.10,<4               # Fast JSON for FastAPI responses
-
-# --- WebSocket Support ---
-# If you need a direct WS client; for server, uvicorn[standard] already covers
-websockets>=12,<13
-
-# --- Data Validation ---
-pydantic>=2.7,<3
-pydantic-settings>=2.4,<3     # For typed settings from env/files
-
-# --- NLP / AI Scoring (Optional) ---
-# Keep these only if you truly use them; they are heavier
-nltk>=3.9,<4
-textblob==0.17.1
-spacy>=3.7,<3.8
-
-# --- Optional: file uploads / forms ---
-python-multipart>=0.0.9,<0.0.10
-
-# --- Optional: YAML config / logging ---
-pyyaml>=6.0.1,<7
-loguru>=0.7,<0.8              # Cleaner structured logging (optional)
-
-# --- Optional: Sitemaps & robots ---
-# python-sitemap and robots parsers are fragmented; below are reliable picks:
-robots-txt-parse>=0.3,<0.4    # Simple robots.txt parsing
-# If you want sitemap parsing via requests+lxml, you can skip a package.
-# For full-featured crawlers, consider scrapy in a separate optional extra.
+# =========================================================
+# FF Tech Website Audit SaaS – requirements.txt
+# Railway / Docker / SSL-safe
+# Updated: 10 Feb 2026
+# =========================================================
+# -------------------------
+# Core FastAPI Backend
+# -------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+gunicorn==23.0.0
+# -------------------------
+# Templates + Uploads
+# -------------------------
+jinja2==3.1.5
+python-multipart==0.0.20
+# -------------------------
+# WebSocket Support
+# -------------------------
+websockets==14.1
+# -------------------------
+# Validation & Settings
+# -------------------------
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+# -------------------------
+# HTTP Clients + SSL (CRITICAL SECTION)
+# -------------------------
+requests==2.32.3
+httpx==0.28.1
+urllib3==2.3.0
+# SSL certificate trust store (FIXES CERTIFICATE_VERIFY_FAILED)
+certifi==2024.12.14
+# Cryptography backend (important for modern TLS chains)
+cryptography==42.0.8
+# -------------------------
+# HTML Parsing / Analysis
+# -------------------------
+beautifulsoup4==4.12.3
+lxml==5.3.0
+# -------------------------
+# JSON Performance
+# -------------------------
+orjson==3.10.15
+ujson==5.10.0
+# -------------------------
+# PDF Generation
+# -------------------------
+reportlab==4.2.5
+# -------------------------
+# OPTIONAL (Enable only if used)
+# -------------------------
+# pillow==10.4.0
+# qrcode==7.4.2
+# python-pptx==1.0.2
+# openpyxl==3.1.5
+# weasyprint==63.0 # requires OS-level libs
