@@ -8,452 +8,654 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --radius: 16px;
-      --shadow: 0 8px 32px rgba(0,0,0,0.25);
-      --glass: rgba(30, 41, 59, 0.85);
-      --glass-border: rgba(255,255,255,0.08);
-      --primary: #0d6efd;
-      --success: #22c55e;
-      --warning: #fbbf24;
-      --danger: #ef4444;
+      --radius: 18px;
+      --glass: rgba(255,255,255,.07);
+      --glassBorder: rgba(255,255,255,.12);
+      --shadow: 0 18px 45px rgba(0,0,0,.35);
+      --muted: rgba(255,255,255,.72);
+      --muted2: rgba(255,255,255,.62);
+      --bg0: rgba(2,6,23,1);
+      --bg1: rgba(3,7,18,1);
+      --brandA: rgba(14,165,233,.95);
+      --brandB: rgba(99,102,241,.90);
+      --good: #22c55e;
+      --warn: #fbbf24;
+      --bad: #ef4444;
       --info: #38bdf8;
     }
     body {
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-      color: #e2e8f0;
       min-height: 100vh;
-      font-family: system-ui, -apple-system, sans-serif;
+      background: radial-gradient(1200px 600px at 25% 15%, rgba(14,165,233,.22), transparent 55%),
+                  radial-gradient(900px 520px at 75% 8%, rgba(34,197,94,.16), transparent 52%),
+                  radial-gradient(800px 520px at 65% 85%, rgba(239,68,68,.12), transparent 52%),
+                  linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 100%);
     }
-    .app-shell {
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 2rem 1rem;
-    }
-    .glass-card {
+    .app-shell { max-width: 1200px; margin: 0 auto; padding: 22px 16px 70px; }
+    .glass {
       background: var(--glass);
-      border: 1px solid var(--glass-border);
+      border: 1px solid var(--glassBorder);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      backdrop-filter: blur(12px);
-      overflow: hidden;
+      backdrop-filter: blur(10px);
     }
-    .card-header {
-      background: linear-gradient(135deg, var(--primary), #0b5ed7);
-      color: white;
-      border-bottom: none;
-      padding: 1.25rem 1.5rem;
-      font-weight: 600;
+    .brand-badge {
+      width: 46px; height: 46px;
+      border-radius: 14px;
+      display: grid; place-items: center;
+      font-weight: 900;
+      letter-spacing: .5px;
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border: 1px solid rgba(255,255,255,.16);
+      box-shadow: 0 18px 40px rgba(14,165,233,.22);
     }
+    .subtle { color: var(--muted); }
+    .muted-2 { color: var(--muted2); }
+    .pill {
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: rgba(255,255,255,.80);
+      user-select: none;
+      white-space: nowrap;
+    }
+    .btn-glow {
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border: none;
+      box-shadow: 0 18px 45px rgba(14,165,233,.22);
+    }
+    .btn-glow:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .btn-glow:active { transform: translateY(0); }
+    .progress { height: 10px; }
+    .progress-bar { transition: width .20s ease; }
+    .mini-card {
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      padding: 14px;
+      height: 100%;
+    }
+    .mini-card .label { font-size: 12px; opacity: .82; }
+    .mini-card .value { font-size: 34px; font-weight: 900; line-height: 1.1; }
+    .mini-card .hint { font-size: 12px; opacity: .72; margin-top: 8px; }
+    .kv-table td, .kv-table th { border-color: rgba(255,255,255,.10)!important; }
+    .fade-in { animation: fadeIn .30s ease both; }
+    @keyframes fadeIn { from {opacity:0; transform: translateY(8px)} to {opacity:1; transform: translateY(0)} }
     .score-ring {
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
-      background: conic-gradient(var(--success) var(--deg), rgba(255,255,255,0.08) 0);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto;
-      box-shadow: 0 0 30px rgba(34,197,94,0.25);
+      width: 180px; height: 180px;
+      border-radius: 999px;
+      position: relative;
+      display: grid; place-items: center;
+      background: conic-gradient(from 180deg, rgba(14,165,233,.95) var(--deg), rgba(255,255,255,.08) 0);
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 18px 45px rgba(0,0,0,.35);
     }
-    .score-inner {
-      width: 160px;
-      height: 160px;
-      background: #1e293b;
-      border-radius: 50%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      box-shadow: inset 0 4px 15px rgba(0,0,0,0.5);
-    }
-    .score-number {
-      font-size: 4.5rem;
-      font-weight: 800;
-      line-height: 1;
-    }
-    .score-grade {
-      font-size: 2.8rem;
-      font-weight: 700;
-      color: var(--primary);
-    }
-    .category-card {
-      transition: all 0.3s ease;
-    }
-    .category-card:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-    }
-    .table th {
-      background: rgba(255,255,255,0.05);
-      width: 35%;
-      font-weight: 600;
-    }
-    .badge-score {
-      font-size: 1.4rem;
-      padding: 0.75em 1.4em;
-      font-weight: 700;
-    }
-    footer {
-      margin-top: 6rem;
-      color: #94a3b8;
+    .score-ring .inside {
+      width: 132px; height: 132px;
+      border-radius: 999px;
+      background: rgba(2,6,23,.75);
+      border: 1px solid rgba(255,255,255,.12);
+      display: grid; place-items: center;
       text-align: center;
-      font-size: 0.95rem;
+      padding: 10px;
     }
+    .score-ring .score { font-size: 40px; font-weight: 950; line-height: 1; }
+    .score-ring .grade { font-weight: 900; margin-top: 4px; opacity: .92; }
+    .score-ring .tiny { font-size: 12px; opacity: .78; margin-top: 6px; }
+    .status-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      font-size: 12px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: rgba(255,255,255,.35); }
+    .dot.ok { background: var(--good); box-shadow: 0 0 0 6px rgba(34,197,94,.16); }
+    .dot.warn { background: var(--warn); box-shadow: 0 0 0 6px rgba(251,191,36,.16); }
+    .dot.bad { background: var(--bad); box-shadow: 0 0 0 6px rgba(239,68,68,.16); }
+    .dot.info { background: var(--info); box-shadow: 0 0 0 6px rgba(56,189,248,.16); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
   </style>
 </head>
 <body>
-
-<div class="app-shell">
-
-  <!-- Header -->
-  <div class="text-center mb-5">
-    <h1 class="display-4 fw-bold text-white">Website Audit Pro</h1>
-    <p class="lead text-muted" id="auditedUrl">Audited: —</p>
-  </div>
-
-  <!-- Progress & Alerts -->
-  <div class="glass-card mb-4">
-    <div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">Progress</h5>
-        <div class="d-flex align-items-center gap-3">
-          <span class="badge bg-info" id="statusText">Idle</span>
-          <span class="badge bg-secondary" id="progressText">0%</span>
+  <div class="app-shell">
+    <!-- HEADER -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <div class="d-flex align-items-center gap-3">
+        <div class="brand-badge text-white">FF</div>
+        <div>
+          <div class="h4 mb-0 fw-bold">Website Audit Pro</div>
+          <div class="subtle small">Runner.py results • WebSocket progress • PDF export</div>
         </div>
       </div>
-      <div class="progress" style="height: 10px;">
-        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+      <div class="d-flex align-items-center gap-2">
+        <span id="wsStatus" class="pill">WS: Disconnected</span>
+        <button class="btn btn-sm btn-outline-secondary" id="themeToggle" type="button" aria-label="Toggle theme">🌙 / ☀️</button>
+      </div>
+    </div>
+
+    <!-- INPUT + PROGRESS -->
+    <div class="glass p-4 mb-4">
+      <div class="row g-3 align-items-end">
+        <div class="col-lg-7">
+          <label class="form-label fw-semibold">Website URL / Domain</label>
+          <input id="urlInput" type="text" class="form-control form-control-lg"
+                 placeholder="haier.com.pk or www.haier.com.pk"
+                 value="https://www.haier.com.pk" />
+          <div class="small muted-2 mt-1">Just type the domain — https:// is added automatically.</div>
+        </div>
+        <div class="col-lg-5">
+          <div class="d-grid gap-2 d-lg-flex justify-content-lg-end">
+            <button id="startBtn" class="btn btn-lg btn-glow text-white fw-semibold" type="button">
+              ▶ Start Audit
+            </button>
+            <button id="pdfBtn" class="btn btn-lg btn-outline-info fw-semibold" type="button" disabled>
+              ⬇ Download Professional PDF
+            </button>
+          </div>
+        </div>
+      </div>
+      <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,.12)">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="fw-semibold">Progress</div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-chip" id="stageChip"><span class="dot info" id="stageDot"></span><span id="statusText">idle</span></span>
+          <span class="subtle"><span id="progressText">0%</span></span>
+        </div>
+      </div>
+      <div class="progress glass" style="border-radius:999px;">
+        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
       </div>
       <div id="alertArea" class="mt-3"></div>
-    </div>
-  </div>
-
-  <!-- Overall Score -->
-  <div class="glass-card mb-5" id="resultsArea" style="display:none;">
-    <div class="card-header text-center">
-      <h3 class="mb-0">Overall Score</h3>
-    </div>
-    <div class="card-body text-center py-5">
-      <div class="score-ring mx-auto" id="scoreRing">
-        <div class="score-inner">
-          <div class="score-number" id="overallScore">0</div>
-          <div class="score-grade" id="gradeText">—</div>
-        </div>
-      </div>
-      <p class="mt-4 fs-5 text-muted" id="fetcherPill">Fetcher: —</p>
-      <p class="mt-2 text-muted" id="verdictPill">Verdict: —</p>
-    </div>
-  </div>
-
-  <!-- Category Scores -->
-  <div class="row g-4 mb-5" id="cardsArea" style="display:none;">
-    <div class="col-md-3">
-      <div class="glass-card category-card h-100">
-        <div class="card-body text-center">
-          <h5 class="text-warning mb-3">SEO</h5>
-          <div class="badge bg-warning badge-score" id="seoScore">—</div>
-          <p class="mt-3 small text-muted">Title, Meta, Headings, Images</p>
+      <div class="mt-3">
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#debugCollapse">
+          Debug (last message / last result)
+        </button>
+        <div class="collapse mt-2" id="debugCollapse">
+          <div class="glass p-3 mono small" id="debugBox">No messages yet.</div>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="glass-card category-card h-100">
-        <div class="card-body text-center">
-          <h5 class="text-success mb-3">Performance</h5>
-          <div class="badge bg-success badge-score" id="perfScore">—</div>
-          <p class="mt-3 small text-muted">Load Time, Size, Resources</p>
+
+    <!-- RESULTS AREA -->
+    <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-lg-4">
+        <div class="glass p-4 h-100 text-center">
+          <div class="score-ring mx-auto" id="scoreRing" style="--deg:0deg;">
+            <div class="inside">
+              <div class="score" id="overallScore">0</div>
+              <div class="grade" id="gradeText">—</div>
+              <div class="tiny" id="auditedUrl">Audited: —</div>
+            </div>
+          </div>
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <span class="pill" id="lastRunAt">—</span>
+            <span class="pill" id="fetcherPill">fetcher: —</span>
+          </div>
+          <div class="mt-3 subtle small">
+            Overall score is computed from SEO, Performance, Links, and Security.
+          </div>
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <button id="copyJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Copy JSON</button>
+            <button id="openJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Open JSON</button>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-8">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <div class="h5 mb-0 fw-bold">Score Breakdown</div>
+              <div class="subtle small">Chart comes directly from runner.py chart_data</div>
+            </div>
+            <span class="pill" id="verdictPill">verdict: —</span>
+          </div>
+          <canvas id="breakdownChart" height="120"></canvas>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="glass-card category-card h-100">
-        <div class="card-body text-center">
-          <h5 class="text-info mb-3">Links</h5>
-          <div class="badge bg-info badge-score" id="linksScore">—</div>
-          <p class="mt-3 small text-muted">Internal & External Links</p>
+
+    <!-- CATEGORY CARDS -->
+    <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">SEO</div>
+          <div class="value" id="seoScore">—</div>
+          <div class="hint">Title, meta, H1, canonical, image ALT</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Performance</div>
+          <div class="value" id="perfScore">—</div>
+          <div class="hint">Load time, size, scripts, styles</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Links</div>
+          <div class="value" id="linksScore">—</div>
+          <div class="hint">Internal vs external structure</div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Security</div>
+          <div class="value" id="secScore">—</div>
+          <div class="hint">HTTPS, HSTS, response status</div>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="glass-card category-card h-100">
-        <div class="card-body text-center">
-          <h5 class="text-primary mb-3">Security</h5>
-          <div class="badge bg-primary badge-score" id="secScore">—</div>
-          <p class="mt-3 small text-muted">HTTPS, HSTS, Status</p>
+
+    <!-- DYNAMIC OUTPUT -->
+    <div id="dynamicArea" class="row g-3" style="display:none;">
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Highlights</div>
+            <span class="pill">runner.dynamic.cards</span>
+          </div>
+          <div id="dynamicCards" class="d-grid gap-2"></div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Details</div>
+            <span class="pill">runner.dynamic.kv</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="kvBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Chart -->
-  <div class="glass-card mb-5" id="resultsArea" style="display:none;">
-    <div class="card-header">
-      <h4 class="mb-0">Score Breakdown Chart</h4>
-    </div>
-    <div class="card-body">
-      <canvas id="breakdownChart" height="180"></canvas>
+    <div class="text-center mt-5 subtle small">
+      © FF Tech • WebSocket <code>/ws</code> • REST <code>/api/audit/run</code> • PDF <code>/api/audit/pdf</code>
     </div>
   </div>
 
-  <!-- Highlights (Dynamic Cards) -->
-  <div class="glass-card mb-5" id="dynamicArea" style="display:none;">
-    <div class="card-header">
-      <h4 class="mb-0">Key Highlights</h4>
-    </div>
-    <div class="card-body">
-      <div class="row g-3" id="dynamicCards"></div>
-    </div>
-  </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // =========================================================
+    // CONTROLLER – FULL RENDERING OF RUNNER.PY RESULT
+    // =========================================================
+    const REST_FALLBACK_AFTER_MS = 9000;
+    const AUTO_SCROLL_ON_RESULT = true;
+    let ws = null;
+    let lastResult = null;
+    let chart = null;
+    let fallbackTimer = null;
+    let auditInProgress = false;
 
-  <!-- Detailed KV Table -->
-  <div class="glass-card mb-5" id="dynamicArea" style="display:none;">
-    <div class="card-header">
-      <h4 class="mb-0">Detailed Information</h4>
-    </div>
-    <div class="card-body p-0">
-      <table class="table table-dark table-striped table-hover mb-0">
-        <thead>
-          <tr>
-            <th>Property</th>
-            <th>Value</th>
-          </tr>
-        </thead>
-        <tbody id="kvBody"></tbody>
-      </table>
-    </div>
-  </div>
+    const el = (id) => document.getElementById(id);
 
-  <!-- Footer -->
-  <footer>
-    <p>© FF Tech • Website Audit Pro • Powered by Runner.py</p>
-  </footer>
-
-</div>
-
-<!-- Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-<script>
-// ====================================================
-// MAIN SCRIPT – Full rendering of runner.py data
-// ====================================================
-
-let chart = null;
-
-const el = id => document.getElementById(id);
-
-function escapeHtml(str) {
-  return String(str ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function normalizeUrl(input) {
-  let url = (input || "").trim();
-  if (!url) return "";
-  if (!/^https?:\/\//i.test(url)) {
-    url = "https://" + url;
-  }
-  return url;
-}
-
-function showAlert(message, type = "info", persist = false) {
-  const area = el("alertArea");
-  const div = document.createElement("div");
-  div.className = `alert alert-${type} mb-2 fade-in`;
-  div.innerHTML = `
-    <div class="d-flex align-items-start justify-content-between gap-3">
-      <div>${message}</div>
-      <button type="button" class="btn-close" aria-label="Close"></button>
-    </div>`;
-  div.querySelector(".btn-close").onclick = () => div.remove();
-  area.appendChild(div);
-  if (!persist) setTimeout(() => div.remove(), 8000);
-}
-
-function setStage(status, percent) {
-  const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
-  el("progressBar").style.width = `${p}%`;
-  el("progressText").textContent = `${p}%`;
-  el("statusText").textContent = status || "Working";
-}
-
-function renderResult(r) {
-  // Reset UI
-  el("cardsArea").style.display = "none";
-  el("dynamicArea").style.display = "none";
-  el("pdfBtn").disabled = true;
-
-  const error = r.error || (r.payload && r.payload.error);
-  if (error) {
-    showAlert(`Audit failed: ${escapeHtml(error)}`, "danger", true);
-    setStage("failed", 100);
-    return;
-  }
-
-  // Show results
-  el("cardsArea").style.display = "";
-  el("dynamicArea").style.display = "";
-
-  const breakdown = r.breakdown || {};
-  const perfExtras = (breakdown.performance || {}).extras || {};
-  const seoExtras = (breakdown.seo || {}).extras || {};
-
-  // Overall
-  const score = parseInt(r.overall_score || 0);
-  el("overallScore").textContent = score;
-  el("gradeText").textContent = r.grade || "—";
-  el("auditedUrl").textContent = `Audited: ${r.audited_url || "—"}`;
-  const deg = Math.min(360, score * 3.6);
-  el("scoreRing").style.setProperty("--deg", `${deg}deg`);
-
-  // Fetcher & Verdict
-  const fetcher = perfExtras.fetcher ?? "—";
-  el("fetcherPill").textContent = `Fetcher: ${fetcher}`;
-  el("verdictPill").textContent = score >= 90 ? "Excellent" : score >= 80 ? "Very Good" : score >= 70 ? "Good" : "Needs Improvement";
-
-  // Category scores
-  el("seoScore").textContent = breakdown.seo?.score ?? "—";
-  el("perfScore").textContent = breakdown.performance?.score ?? "—";
-  el("linksScore").textContent = breakdown.links?.score ?? "—";
-  el("secScore").textContent = breakdown.security?.score ?? "—";
-
-  // Chart
-  let chartData = {
-    labels: ["SEO", "Performance", "Links", "Security"],
-    datasets: [{
-      label: "Score",
-      data: [
-        breakdown.seo?.score ?? 0,
-        breakdown.performance?.score ?? 0,
-        breakdown.links?.score ?? 0,
-        breakdown.security?.score ?? 0
-      ],
-      backgroundColor: ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"]
-    }]
-  };
-
-  if (r.chart_data?.[0]?.data) {
-    chartData = r.chart_data[0].data;
-  }
-
-  if (chart) chart.destroy();
-  chart = new Chart(el("breakdownChart"), {
-    type: "bar",
-    data: chartData,
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,0.1)" } },
-        x: { grid: { display: false } }
-      }
+    // Theme toggle
+    const themeKey = "fftech_theme";
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-bs-theme", theme);
+      localStorage.setItem(themeKey, theme);
     }
-  });
+    (function initTheme() {
+      const saved = localStorage.getItem(themeKey);
+      if (saved) setTheme(saved);
+    })();
+    el("themeToggle").addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-bs-theme") || "dark";
+      setTheme(current === "dark" ? "light" : "dark");
+    });
 
-  // Dynamic Cards
-  const cardsContainer = el("dynamicCards");
-  cardsContainer.innerHTML = "";
-  (r.dynamic?.cards || []).forEach(card => {
-    const col = document.createElement("div");
-    col.className = "col-md-4";
-    col.innerHTML = `
-      <div class="glass-card h-100">
-        <div class="card-body">
-          <h5 class="text-primary mb-2">${escapeHtml(card.title || "")}</h5>
-          <p class="text-white mb-0">${escapeHtml(card.body || "")}</p>
-        </div>
-      </div>
-    `;
-    cardsContainer.appendChild(col);
-  });
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    }
 
-  // KV Table
-  const kvBody = el("kvBody");
-  kvBody.innerHTML = "";
-  (r.dynamic?.kv || []).forEach(item => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <th>${escapeHtml(item.key || "")}</th>
-      <td>${escapeHtml(item.value ?? "—")}</td>
-    `;
-    kvBody.appendChild(tr);
-  });
+    function showAlert(message, type="info", persist=false) {
+      const area = el("alertArea");
+      const div = document.createElement("div");
+      div.className = `alert alert-${type} mb-2 fade-in`;
+      div.innerHTML = `
+        <div class="d-flex align-items-start justify-content-between gap-3">
+          <div>${message}</div>
+          <button type="button" class="btn-close" aria-label="Close"></button>
+        </div>`;
+      div.querySelector(".btn-close").onclick = () => div.remove();
+      area.prepend(div);
+      if (!persist) setTimeout(() => div.remove(), 6500);
+    }
 
-  el("pdfBtn").disabled = false;
-  setStage("completed", 100);
-}
+    function setStage(status, percent) {
+      const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
+      el("progressBar").style.width = `${p}%`;
+      el("progressText").textContent = `${p}%`;
+      el("statusText").textContent = status || "working";
+      const bar = el("progressBar");
+      bar.classList.remove("bg-info","bg-success","bg-warning","bg-danger");
+      if (status === "error" || status === "failed") bar.classList.add("bg-danger");
+      else if (p >= 100) bar.classList.add("bg-success");
+      else bar.classList.add("bg-info");
+      const dot = el("stageDot");
+      dot.classList.remove("ok","warn","bad","info");
+      if (status === "error" || status === "failed") dot.classList.add("bad");
+      else if (p >= 100) dot.classList.add("ok");
+      else dot.classList.add("info");
+    }
 
-async function startAudit() {
-  const input = el("urlInput").value.trim();
-  if (!input) return showAlert("Please enter a domain or URL.", "warning");
+    function setWsStatus(connected) {
+      el("wsStatus").textContent = connected ? "WS: Connected" : "WS: Disconnected";
+      el("wsStatus").style.opacity = connected ? "1" : "0.75";
+    }
 
-  const url = normalizeUrl(input);
+    function wsUrl() {
+      const loc = window.location;
+      const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${loc.host}/ws`;
+    }
 
-  setStage("starting", 5);
-  showAlert(`Auditing ${url}...`, "info");
+    function debugSet(obj) {
+      el("debugBox").textContent = JSON.stringify(obj, null, 2);
+    }
 
-  // Your WebSocket or REST logic here
-  // For example:
-  // ws.send(JSON.stringify({ url }));
-  // or fetch('/api/audit/run', { method: 'POST', body: JSON.stringify({ url }) })
+    function extractRunnerResult(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      if (obj.audited_url && typeof obj.overall_score !== "undefined") return obj;
+      if (obj.result && obj.result.audited_url) return obj.result;
+      if (obj.payload && obj.payload.audited_url) return obj.payload;
+      if (obj.data && obj.data.audited_url) return obj.data;
+      return null;
+    }
 
-  // When result arrives, call:
-  // renderResult(resultData);
-}
+    function extractError(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      return obj.error || (obj.payload && obj.payload.error) || null;
+    }
 
-// Example: simulate result (remove in production)
-setTimeout(() => {
-  renderResult({
-    "audited_url": "https://www.apple.com",
-    "overall_score": 92,
-    "grade": "A+",
-    "breakdown": {
-      "seo": { "score": 80, "extras": { "title": "Apple", "meta_description_present": true, "canonical": "https://www.apple.com/", "h1_count": 1, "images_total": 72, "images_missing_alt": 72 } },
-      "performance": { "score": 100, "extras": { "load_ms": 0, "bytes": 238140, "scripts": 15, "styles": 7, "fetcher": "pre-fetched" } },
-      "links": { "score": 100, "internal_links_count": 102, "external_links_count": 27, "total_links_count": 129 },
-      "security": { "score": 95, "https": true, "hsts": false, "status_code": 200, "server": "" },
-      "competitors": { "score": 0 },
-      "ai": { "score": 0 }
-    },
-    "chart_data": [
-      {
-        "data": {
-          "labels": ["SEO", "Performance", "Links", "Security"],
-          "datasets": [{
-            "label": "Score",
-            "data": [80, 100, 100, 95],
-            "backgroundColor": ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"]
-          }]
+    function normalizeUrl(input) {
+      let url = (input || "").trim();
+      if (!url) return "";
+      if (!/^https?:\/\//i.test(url)) {
+        url = "https://" + url;
+      }
+      return url;
+    }
+
+    function renderResult(r) {
+      lastResult = r;
+      auditInProgress = false;
+      clearTimeout(fallbackTimer);
+
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      el("pdfBtn").disabled = true;
+
+      const error = extractError(r);
+      if (error) {
+        showAlert(buildHumanError(error), "danger", true);
+        setStage("failed", 100);
+        return;
+      }
+
+      el("resultsArea").style.display = "";
+      el("cardsArea").style.display = "";
+      el("dynamicArea").style.display = "";
+
+      el("lastRunAt").textContent = new Date().toLocaleString();
+
+      const breakdown = r.breakdown || {};
+      const perfExtras = (breakdown.performance || {}).extras || {};
+      const seoExtras = (breakdown.seo || {}).extras || {};
+      const linksData = breakdown.links || {};
+      const secData = breakdown.security || {};
+
+      const score = parseInt(r.overall_score || 0);
+      const seo = breakdown.seo?.score ?? 0;
+      const perf = breakdown.performance?.score ?? 0;
+      const links = breakdown.links?.score ?? 0;
+      const sec = breakdown.security?.score ?? 0;
+
+      const deg = Math.max(0, Math.min(360, (score / 100) * 360));
+      el("scoreRing").style.setProperty("--deg", `${deg}deg`);
+      el("overallScore").textContent = score;
+      el("gradeText").textContent = r.grade || "—";
+      el("auditedUrl").textContent = `Audited: ${r.audited_url || "—"}`;
+
+      el("seoScore").textContent = seo;
+      el("perfScore").textContent = perf;
+      el("linksScore").textContent = links;
+      el("secScore").textContent = sec;
+
+      const fetcher = perfExtras.fetcher ?? "—";
+      el("fetcherPill").textContent = `fetcher: ${fetcher}`;
+
+      el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
+
+      // Chart
+      let labels = ["SEO", "Performance", "Links", "Security"];
+      let dataPoints = [seo, perf, links, sec];
+      let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
+
+      const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
+      if (chartSpec?.data?.labels && chartSpec?.data?.datasets?.[0]?.data) {
+        labels = chartSpec.data.labels;
+        dataPoints = chartSpec.data.datasets[0].data;
+        colors = chartSpec.data.datasets[0].backgroundColor || colors;
+      }
+
+      const ctx = el("breakdownChart").getContext("2d");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [{ label: "Score", data: dataPoints, backgroundColor: colors, borderRadius: 12, borderSkipped: false }] },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,.10)" } },
+            x: { grid: { display: false } }
+          }
         }
-      }
-    ],
-    "dynamic": {
-      "cards": [
-        { "title": "Page Title", "body": "Apple" },
-        { "title": "Load Time", "body": "0 ms" },
-        { "title": "Page Size", "body": "238140 bytes" }
-      ],
-      "kv": [
-        { "key": "final_url", "value": "https://www.apple.com" },
-        { "key": "status_code", "value": 200 },
-        { "key": "https", "value": true },
-        { "key": "hsts", "value": false },
-        { "key": "internal_links", "value": 102 },
-        { "key": "external_links", "value": 27 },
-        { "key": "total_links", "value": 129 },
-        { "key": "images_missing_alt", "value": 72 },
-        { "key": "fetcher", "value": "pre-fetched" }
-      ]
-    }
-  });
-}, 1500);
+      });
 
-// Add your WebSocket / start button logic here
-</script>
+      // Dynamic cards
+      const dyn = r.dynamic || {};
+      const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
+      const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
+
+      const cardsWrap = el("dynamicCards");
+      cardsWrap.innerHTML = "";
+      for (const c of cards) {
+        const div = document.createElement("div");
+        div.className = "mini-card fade-in";
+        div.innerHTML = `<div class="fw-semibold mb-1">${escapeHtml(c.title || "")}</div>
+                         <div class="subtle">${escapeHtml(c.body || "")}</div>`;
+        cardsWrap.appendChild(div);
+      }
+
+      // KV table
+      const kvBody = el("kvBody");
+      kvBody.innerHTML = "";
+      for (const item of kv) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<th class="text-nowrap" style="width:40%">${escapeHtml(item.key || "")}</th>
+                        <td>${escapeHtml(String(item.value ?? ""))}</td>`;
+        kvBody.appendChild(tr);
+      }
+
+      el("pdfBtn").disabled = false;
+
+      setStage("completed", 100);
+
+      if (AUTO_SCROLL_ON_RESULT) {
+        setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+      }
+
+      if (score === 0) {
+        showAlert("Audit completed but no content was extracted.", "warning", true);
+      }
+    }
+
+    function buildHumanError(raw) {
+      const msg = String(raw || "Unknown error");
+      if (msg.includes("CERTIFICATE_VERIFY_FAILED") || msg.includes("unable to get local issuer certificate")) {
+        return `
+          <b>SSL certificate validation failed</b><br>
+          The target website's HTTPS certificate could not be verified.<br>
+          Raw: <span class="mono">${escapeHtml(msg)}</span>`;
+      }
+      if (msg.includes("Name or service not known") || msg.includes("Temporary failure in name resolution")) {
+        return `<b>DNS resolution failed</b><br>The domain could not be resolved.<br>Raw: ${escapeHtml(msg)}`;
+      }
+      if (msg.toLowerCase().includes("timeout")) {
+        return `<b>Request timed out</b><br>The site did not respond in time.<br>Raw: ${escapeHtml(msg)}`;
+      }
+      return `<b>Audit failed</b><br><span class="mono">${escapeHtml(msg)}</span>`;
+    }
+
+    function ensureWs() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      ws = new WebSocket(wsUrl());
+      ws.onopen = () => setWsStatus(true);
+      ws.onmessage = (event) => {
+        let msg = null;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        debugSet(msg);
+        const status = msg.status ?? msg.message ?? msg.type ?? "working";
+        const progress = msg.progress ?? msg.percent ?? 0;
+        setStage(status, progress);
+        const err = extractError(msg);
+        if (err) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          showAlert(buildHumanError(err), "danger", true);
+          return;
+        }
+        const r = extractRunnerResult(msg);
+        if (r) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          renderResult(r);
+        }
+      };
+      ws.onclose = () => setWsStatus(false);
+      ws.onerror = () => setWsStatus(false);
+    }
+
+    async function runAuditRest(url) {
+      try {
+        setStage("rest_fallback", 20);
+        const res = await fetch("/api/audit/run", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ url })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const j = await res.json();
+        debugSet(j);
+        const err = extractError(j);
+        if (err) throw new Error(err);
+        const r = extractRunnerResult(j);
+        if (!r) throw new Error("REST response did not include runner_result.");
+        renderResult(r);
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+        setStage("error", 100);
+      }
+    }
+
+    async function startAudit() {
+      const input = el("urlInput").value.trim();
+      if (!input) {
+        showAlert("Please enter a domain or URL.", "warning");
+        return;
+      }
+      const url = normalizeUrl(input);
+
+      lastResult = null;
+      auditInProgress = true;
+      el("pdfBtn").disabled = true;
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      setStage("starting", 1);
+      showAlert(`Auditing ${url}...`, "info");
+
+      ensureWs();
+      try { ws.send(JSON.stringify({ url })); } catch (e) {}
+      clearTimeout(fallbackTimer);
+      fallbackTimer = setTimeout(() => {
+        if (auditInProgress && !lastResult) {
+          showAlert("WebSocket is slow or blocked. Running REST fallback…", "warning");
+          runAuditRest(url);
+        }
+      }, REST_FALLBACK_AFTER_MS);
+    }
+
+    async function downloadPdf() {
+      const input = el("urlInput").value.trim();
+      if (!input) return showAlert("Please enter a URL.", "warning");
+
+      const url = normalizeUrl(input);
+
+      el("pdfBtn").disabled = true; el("pdfBtn").innerText = "Generating PDF…";
+      try {
+        const payload = { url, client_name:"", brand_name:"", report_title:"", website_name:"", logo_path:"" };
+        const res = await fetch("/api/audit/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          if (ct.includes("application/json")) { const j = await res.json(); detail = j.detail || JSON.stringify(j); }
+          else { detail = await res.text(); }
+          throw new Error(detail);
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get("content-disposition") || "";
+        let filename = "audit_report.pdf";
+        const match = cd.match(/filename="?([^"]+)"?/i);
+        if (match && match[1]) filename = match[1];
+        const link = document.createElement("a");
+        const objectUrl = URL.createObjectURL(blob);
+        link.href = objectUrl; link.download = filename;
+        document.body.appendChild(link); link.click(); link.remove();
+        URL.revokeObjectURL(objectUrl);
+        showAlert("PDF generated and downloaded ✅", "success");
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+      } finally {
+        el("pdfBtn").disabled = !lastResult;
+        el("pdfBtn").innerText = "⬇ Download Professional PDF";
+      }
+    }
+
+    el("startBtn").addEventListener("click", startAudit);
+    el("pdfBtn").addEventListener("click", downloadPdf);
+
+    el("copyJsonBtn").addEventListener("click", async () => {
+      if (!lastResult) return showAlert("No result to copy yet.", "warning");
+      try { await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2)); showAlert("Result JSON copied ✅", "success"); }
+      catch { showAlert("Clipboard not available.", "warning"); }
+    });
+
+    el("openJsonBtn").addEventListener("click", () => {
+      if (!lastResult) return showAlert("No result to open yet.", "warning");
+      const w = window.open("", "_blank");
+      if (!w) return showAlert("Popup blocked.", "warning");
+      w.document.write(`<pre>${escapeHtml(JSON.stringify(lastResult, null, 2))}</pre>`);
+      w.document.title = "Audit Result JSON"; w.document.close();
+    });
+
+    setWsStatus(false);
+    ensureWs();
+    setStage("idle", 0);
+  </script>
 </body>
 </html>
