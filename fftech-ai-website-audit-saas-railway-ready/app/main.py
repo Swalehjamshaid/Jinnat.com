@@ -1,24 +1,19 @@
 # -*- coding: utf-8 -*-
 """
 app/main.py
-
 Fully integrated FastAPI app for:
-- GET  /                 -> serves app/templates/index.html
-- GET  /health           -> health check
-- WS   /ws               -> runs audit + streams progress + sends final result (runner_result)
-- POST /api/audit/run    -> REST audit fallback (returns runner_result)
-- POST /api/audit/pdf    -> generates PDF (returns PDF bytes)
-
+- GET / -> serves app/templates/index.html
+- GET /health -> health check
+- WS /ws -> runs audit + streams progress + sends final result (runner_result)
+- POST /api/audit/run -> REST audit fallback (returns runner_result)
+- POST /api/audit/pdf -> generates PDF (returns PDF bytes)
 WebSocket message contract (matches index.html):
   stream: { status: str, progress: int, payload: any|null }
   final : { status: "completed", progress: 100, result: runner_result }
-
 runner_result is exactly what runner.py returns:
   { audited_url, overall_score, grade, breakdown, chart_data, dynamic, (optional error) }
 """
-
 from __future__ import annotations
-
 import json
 import os
 import re
@@ -26,7 +21,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
-
+import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +29,6 @@ from pydantic import BaseModel, Field
 
 # Import runner + PDF helper
 from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
-
 
 # -----------------------------------------------------------------------------
 # App
@@ -50,13 +44,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # -----------------------------------------------------------------------------
 # Paths
 # -----------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent  # .../app
 INDEX_HTML_PATH = BASE_DIR / "templates" / "index.html"
-
 
 # -----------------------------------------------------------------------------
 # (Optional) In-memory cache to speed up repeats / PDF
@@ -105,6 +97,32 @@ async def _ws_send(ws: WebSocket, message: Dict[str, Any]) -> None:
         pass
 
 
+def _fetch_html(url: str) -> Tuple[bool, str, str]:
+    """
+    Fetch HTML with strict SSL first, fallback to insecure if needed.
+    Returns: (success: bool, html: str, error: str)
+    """
+    headers = {
+        "User-Agent": "FFTechAuditBot/2.0 (+https://github.com/yourrepo)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        # Try with strict SSL verification first
+        r = requests.get(url, timeout=15, headers=headers, allow_redirects=True, verify=True)
+        r.raise_for_status()
+        return True, r.text, ""
+    except requests.exceptions.SSLError as ssl_err:
+        # Fallback: disable SSL verification
+        try:
+            r = requests.get(url, timeout=15, headers=headers, allow_redirects=True, verify=False)
+            r.raise_for_status()
+            return True, r.text, "SSL verification disabled (fallback)"
+        except Exception as fallback_err:
+            return False, "", f"SSL fallback failed: {str(fallback_err)}"
+    except Exception as e:
+        return False, "", str(e)
+
+
 # -----------------------------------------------------------------------------
 # Models
 # -----------------------------------------------------------------------------
@@ -141,20 +159,14 @@ async def index(_: Request) -> HTMLResponse:
 
 # -----------------------------------------------------------------------------
 # WebSocket: /ws
-# - Client sends: {"url":"..."}
-# - Server streams progress: {"status": "...", "progress": n, "payload": {...|None}}
-# - Final: {"status":"completed","progress":100,"result": runner_result}
 # -----------------------------------------------------------------------------
 @app.websocket("/ws")
 async def ws_audit(ws: WebSocket):
     await ws.accept()
     runner = WebsiteAuditRunner()
-
     try:
         while True:
             raw = await ws.receive_text()
-
-            # Expect JSON: {"url": "..."}
             try:
                 msg = json.loads(raw)
             except Exception:
@@ -176,7 +188,18 @@ async def ws_audit(ws: WebSocket):
                 await _ws_send(ws, {"status": status, "progress": int(percent), "payload": payload})
 
             try:
-                result = await runner.run(url, progress_cb=progress_cb)
+                # Pre-fetch HTML to bypass server-side SSL issues
+                success, html_content, fetch_error = _fetch_html(url)
+                if not success:
+                    await _ws_send(ws, {
+                        "status": "error",
+                        "progress": 100,
+                        "payload": {"error": f"Failed to fetch HTML: {fetch_error}"}
+                    })
+                    continue
+
+                # Run audit with pre-fetched HTML
+                result = await runner.run(url, html=html_content, progress_cb=progress_cb)
                 _cache_set(url, result)
 
                 err = _runner_error_message(result)
@@ -185,6 +208,7 @@ async def ws_audit(ws: WebSocket):
                     continue
 
                 await _ws_send(ws, {"status": "completed", "progress": 100, "result": result})
+
             except Exception as e:
                 await _ws_send(ws, {"status": "error", "progress": 100, "payload": {"error": str(e)}})
 
@@ -196,13 +220,11 @@ async def ws_audit(ws: WebSocket):
 
 # -----------------------------------------------------------------------------
 # REST fallback: /api/audit/run
-# Returns runner_result directly (same shape as runner output)
 # -----------------------------------------------------------------------------
 @app.post("/api/audit/run")
 async def api_audit_run(req: AuditRunRequest) -> JSONResponse:
     url = (req.url or "").strip()
     if not url:
-        # return the same failure shape used by runner
         return JSONResponse(
             {
                 "audited_url": "",
@@ -221,17 +243,44 @@ async def api_audit_run(req: AuditRunRequest) -> JSONResponse:
         return JSONResponse(cached)
 
     runner = WebsiteAuditRunner()
-    result = await runner.run(url, progress_cb=None)
-    _cache_set(url, result)
-    return JSONResponse(result)
+
+    # Pre-fetch HTML
+    success, html_content, fetch_error = _fetch_html(url)
+    if not success:
+        return JSONResponse(
+            {
+                "audited_url": url,
+                "overall_score": 0,
+                "grade": "F",
+                "error": f"Failed to fetch HTML: {fetch_error}",
+                "breakdown": {},
+                "chart_data": [],
+                "dynamic": {"cards": [], "kv": []},
+            },
+            status_code=400,
+        )
+
+    try:
+        result = await runner.run(url, html=html_content, progress_cb=None)
+        _cache_set(url, result)
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse(
+            {
+                "audited_url": url,
+                "overall_score": 0,
+                "grade": "F",
+                "error": str(e),
+                "breakdown": {},
+                "chart_data": [],
+                "dynamic": {"cards": [], "kv": []},
+            },
+            status_code=500,
+        )
 
 
 # -----------------------------------------------------------------------------
 # PDF: /api/audit/pdf
-# - Uses cached audit result if available (fast)
-# - Otherwise runs audit once
-# - Generates PDF using generate_pdf_from_runner_result()
-# - Returns PDF bytes
 # -----------------------------------------------------------------------------
 @app.post("/api/audit/pdf")
 async def api_audit_pdf(req: PdfRequest):
@@ -242,8 +291,14 @@ async def api_audit_pdf(req: PdfRequest):
     runner_result = _cache_get(url)
     if runner_result is None:
         runner = WebsiteAuditRunner()
+
+        # Pre-fetch HTML
+        success, html_content, fetch_error = _fetch_html(url)
+        if not success:
+            raise HTTPException(status_code=400, detail=f"Failed to fetch HTML: {fetch_error}")
+
         try:
-            runner_result = await runner.run(url, progress_cb=None)
+            runner_result = await runner.run(url, html=html_content, progress_cb=None)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Audit failed: {e}")
         _cache_set(url, runner_result)
