@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 # Import runner + PDF helper
 from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
 
-# Setup basic logging (visible in Railway logs)
+# Setup logging (visible in Railway logs)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -208,25 +208,32 @@ async def api_audit_pdf(req: PdfRequest):
     if not url:
         raise HTTPException(status_code=400, detail="url is required")
 
+    logger.info(f"PDF request received for URL: {url}")
+
     runner_result = _cache_get(url)
     if runner_result is None:
+        logger.info(f"No cache hit for {url} → running fresh audit")
         runner = WebsiteAuditRunner()
         success, html_content, fetch_mode = _fetch_html(url)
         if not success:
+            logger.error(f"Fetch failed for PDF: {fetch_mode}")
             raise HTTPException(status_code=400, detail=f"Could not fetch page: {fetch_mode}")
         try:
             runner_result = await runner.run(url, html=html_content, progress_cb=None)
             _cache_set(url, runner_result)
+            logger.info(f"Audit completed for PDF: {url}")
         except Exception as e:
-            logger.exception("Audit failed during PDF")
+            logger.exception("Audit failed during PDF generation")
             raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
 
     err = _runner_error_message(runner_result)
     if err:
+        logger.warning(f"Audit error for PDF: {err}")
         raise HTTPException(status_code=400, detail=f"Audit error: {err}")
 
-    # Validate runner_result has required structure
+    # Validate runner_result structure
     if not isinstance(runner_result, dict) or "overall_score" not in runner_result:
+        logger.error("Invalid runner_result structure for PDF")
         raise HTTPException(status_code=500, detail="Invalid audit result structure")
 
     report_title = (req.report_title or "").strip() or "Website Audit Report"
@@ -239,6 +246,8 @@ async def api_audit_pdf(req: PdfRequest):
     fname = _safe_filename(website_name or runner_result.get("audited_url") or "audit_report")
     pdf_path = tmp_dir / f"{fname}.pdf"
 
+    logger.info(f"Generating PDF at: {pdf_path}")
+
     try:
         pdf_generated_path = generate_pdf_from_runner_result(
             runner_result=runner_result,
@@ -250,10 +259,10 @@ async def api_audit_pdf(req: PdfRequest):
             website_name=website_name or None,
             audit_date=None,
         )
-        logger.info(f"PDF generated at: {pdf_generated_path}")
+        logger.info(f"PDF successfully generated: {pdf_generated_path}")
     except ImportError as e:
         logger.error("PDF generation failed: reportlab not installed")
-        raise HTTPException(status_code=500, detail="PDF library (reportlab) is missing. Please add 'reportlab' to requirements.txt")
+        raise HTTPException(status_code=500, detail="PDF library (reportlab) is missing. Add 'reportlab' to requirements.txt and redeploy.")
     except RuntimeError as e:
         logger.error(f"PDF runtime error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"PDF generation runtime error: {str(e)}")
@@ -262,8 +271,10 @@ async def api_audit_pdf(req: PdfRequest):
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
 
     if not pdf_path.exists():
+        logger.error("PDF file was not created")
         raise HTTPException(status_code=500, detail="PDF file was not created")
 
+    logger.info(f"Serving PDF file: {pdf_path}")
     return FileResponse(
         path=str(pdf_path),
         media_type="application/pdf",
