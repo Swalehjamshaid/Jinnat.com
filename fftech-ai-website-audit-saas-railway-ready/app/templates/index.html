@@ -169,11 +169,11 @@
     <div class="glass p-4 mb-4">
       <div class="row g-3 align-items-end">
         <div class="col-lg-7">
-          <label class="form-label fw-semibold">Website URL</label>
+          <label class="form-label fw-semibold">Website URL / Domain</label>
           <input id="urlInput" type="text" class="form-control form-control-lg"
-                 placeholder="example.com or https://example.com"
-                 value="https://www.apple.com" />
-          <div class="small muted-2 mt-1">Paste domain or full URL — the system normalizes it automatically.</div>
+                 placeholder="haier.com.pk or www.haier.com.pk"
+                 value="www.haier.com.pk" />
+          <div class="small muted-2 mt-1">Just type the domain (e.g. haier.com.pk) — https:// is added automatically.</div>
         </div>
         <div class="col-lg-5">
           <div class="d-grid gap-2 d-lg-flex justify-content-lg-end">
@@ -315,8 +315,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     // =========================================================
-    // CONTROLLER – Shows ALL runner.py results on success
-    // Hides everything cleanly on error
+    // CONTROLLER – Automatically adds https:// to domains
     // =========================================================
     const REST_FALLBACK_AFTER_MS = 9000;
     const AUTO_SCROLL_ON_RESULT = true;
@@ -409,12 +408,28 @@
       return obj.error || (obj.payload && obj.payload.error) || null;
     }
 
+    // Automatically normalize input: add https:// if missing
+    function normalizeUrl(input) {
+      let url = (input || "").trim();
+      if (!url) return "";
+
+      // Remove any duplicate protocol or spaces
+      url = url.replace(/^(https?:\/\/)+/i, '');
+      url = url.replace(/\s+/g, '');
+
+      // If it starts with www. or is just a domain, add https://
+      if (!/^https?:\/\//i.test(url)) {
+        url = "https://" + url;
+      }
+
+      return url;
+    }
+
     function renderResult(r) {
       lastResult = r;
       auditInProgress = false;
       clearTimeout(fallbackTimer);
 
-      // Reset and hide everything by default
       el("resultsArea").style.display = "none";
       el("cardsArea").style.display = "none";
       el("dynamicArea").style.display = "none";
@@ -427,14 +442,12 @@
         return;
       }
 
-      // Show all result sections only on success
       el("resultsArea").style.display = "";
       el("cardsArea").style.display = "";
       el("dynamicArea").style.display = "";
 
       el("lastRunAt").textContent = new Date().toLocaleString();
 
-      // Safe data access (all runner.py fields)
       const breakdown = r.breakdown || {};
       const perfExtras = (breakdown.performance || {}).extras || {};
       const seoExtras = (breakdown.seo || {}).extras || {};
@@ -463,7 +476,6 @@
 
       el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
 
-      // Chart – uses runner.py chart_data or fallback
       let labels = ["SEO", "Performance", "Links", "Security"];
       let dataPoints = [seo, perf, links, sec];
       let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
@@ -490,7 +502,6 @@
         }
       });
 
-      // Dynamic cards – directly from runner.dynamic.cards
       const dyn = r.dynamic || {};
       const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
       const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
@@ -505,7 +516,6 @@
         cardsWrap.appendChild(div);
       }
 
-      // KV table – directly from runner.dynamic.kv
       const kvBody = el("kvBody");
       kvBody.innerHTML = "";
       for (const item of kv) {
@@ -515,7 +525,6 @@
         kvBody.appendChild(tr);
       }
 
-      // Enable PDF button
       el("pdfBtn").disabled = false;
 
       setStage("completed", 100);
@@ -524,7 +533,6 @@
         setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
       }
 
-      // Optional warning for zero-score success
       if (score === 0) {
         showAlert("Audit completed but no content was extracted (empty or blocked page).", "warning", true);
       }
@@ -599,32 +607,46 @@
     }
 
     async function startAudit() {
-      const url = el("urlInput").value.trim();
-      if (!url) {
-        showAlert("Please enter a URL.", "warning"); return;
+      const input = el("urlInput").value.trim();
+      if (!input) {
+        showAlert("Please enter a domain or URL.", "warning");
+        return;
       }
-      lastResult = null; auditInProgress = true;
+
+      // Automatically add https:// if missing
+      const url = normalizeUrl(input);
+
+      lastResult = null;
+      auditInProgress = true;
       el("pdfBtn").disabled = true;
       el("resultsArea").style.display = "none";
       el("cardsArea").style.display = "none";
       el("dynamicArea").style.display = "none";
       setStage("starting", 1);
-      showAlert("Audit started… please wait.", "info");
+      showAlert(`Starting audit for ${url}...`, "info");
+
       ensureWs();
-      try { ws.send(JSON.stringify({ url })); } catch (e) {}
+      try {
+        ws.send(JSON.stringify({ url }));
+      } catch (e) {}
+
       clearTimeout(fallbackTimer);
       fallbackTimer = setTimeout(() => {
         if (auditInProgress && !lastResult) {
-          showAlert("WebSocket is slow or blocked. Running REST fallback…", "warning");
+          showAlert("WebSocket slow/blocked. Using REST fallback…", "warning");
           runAuditRest(url);
         }
       }, REST_FALLBACK_AFTER_MS);
     }
 
     async function downloadPdf() {
-      const url = el("urlInput").value.trim();
-      if (!url) return showAlert("Please enter a URL.", "warning");
-      el("pdfBtn").disabled = true; el("pdfBtn").innerText = "Generating PDF…";
+      const input = el("urlInput").value.trim();
+      if (!input) return showAlert("Please enter a URL.", "warning");
+
+      const url = normalizeUrl(input);
+
+      el("pdfBtn").disabled = true;
+      el("pdfBtn").innerText = "Generating PDF…";
       try {
         const payload = { url, client_name:"", brand_name:"", report_title:"", website_name:"", logo_path:"" };
         const res = await fetch("/api/audit/pdf", {
@@ -658,6 +680,10 @@
       }
     }
 
+    // Event listeners
+    el("startBtn").addEventListener("click", startAudit);
+    el("pdfBtn").addEventListener("click", downloadPdf);
+
     el("copyJsonBtn").addEventListener("click", async () => {
       if (!lastResult) return showAlert("No result to copy yet.", "warning");
       try { await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2)); showAlert("Result JSON copied ✅", "success"); }
@@ -672,9 +698,7 @@
       w.document.title = "Audit Result JSON"; w.document.close();
     });
 
-    el("startBtn").addEventListener("click", startAudit);
-    el("pdfBtn").addEventListener("click", downloadPdf);
-
+    // Init
     setWsStatus(false);
     ensureWs();
     setStage("idle", 0);
