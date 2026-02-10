@@ -1,69 +1,47 @@
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt
-# Railway / Docker / SSL-safe
-# Updated: 09 Feb 2026
+# Railway / Docker / SSL-safe / PDF generation
+# Updated: February 10, 2026
 # =========================================================
 
-# -------------------------
-# Core FastAPI Backend
-# -------------------------
+# Core FastAPI + Server
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 gunicorn==23.0.0
 
-# -------------------------
-# Templates + Uploads
-# -------------------------
+# Templates & Form handling
 jinja2==3.1.5
 python-multipart==0.0.20
 
-# -------------------------
-# WebSocket Support
-# -------------------------
+# WebSocket support (used in /ws endpoint)
 websockets==14.1
 
-# -------------------------
-# Validation & Settings
-# -------------------------
+# Validation & Config
 pydantic==2.10.4
 pydantic-settings==2.7.0
 python-dotenv==1.0.1
 
-# -------------------------
-# HTTP Clients + SSL (CRITICAL SECTION)
-# -------------------------
+# HTTP Clients + SSL fixes (critical)
 requests==2.32.3
 httpx==0.28.1
 urllib3==2.3.0
+certifi==2024.12.14          # Fixes CERTIFICATE_VERIFY_FAILED
+cryptography==42.0.8         # Modern TLS support
 
-# SSL certificate trust store (FIXES CERTIFICATE_VERIFY_FAILED)
-certifi==2024.12.14
-
-# Cryptography backend (important for modern TLS chains)
-cryptography==42.0.8
-
-# -------------------------
-# HTML Parsing / Analysis
-# -------------------------
+# HTML Parsing / Analysis (used in runner.py)
 beautifulsoup4==4.12.3
 lxml==5.3.0
 
-# -------------------------
-# JSON Performance
-# -------------------------
+# Fast JSON handling (performance boost)
 orjson==3.10.15
 ujson==5.10.0
 
-# -------------------------
-# PDF Generation
-# -------------------------
+# PDF Generation (fixed your PDF download issue)
 reportlab==4.2.5
 
-# -------------------------
-# OPTIONAL (Enable only if used)
-# -------------------------
-# pillow==10.4.0
-# qrcode==7.4.2
-# python-pptx==1.0.2
-# openpyxl==3.1.5
-# weasyprint==63.0   # requires OS-level libs
+# Optional packages (uncomment if you need them later)
+# pillow==10.4.0              # Image processing
+# qrcode==7.4.2               # QR code generation
+# python-pptx==1.0.2          # PowerPoint export
+# openpyxl==3.1.5             # Excel export
+# weasyprint==63.0            # Alternative HTML-to-PDF (requires OS libs: cairo/pango)
