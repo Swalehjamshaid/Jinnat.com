@@ -5,7 +5,7 @@ Fully integrated FastAPI app for Website Audit Pro
 - Serves index.html
 - WebSocket /ws for live progress & results
 - REST fallback /api/audit/run
-- PDF generation /api/audit/pdf
+- PDF generation /api/audit/pdf (fixed & improved)
 """
 from __future__ import annotations
 import json
@@ -13,6 +13,7 @@ import os
 import re
 import tempfile
 import time
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -24,6 +25,10 @@ from pydantic import BaseModel, Field
 
 # Import runner + PDF helper
 from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
+
+# Setup basic logging (visible in Railway logs)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Website Audit Pro", version="2.2.0")
 
@@ -77,12 +82,10 @@ def _fetch_html(url: str) -> Tuple[bool, str, str]:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
     try:
-        # Try strict SSL
         r = requests.get(url, timeout=15, headers=headers, allow_redirects=True, verify=True)
         r.raise_for_status()
         return True, r.text, "strict"
     except requests.exceptions.SSLError:
-        # Fallback: insecure
         try:
             r = requests.get(url, timeout=15, headers=headers, allow_redirects=True, verify=False)
             r.raise_for_status()
@@ -145,7 +148,6 @@ async def ws_audit(ws: WebSocket):
                 await _ws_send(ws, {"status": status, "progress": int(percent), "payload": payload})
 
             try:
-                # Pre-fetch HTML
                 success, html_content, fetch_mode = _fetch_html(url)
                 if not success:
                     await _ws_send(ws, {
@@ -155,10 +157,8 @@ async def ws_audit(ws: WebSocket):
                     })
                     continue
 
-                # Send debug info
                 await progress_cb("fetched", 20, {"message": f"HTML fetched ({fetch_mode}), length: {len(html_content)}"})
 
-                # Run audit with pre-fetched HTML
                 result = await runner.run(url, html=html_content, progress_cb=progress_cb)
                 _cache_set(url, result)
 
@@ -170,6 +170,7 @@ async def ws_audit(ws: WebSocket):
                 await _ws_send(ws, {"status": "completed", "progress": 100, "result": result})
 
             except Exception as e:
+                logger.exception("WebSocket audit error")
                 await _ws_send(ws, {"status": "error", "progress": 100, "payload": {"error": str(e)}})
 
     except WebSocketDisconnect:
@@ -198,6 +199,7 @@ async def api_audit_run(req: AuditRunRequest) -> JSONResponse:
         _cache_set(url, result)
         return JSONResponse(result)
     except Exception as e:
+        logger.exception("REST audit error")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/api/audit/pdf")
@@ -214,13 +216,18 @@ async def api_audit_pdf(req: PdfRequest):
             raise HTTPException(status_code=400, detail=f"Could not fetch page: {fetch_mode}")
         try:
             runner_result = await runner.run(url, html=html_content, progress_cb=None)
+            _cache_set(url, runner_result)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Audit failed: {e}")
-        _cache_set(url, runner_result)
+            logger.exception("Audit failed during PDF")
+            raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
 
     err = _runner_error_message(runner_result)
     if err:
         raise HTTPException(status_code=400, detail=f"Audit error: {err}")
+
+    # Validate runner_result has required structure
+    if not isinstance(runner_result, dict) or "overall_score" not in runner_result:
+        raise HTTPException(status_code=500, detail="Invalid audit result structure")
 
     report_title = (req.report_title or "").strip() or "Website Audit Report"
     client_name = (req.client_name or "").strip() or "N/A"
@@ -233,7 +240,7 @@ async def api_audit_pdf(req: PdfRequest):
     pdf_path = tmp_dir / f"{fname}.pdf"
 
     try:
-        generate_pdf_from_runner_result(
+        pdf_generated_path = generate_pdf_from_runner_result(
             runner_result=runner_result,
             output_path=str(pdf_path),
             logo_path=logo_path,
@@ -243,13 +250,19 @@ async def api_audit_pdf(req: PdfRequest):
             website_name=website_name or None,
             audit_date=None,
         )
+        logger.info(f"PDF generated at: {pdf_generated_path}")
+    except ImportError as e:
+        logger.error("PDF generation failed: reportlab not installed")
+        raise HTTPException(status_code=500, detail="PDF library (reportlab) is missing. Please add 'reportlab' to requirements.txt")
     except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"PDF runtime error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"PDF generation runtime error: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+        logger.exception("PDF generation failed")
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
 
     if not pdf_path.exists():
-        raise HTTPException(status_code=500, detail="PDF file not created")
+        raise HTTPException(status_code=500, detail="PDF file was not created")
 
     return FileResponse(
         path=str(pdf_path),
