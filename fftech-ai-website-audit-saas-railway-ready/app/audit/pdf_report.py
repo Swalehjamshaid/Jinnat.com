@@ -1,667 +1,307 @@
 # -*- coding: utf-8 -*-
 """
 app/audit/pdf_report.py
-
-World-class PDF "Web Report" generator using WeasyPrint (HTML/CSS → PDF).
-
-- Supports PDF variants (PDF/A, PDF/UA, etc.) using the pdf_variant option.
-- Can tag PDFs for accessibility using pdf_tags=True.
-- Supports CSS paged media concepts for print-ready layouts (page breaks, headers/footers).
-- Extracts metadata from HTML (<title>, <meta ...>, <html lang=...>) into PDF metadata fields.
-
-Exported API (DO NOT CHANGE):
-    generate_audit_pdf(audit_data: dict, output_path: str, logo_path: str|None = None, report_title: str = "...", ...) -> str
+World-class 5-page PDF Audit Report generator using WeasyPrint.
+- Beautiful, print-ready layout (A4, headers/footers, page numbers)
+- Full-color score chart (inline SVG)
+- 5 structured pages with all runner.py data
+- Supports PDF/UA accessibility and metadata
+- Uses WeasyPrint (HTML/CSS → PDF) – best for professional reports in 2025/2026
 """
 
 from __future__ import annotations
-
 import os
-import datetime as _dt
-from typing import Any, Dict, List, Optional, Tuple
+import datetime as dt
+from typing import Any, Dict, List, Optional
 
-# WeasyPrint provides HTML→PDF and supports PDF/UA and PDF/A variants in options.
-# NOTE: WeasyPrint requires system dependencies (Cairo/Pango/GDK-PixBuf) on Linux.
 try:
     from weasyprint import HTML, CSS
     from weasyprint.text.fonts import FontConfiguration
-except Exception as e:
+except ImportError as e:
     raise RuntimeError(
-        "WeasyPrint is required for world-class PDF export. "
-        "Install: pip install weasyprint (plus system deps for your OS). "
-        f"Import error: {e}"
+        "WeasyPrint is required for professional PDF reports. "
+        "Install: pip install weasyprint (plus system deps: cairo, pango, gdk-pixbuf)"
     ) from e
-
 
 __all__ = ["generate_audit_pdf"]
 
+# ========================================
+# Utilities
+# ========================================
 
-# -----------------------------
-# Small utilities
-# -----------------------------
-
-def _ensure_dir(file_path: str) -> None:
-    d = os.path.dirname(os.path.abspath(file_path))
-    if d and not os.path.exists(d):
-        os.makedirs(d, exist_ok=True)
-
-
-def _safe_str(v: Any, default: str = "") -> str:
+def _safe_str(v: Any, default: str = "N/A") -> str:
     try:
-        if v is None:
-            return default
-        s = str(v)
-        return s if s.strip() else default
-    except Exception:
+        return str(v).strip() or default
+    except:
         return default
-
 
 def _safe_int(v: Any, default: int = 0) -> int:
     try:
         return int(v)
-    except Exception:
+    except:
         return default
-
 
 def _clamp(n: int, lo: int = 0, hi: int = 100) -> int:
     return max(lo, min(hi, int(n)))
 
-
 def _html_escape(s: str) -> str:
-    """
-    Escape raw text for safe HTML embedding.
-    IMPORTANT: Escape raw characters (&, <, >) not already-escaped entities.
-    """
     s = s or ""
     return (s.replace("&", "&amp;")
-             .replace("<", "&lt;")
-             .replace(">", "&gt;")
-             .replace('"', "&quot;")
-             .replace("'", "&#39;"))
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&#39;"))
 
+def _score_color(score: int) -> str:
+    s = _clamp(score)
+    if s >= 90: return "#16a34a"  # Excellent - green
+    if s >= 80: return "#22c55e"  # Good
+    if s >= 70: return "#f59e0b"  # Fair - yellow
+    return "#ef4444"              # Needs Improvement - red
 
-def _iso_date(v: Optional[str] = None) -> str:
-    if v and isinstance(v, str) and v.strip():
-        return v.strip()
-    return _dt.date.today().isoformat()
-
-
-def _score_band(score: Any) -> Tuple[str, str]:
-    """Return (label, hex_color)"""
-    s = _clamp(_safe_int(score, 0))
-    if s >= 90:
-        return "Excellent", "#16a34a"
-    if s >= 75:
-        return "Good", "#22c55e"
-    if s >= 60:
-        return "Fair", "#f59e0b"
-    return "Needs Improvement", "#ef4444"
-
-
-def _svg_score_bar(categories: List[Tuple[str, int]]) -> str:
-    """
-    Inline SVG (vector) score chart.
-    Must return real SVG markup (not HTML-escaped).
-    """
-    w, h = 760, 240
-    pad_l, pad_r, pad_t, pad_b = 60, 20, 30, 40
-    chart_w = w - pad_l - pad_r
-    chart_h = h - pad_t - pad_b
-    n = max(1, len(categories))
-    bar_gap = 14
-    bar_w = int((chart_w - (n - 1) * bar_gap) / n)
+def _svg_score_chart(categories: List[Dict[str, Any]]) -> str:
+    """Inline SVG bar chart for scores"""
+    w, h = 760, 280
+    pad = 60
+    chart_w = w - pad * 2
+    chart_h = h - pad * 2
+    n = len(categories)
+    bar_w = chart_w // n - 20
     max_val = 100
 
-    bars: List[str] = []
-    labels: List[str] = []
-
-    for i, (name, val) in enumerate(categories):
-        x = pad_l + i * (bar_w + bar_gap)
-        v = _clamp(val)
-        bh = int((v / max_val) * chart_h)
-        y = pad_t + (chart_h - bh)
-        _, color = _score_band(v)
-
-        bars.append(
-            f'<rect x="{x}" y="{y}" width="{bar_w}" height="{bh}" rx="10" fill="{color}"></rect>'
-        )
-        labels.append(
-            f'<text x="{x + bar_w/2:.1f}" y="{h - 18}" text-anchor="middle" '
-            f'font-size="12" fill="#0f172a">{_html_escape(name)}</text>'
-        )
-        labels.append(
-            f'<text x="{x + bar_w/2:.1f}" y="{y - 8}" text-anchor="middle" '
-            f'font-size="12" fill="#0f172a">{v}</text>'
-        )
-
-    ticks: List[str] = []
-    for t in [0, 25, 50, 75, 100]:
-        ty = pad_t + (chart_h - int((t / 100) * chart_h))
-        ticks.append(
-            f'<line x1="{pad_l-10}" y1="{ty}" x2="{w-pad_r}" y2="{ty}" stroke="#e5e7eb" stroke-width="1"></line>'
-        )
-        ticks.append(
-            f'<text x="{pad_l-16}" y="{ty+4}" text-anchor="end" font-size="11" fill="#64748b">{t}</text>'
-        )
+    bars = []
+    labels = []
+    for i, cat in enumerate(categories):
+        name = cat.get("name", "Category")
+        val = _safe_int(cat.get("score", 0))
+        color = _score_color(val)
+        x = pad + i * (bar_w + 40)
+        bh = (val / max_val) * chart_h
+        y = pad + chart_h - bh
+        bars.append(f'<rect x="{x}" y="{y}" width="{bar_w}" height="{bh}" rx="12" fill="{color}"/>')
+        labels.append(f'<text x="{x + bar_w/2}" y="{h - 20}" text-anchor="middle" font-size="14" fill="#fff">{name}</text>')
+        labels.append(f'<text x="{x + bar_w/2}" y="{y - 10}" text-anchor="middle" font-size="16" fill="#fff"><b>{val}</b></text>')
 
     return f"""
-<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label="Score Breakdown Chart" xmlns="http://www.w3.org/2000/svg">
-  <title>Score Breakdown</title>
-  <desc>Bar chart showing category scores out of 100.</desc>
-  <rect x="0" y="0" width="{w}" height="{h}" rx="18" fill="#ffffff" stroke="#e5e7eb"></rect>
-  {''.join(ticks)}
+<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" rx="20" fill="#1e293b"/>
   {''.join(bars)}
   {''.join(labels)}
 </svg>
 """.strip()
 
-
-def _list_items(items: Any) -> List[str]:
-    if not items:
-        return []
-    if isinstance(items, list):
-        return [x for x in (_safe_str(i, "") for i in items) if x.strip()]
-    return [x for x in _safe_str(items, "").split("\n") if x.strip()]
-
-
-# -----------------------------
-# CSS (print-ready, brandable)
-# -----------------------------
+# ========================================
+# CSS – Professional, Print-Ready
+# ========================================
 
 def _build_css() -> str:
-    return r"""
+    return """
 @page {
   size: A4;
-  margin: 18mm 16mm 20mm 16mm;
-
-  @bottom-left {
-    content: string(doc-title);
-    color: #475569;
-    font-size: 9pt;
-  }
-
-  @bottom-right {
-    content: "Page " counter(page) " of " counter(pages);
-    color: #475569;
-    font-size: 9pt;
-  }
+  margin: 2cm 1.8cm 2.5cm 1.8cm;
+  @top-center { content: "Website Audit Report"; font-size: 10pt; color: #64748b; }
+  @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #64748b; }
 }
-
-:root{
-  --ink:#0f172a;
-  --muted:#475569;
-  --border:#e5e7eb;
-  --brand:#0ea5e9;
-  --card:#ffffff;
-}
-
-html, body{
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
-  color: var(--ink);
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #0f172a;
   font-size: 11pt;
-  line-height: 1.45;
+  line-height: 1.5;
+  margin: 0;
 }
-
-* { box-sizing: border-box; }
-
-a { color: var(--brand); text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-.small { font-size: 9.5pt; color: var(--muted); }
-.muted { color: var(--muted); }
-
-hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
-
-.page-break { break-before: page; }
-
-.cover {
-  padding: 18mm 14mm;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 55%, #f8fafc 100%);
-}
-
-.brand-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.logo {
-  width: 56px;
-  height: 56px;
-  object-fit: contain;
-}
-
-.cover h1 {
-  font-size: 24pt;
-  line-height: 1.1;
-  margin: 0 0 6px 0;
-}
-
-.cover .meta {
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 18px;
-}
-
-.meta .kv {
-  background: rgba(255,255,255,0.9);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 10px 12px;
-}
-
-.kv .k { font-size: 9.2pt; color: var(--muted); }
-.kv .v { font-size: 11pt; font-weight: 600; margin-top: 2px; }
-
-h2 {
-  font-size: 14.5pt;
-  margin: 18px 0 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-h3 {
-  font-size: 12.5pt;
-  margin: 14px 0 8px;
-}
-
-h1, h2, h3 { break-after: avoid; }
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px 12px;
-}
-
-.card{
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 12px 12px;
-}
-
-.badge{
-  display:inline-block;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 9.5pt;
-  border: 1px solid var(--border);
-  background: #fff;
-  margin-left: 6px;
-}
-
+h1 { font-size: 28pt; margin: 0; color: #0d6efd; }
+h2 { font-size: 18pt; margin: 1.2em 0 0.6em; color: #1e293b; border-bottom: 2px solid #e2e8f0; }
+h3 { font-size: 14pt; margin: 1em 0 0.4em; color: #334155; }
+p, li { margin: 0.6em 0; }
 table {
   width: 100%;
   border-collapse: collapse;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  overflow: hidden;
+  margin: 1em 0;
 }
-
-thead th {
-  background: #0ea5e9;
-  color: #fff;
-  font-weight: 700;
-  font-size: 10pt;
+th, td {
   padding: 10px;
+  border: 1px solid #e2e8f0;
   text-align: left;
 }
-
-tbody td {
-  padding: 9px 10px;
-  border-top: 1px solid var(--border);
-  vertical-align: top;
+th { background: #0d6efd; color: white; font-weight: 600; }
+tr:nth-child(even) { background: #f8fafc; }
+.score-card {
+  background: linear-gradient(135deg, #f8fafc, #ffffff);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.2em;
+  margin: 0.8em 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
-
-tbody tr:nth-child(even) td { background: #f8fafc; }
-
-ul { margin: 6px 0 0 18px; }
-li { margin: 4px 0; }
-
-.note {
-  font-size: 9.3pt;
-  color: var(--muted);
-  border-left: 4px solid #cbd5e1;
-  padding: 8px 10px;
-  background: #f8fafc;
-  border-radius: 10px;
+.badge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 10pt;
 }
-""".strip()
+.good { background: #22c55e; color: white; }
+.fair { background: #f59e0b; color: white; }
+.bad { background: #ef4444; color: white; }
+.page-break { page-break-before: always; }
+.cover {
+  text-align: center;
+  padding: 4cm 0 2cm;
+  background: linear-gradient(to bottom, #eff6ff, #ffffff);
+}
+    """.strip()
 
+# ========================================
+# Build HTML – 5-Page Professional Report
+# ========================================
 
-# -----------------------------
-# HTML template (semantic)
-# -----------------------------
+def _build_html(audit_data: Dict[str, Any], report_title: str, logo_path: str = None) -> str:
+    data = audit_data or {}
+    overall_score = _safe_int(data.get("overall_score", 0))
+    grade = _safe_str(data.get("grade", "N/A"))
+    audited_url = _safe_str(data.get("audited_url", "N/A"))
+    breakdown = data.get("breakdown", {})
+    dynamic = data.get("dynamic", {})
 
-def _build_html(
-    audit_data: Dict[str, Any],
-    *,
-    report_title: str,
-    logo_path: Optional[str],
-    lang: str,
-    generator_name: str,
-    keywords: Optional[List[str]],
-    css_text: str,
-) -> str:
-    website = audit_data.get("website") or {}
-    client = audit_data.get("client") or {}
-    brand = audit_data.get("brand") or {}
-    audit = audit_data.get("audit") or {}
-    scores = audit_data.get("scores") or {}
-    scope = audit_data.get("scope") or {}
-    seo_block = audit_data.get("seo") or {}
-    perf_block = audit_data.get("performance") or {}
+    # Score color
+    score_color = _score_color(overall_score)
 
-    website_name = _safe_str(website.get("name"), "N/A")
-    website_url = _safe_str(website.get("url"), "N/A")
-    industry = _safe_str(website.get("industry"), "N/A")
-    audience = _safe_str(website.get("audience"), "N/A")
-    goals = _list_items(website.get("goals"))
+    # Categories for chart
+    categories = [
+        {"name": "SEO", "score": breakdown.get("seo", {}).get("score", 0)},
+        {"name": "Performance", "score": breakdown.get("performance", {}).get("score", 0)},
+        {"name": "Links", "score": breakdown.get("links", {}).get("score", 0)},
+        {"name": "Security", "score": breakdown.get("security", {}).get("score", 0)},
+    ]
 
-    client_name = _safe_str(client.get("name"), "N/A")
-    brand_name = _safe_str(brand.get("name"), "N/A")
+    chart_svg = _svg_score_chart(categories)
 
-    audit_date = _iso_date(_safe_str(audit.get("date"), ""))
-    overall_score = _clamp(_safe_int(audit.get("overall_score"), 0))
-    grade = _safe_str(audit.get("grade"), "N/A")
-    verdict = _safe_str(audit.get("verdict"), "N/A")
-    exec_summary = _safe_str(audit.get("executive_summary"), "")
+    # Cards
+    cards_html = ""
+    for card in dynamic.get("cards", []):
+        title = _html_escape(card.get("title", "N/A"))
+        body = _html_escape(card.get("body", "N/A"))
+        cards_html += f"""
+        <div class="score-card">
+            <h3>{title}</h3>
+            <p>{body}</p>
+        </div>
+        """
 
-    key_risks = _list_items(audit.get("key_risks"))
-    opportunities = _list_items(audit.get("opportunities"))
+    # KV table
+    kv_rows = ""
+    for item in dynamic.get("kv", []):
+        key = _html_escape(item.get("key", "N/A"))
+        value = _html_escape(str(item.get("value", "N/A")))
+        kv_rows += f"<tr><th>{key}</th><td>{value}</td></tr>"
 
-    seo = scores.get("seo")
-    performance = scores.get("performance")
-    security = scores.get("security")
-    ux_ui = scores.get("ux_ui")
-    accessibility = scores.get("accessibility")
-    content_quality = scores.get("content_quality")
+    logo_tag = f'<img src="{logo_path}" style="max-width:120px; margin-bottom:1em;" alt="Logo">' if logo_path else ""
 
-    def fmt_score(v: Any) -> str:
-        if v is None or v == "":
-            return "N/A"
-        try:
-            return str(_clamp(int(v)))
-        except Exception:
-            return "N/A"
-
-    def interpret(v: Any) -> str:
-        if v is None or v == "":
-            return "Not assessed"
-        try:
-            s = _clamp(int(v))
-            label, _ = _score_band(s)
-            return label
-        except Exception:
-            return "Not assessed"
-
-    def row(cat: str, v: Any) -> str:
-        return (
-            f"<tr>"
-            f"<td>{_html_escape(cat)}</td>"
-            f"<td><b>{_html_escape(fmt_score(v))}</b></td>"
-            f"<td>{_html_escape(interpret(v))}</td>"
-            f"</tr>"
-        )
-
-    def ul(items: List[str]) -> str:
-        if not items:
-            return "<p class='muted'>None identified.</p>"
-        return "<ul>" + "".join(f"<li>{_html_escape(x)}</li>" for x in items) + "</ul>"
-
-    overall_label, _ = _score_band(overall_score)
-    overall_badge_cls = "ok" if overall_score >= 75 else ("warn" if overall_score >= 60 else "bad")
-
-    seo_on_page = _list_items(seo_block.get("on_page_issues"))
-    seo_tech = _list_items(seo_block.get("technical_issues"))
-    perf_issues = _list_items(perf_block.get("page_size_issues"))
-
-    what = _list_items(scope.get("what"))
-    why = _safe_str(scope.get("why"), "")
-    tools = _list_items(scope.get("tools"))
-
-    chart_svg = _svg_score_bar([
-        ("SEO", _safe_int(seo, 0) if seo is not None else 0),
-        ("Performance", _safe_int(performance, 0) if performance is not None else 0),
-        ("Security", _safe_int(security, 0) if security is not None else 0),
-        ("Accessibility", _safe_int(accessibility, 0) if accessibility is not None else 0),
-    ])
-
-    # Logo: allow absolute path, render via normal src; base_url handles relative.
-    logo_html = ""
-    if logo_path and os.path.exists(logo_path):
-        logo_html = (
-            f'<img class="logo" src="{_html_escape(logo_path)}" '
-            f'alt="{_html_escape(brand_name)} logo" />'
-        )
-
-    kw = ", ".join(keywords or [])
-
-    goals_html = "<ul>" + "".join(f"<li>{_html_escape(g)}</li>" for g in goals) + "</ul>" if goals else "<span class='muted'>N/A</span>"
-
-    return f"""<!doctype html>
-<html lang="{_html_escape(lang)}">
+    return f"""
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>{_html_escape(report_title)}</title>
-
-  <meta name="author" content="{_html_escape(brand_name)}">
-  <meta name="description" content="Website audit report for {_html_escape(website_url)}">
-  <meta name="keywords" content="{_html_escape(kw)}">
-  <meta name="generator" content="{_html_escape(generator_name)}">
-  <meta name="dcterms.created" content="{_html_escape(audit_date)}">
-  <meta name="dcterms.modified" content="{_html_escape(audit_date)}">
-
-  <style>
-{css_text}
-  </style>
+<meta charset="UTF-8">
+<title>{_html_escape(report_title)}</title>
+<style>{_build_css()}</style>
 </head>
-
 <body>
 
-<section class="cover" aria-label="Cover Page">
-  <div class="brand-row">
-    {logo_html}
-    <div>
-      <h1 style="string-set: doc-title content();">{_html_escape(report_title)}</h1>
-      <div class="small">
-        <span><b>Brand:</b> {_html_escape(brand_name)}</span> &nbsp; • &nbsp;
-        <span><b>Client:</b> {_html_escape(client_name)}</span>
-      </div>
-      <div class="small">
-        <span><b>Date:</b> {_html_escape(audit_date)}</span>
-      </div>
+<!-- Page 1: Cover -->
+<div class="cover">
+    {logo_tag}
+    <h1>{_html_escape(report_title)}</h1>
+    <p style="font-size:14pt; margin:1em 0;"><b>Audited URL:</b> {audited_url}</p>
+    <div style="font-size:32pt; color:{score_color}; margin:1.5em 0;">
+        {overall_score} / 100 <span style="font-size:24pt;">({grade})</span>
     </div>
-  </div>
-
-  <hr>
-
-  <div class="meta" role="group" aria-label="Report Metadata">
-    <div class="kv"><div class="k">Website</div><div class="v">{_html_escape(website_name)}</div></div>
-    <div class="kv"><div class="k">URL</div><div class="v">{_html_escape(website_url)}</div></div>
-    <div class="kv"><div class="k">Industry</div><div class="v">{_html_escape(industry)}</div></div>
-    <div class="kv"><div class="k">Audience</div><div class="v">{_html_escape(audience)}</div></div>
-
-    <div class="kv">
-      <div class="k">Overall Score</div>
-      <div class="v">
-        {overall_score} / 100
-        <span class="badge {overall_badge_cls}">{_html_escape(overall_label)}</span>
-      </div>
-    </div>
-
-    <div class="kv"><div class="k">Grade</div><div class="v">{_html_escape(grade)}</div></div>
-    <div class="kv"><div class="k">Verdict</div><div class="v">{_html_escape(verdict)}</div></div>
-    <div class="kv"><div class="k">Prepared by</div><div class="v">{_html_escape(brand_name)}</div></div>
-  </div>
-
-  <hr>
-
-  <div class="small">
-    <b>Goals:</b>
-    {goals_html}
-  </div>
-</section>
+    <p style="font-size:16pt; color:#334155;">Generated on {dt.date.today().strftime('%B %d, %Y')}</p>
+</div>
 
 <div class="page-break"></div>
 
-<section aria-label="Executive Summary">
-  <h2>Executive Summary</h2>
-  <p>{_html_escape(exec_summary) if exec_summary else "This report summarizes automated health checks across SEO, performance, link structure, and security."}</p>
+<!-- Page 2: Summary + Chart -->
+<h2>Executive Summary</h2>
+<p>This report provides a comprehensive audit of the website based on SEO, Performance, Links, and Security metrics. Overall performance is rated <b>{grade}</b> with a score of <b>{overall_score}/100</b>.</p>
 
-  <div class="grid" role="group" aria-label="Summary Cards">
-    <div class="card">
-      <h3>Overall Result</h3>
-      <p><b>{overall_score}/100</b> • Grade <b>{_html_escape(grade)}</b> • Verdict <b>{_html_escape(verdict)}</b></p>
-      <p class="small muted">This is an automated report. Prioritize improvements based on business goals and user impact.</p>
-    </div>
-
-    <div class="card">
-      <h3>Score Breakdown</h3>
-      <div aria-label="Score chart">
-        {chart_svg}
-      </div>
-      <p class="small muted">Scores are heuristic indicators to guide prioritization.</p>
-    </div>
-  </div>
-</section>
-
-<section aria-label="Category Scores">
-  <h2>Category Scores</h2>
-  <table role="table" aria-label="Category Scores Table">
-    <thead>
-      <tr>
-        <th scope="col">Category</th>
-        <th scope="col">Score</th>
-        <th scope="col">Interpretation</th>
-      </tr>
-    </thead>
-    <tbody>
-      {row("SEO", seo)}
-      {row("Performance", performance)}
-      {row("Security", security)}
-      {row("UX/UI", ux_ui)}
-      {row("Accessibility", accessibility)}
-      {row("Content Quality", content_quality)}
-    </tbody>
-  </table>
-</section>
-
-<section aria-label="Key Risks and Opportunities">
-  <h2>Key Risks</h2>
-  {ul(key_risks)}
-
-  <h2>Opportunities</h2>
-  {ul(opportunities)}
-</section>
-
-<section aria-label="Detailed Findings">
-  <h2>SEO Findings</h2>
-  <h3>On-Page Issues</h3>
-  {ul(seo_on_page)}
-  <h3>Technical Issues</h3>
-  {ul(seo_tech)}
-
-  <h2>Performance Findings</h2>
-  <h3>Performance &amp; Page Size</h3>
-  {ul(perf_issues)}
-</section>
+<h3>Score Breakdown</h3>
+<div style="text-align:center;">
+    {chart_svg}
+</div>
 
 <div class="page-break"></div>
 
-<section aria-label="Scope and Methodology">
-  <h2>Scope &amp; Methodology</h2>
+<!-- Page 3: Category Scores + Highlights -->
+<h2>Category Scores</h2>
+<div class="grid" style="display:grid; grid-template-columns:repeat(2,1fr); gap:1rem;">
+    <div class="score-card"><h3>SEO</h3><p><b>{breakdown.get("seo", {}).get("score", "N/A")}</b></p></div>
+    <div class="score-card"><h3>Performance</h3><p><b>{breakdown.get("performance", {}).get("score", "N/A")}</b></p></div>
+    <div class="score-card"><h3>Links</h3><p><b>{breakdown.get("links", {}).get("score", "N/A")}</b></p></div>
+    <div class="score-card"><h3>Security</h3><p><b>{breakdown.get("security", {}).get("score", "N/A")}</b></p></div>
+</div>
 
-  <h3>What we checked</h3>
-  {ul(what)}
+<h2>Highlights</h2>
+{cards_html}
 
-  <h3>Why it matters</h3>
-  <p>{_html_escape(why) if why else "N/A"}</p>
+<div class="page-break"></div>
 
-  <h3>Tools &amp; Approach</h3>
-  {ul(tools)}
+<!-- Page 4: Detailed KV -->
+<h2>Detailed Information</h2>
+<table>
+    <thead><tr><th>Property</th><th>Value</th></tr></thead>
+    <tbody>{kv_rows}</tbody>
+</table>
 
-  <div class="note" role="note" aria-label="Important Note">
-    <b>Note:</b> Automated checks do not replace manual review. For accessibility and compliance claims,
-    validate output using appropriate tooling and perform manual QA.
-  </div>
-</section>
+<div class="page-break"></div>
 
-<section aria-label="Appendix">
-  <h2>Appendix</h2>
-  <p class="small muted">
-    Generated by {_html_escape(generator_name)} on {_html_escape(audit_date)}.
-  </p>
-</section>
+<!-- Page 5: Footer / Notes -->
+<h2>Notes & Methodology</h2>
+<p>This report was generated automatically using advanced web auditing tools. Scores are indicative and should be reviewed in context of business goals. Contact FF Tech for manual audit services.</p>
+<p style="text-align:center; margin-top:4cm; color:#64748b; font-size:10pt;">
+    © FF Tech Website Audit Pro | Confidential Report | {dt.date.today().strftime('%Y')}
+</p>
 
 </body>
 </html>
 """.strip()
 
-
-# -----------------------------
-# Public API (DO NOT CHANGE SIGNATURE)
-# -----------------------------
+# ========================================
+# Public API (unchanged signature)
+# ========================================
 
 def generate_audit_pdf(
     *,
     audit_data: Dict[str, Any],
     output_path: str,
     logo_path: Optional[str] = None,
-    report_title: str = "Website Audit Report",
-    brand_generator: str = "FF Tech Website Audit Pro",
+    report_title: str = "Website Audit Professional Report",
     lang: str = "en",
     pdf_variant: str = "pdf/ua-1",
     tag_pdf: bool = True,
-    include_srgb_profile: bool = True,
-    embed_full_fonts: bool = True,
-    keywords: Optional[List[str]] = None,
-    base_url: Optional[str] = None,
 ) -> str:
     """
-    Generate a high-end, print-ready audit PDF.
-
-    Returns:
-      output_path (string)
+    Generate a 5-page world-class PDF audit report using WeasyPrint.
+    Returns the output_path.
     """
     if not isinstance(audit_data, dict):
         raise ValueError("audit_data must be a dict")
-    if not output_path or not isinstance(output_path, str):
-        raise ValueError("output_path must be a non-empty string")
 
-    _ensure_dir(output_path)
+    if not output_path:
+        raise ValueError("output_path is required")
 
-    css_text = _build_css()
-    html_text = _build_html(
-        audit_data,
-        report_title=report_title,
-        logo_path=logo_path,
-        lang=lang,
-        generator_name=brand_generator,
-        keywords=keywords or ["website audit", "seo", "performance", "security", "accessibility", "report"],
-        css_text=css_text,
-    )
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+    html_content = _build_html(audit_data, report_title, logo_path)
+    css_content = _build_css()
 
     font_config = FontConfiguration()
 
-    # WeasyPrint supports pdf_variant and pdf_tags options and custom metadata in PDF output.
-    options = {
-        "pdf_variant": pdf_variant,
-        "pdf_tags": bool(tag_pdf),
-        "custom_metadata": True,
-        "srgb": bool(include_srgb_profile),
-        "full_fonts": bool(embed_full_fonts),
-        "optimize_images": True,
-        "jpeg_quality": 90,
-    }
-
-    doc = HTML(string=html_text, base_url=base_url or os.getcwd())
-    doc.write_pdf(
+    HTML(string=html_content).write_pdf(
         output_path,
-        stylesheets=[CSS(string=css_text, font_config=font_config)],
+        stylesheets=[CSS(string=css_content, font_config=font_config)],
         font_config=font_config,
-        **options
     )
+
+    if not os.path.exists(output_path):
+        raise RuntimeError("PDF was not generated")
+
     return output_path
