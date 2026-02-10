@@ -1,39 +1,57 @@
-# --- Core Web & Parsing ---
-requests==2.31.0
+# ============================
+#  Core Web & Parsing
+# ============================
 beautifulsoup4==4.12.3
-lxml==4.9.3             # For faster and more robust HTML parsing
+html5lib==1.1
+lxml==4.9.3                  # Fast & robust HTML/XML parsing
+requests==2.31.0
+soupsieve==2.6.0             # Better CSS selectors for BeautifulSoup
 
-# --- SSL & Security ---
+# ============================
+#  SSL & Security
+# ============================
 certifi==2024.2.2
 
-# --- PDF Generation ---
+# ============================
+#  PDF Generation
+# ============================
+Pillow==10.2.0               # Image rendering support for PDF
 reportlab==4.1.0
-Pillow==10.2.0          # Required for images in PDFs
 
-# --- Utilities ---
+# ============================
+#  Utilities
+# ============================
 python-dateutil==2.8.2
 
-# --- FastAPI & ASGI Server ---
+# ============================
+#  FastAPI & ASGI Server
+# ============================
 fastapi==0.111.1
-uvicorn==0.23.2          # ✅ Valid version for Python 3.11
+uvicorn==0.23.2              # Stable with Python 3.11/3.12
 
-# --- WebSocket Support ---
+# ============================
+#  WebSocket Support
+# ============================
 websockets==11.0.3
 
-# --- Data Validation ---
+# ============================
+#  Data Validation
+# ============================
 pydantic==2.5.1
 
-# --- HTML scraping / parsing extras ---
-html5lib==1.1
-soupsieve==2.6.0        # Optional but improves BeautifulSoup selectors
-
-# --- NLP / AI scoring (if runner uses NLP) ---
+# ============================
+#  NLP / AI Scoring (Optional)
+# ============================
 nltk==3.9
-textblob==0.17.1
 spacy==3.6.1
+textblob==0.17.1
 
-# --- Optional: file uploads / forms (if ever needed) ---
+# ============================
+#  Optional: File Uploads
+# ============================
 python-multipart==0.0.6
 
-# --- Optional: YAML config / logging ---
+# ============================
+#  Optional: YAML Config / Logging
+# ============================
 pyyaml==6.0
