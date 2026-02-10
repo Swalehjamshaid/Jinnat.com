@@ -1,6 +1,6 @@
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt
-# Railway / Docker / SSL-safe / PDF generation
+# Railway / Docker / SSL-safe / Full PDF management
 # Updated: February 10, 2026
 # =========================================================
 
@@ -36,12 +36,20 @@ lxml==5.3.0
 orjson==3.10.15
 ujson==5.10.0
 
-# PDF Generation (required for /api/audit/pdf endpoint)
-reportlab==4.2.5
+# ───────────────────────────────────────────────
+# PDF Generation & Management (core + advanced)
+# ───────────────────────────────────────────────
+reportlab==4.2.5                 # Classic PDF generation (your current library)
+weasyprint==63.0                 # Modern HTML/CSS → PDF (best for professional reports)
+pypdf==5.1.0                     # PDF manipulation (merge, split, add pages, metadata)
+pillow==10.4.0                   # Image processing (logos, charts, thumbnails in PDFs)
 
-# Optional packages (uncomment only if you actually use them)
-# pillow==10.4.0               # Image processing
-# qrcode==7.4.2                # QR code generation
-# python-pptx==1.0.2           # PowerPoint export
-# openpyxl==3.1.5              # Excel export
-# weasyprint==63.0             # Alternative HTML-to-PDF (requires system libs: cairo/pango)
+# Optional PDF tools (uncomment only if you need them)
+# pdfkit==1.0.0                  # wkhtmltopdf wrapper (alternative PDF engine)
+# PyPDF2==3.0.1                  # Older PDF library (if you have legacy code)
+# xhtml2pdf==0.2.16              # Another HTML-to-PDF option
+
+# Optional extras (uncomment if used)
+# qrcode==7.4.2                  # QR codes in reports
+# python-pptx==1.0.2             # PowerPoint export
+# openpyxl==3.1.5                # Excel export
