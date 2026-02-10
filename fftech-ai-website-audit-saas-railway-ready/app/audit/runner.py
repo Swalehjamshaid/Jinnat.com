@@ -126,9 +126,12 @@ def _ssl_context() -> ssl.SSLContext:
     Create an SSL context that prefers certifi CA bundle (container-safe),
     falling back to system CA if certifi is unavailable.
 
-    This fixes: CERTIFICATE_VERIFY_FAILED / unable to get local issuer certificate
-    in some container environments (e.g., Railway).
+    If AUDIT_INSECURE_SSL=true, builds an unverified context (test only).
     """
+    insecure = os.getenv("AUDIT_INSECURE_SSL", "").lower() in {"1", "true", "yes"}
+    if insecure:
+        return ssl._create_unverified_context()  # TEST ONLY
+
     try:
         import certifi  # type: ignore
         return ssl.create_default_context(cafile=certifi.where())
@@ -139,8 +142,12 @@ def _ssl_context() -> ssl.SSLContext:
 def _requests_verify_arg() -> Any:
     """
     Provide requests 'verify' argument using certifi bundle if available,
-    else default True. Internal only (no IO changes).
+    else default True. Honors AUDIT_INSECURE_SSL for testing.
     """
+    insecure = os.getenv("AUDIT_INSECURE_SSL", "").lower() in {"1", "true", "yes"}
+    if insecure:
+        return False  # TEST ONLY
+
     try:
         import certifi  # type: ignore
         return certifi.where()
@@ -248,6 +255,7 @@ def _optional_fetch_with_requests(url: str, timeout: float, user_agent: str, max
 def _best_fetch(url: str, timeout: float, user_agent: str, max_bytes: int) -> Dict[str, Any]:
     """
     Choose best available fetcher without forcing deps.
+    Prefer requests (with certifi) if available.
     """
     data = _optional_fetch_with_requests(url, timeout, user_agent, max_bytes)
     if data is not None:
@@ -305,7 +313,11 @@ def _canonical_url(html: str, base_url: str, soup: Any = None) -> str:
                 return urljoin(base_url, link.get("href"))
         except Exception:
             pass
-    m = re.search(r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)["\']', html or "", flags=re.I)
+    m = re.search(
+        r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)["\']',
+        html or "",
+        flags=re.I,
+    )
     if m:
         return urljoin(base_url, m.group(1))
     return ""
@@ -685,8 +697,7 @@ class WebsiteAuditRunner:
         canonical = _canonical_url(html, final_url, soup)
         h1_count = _count_h1(html, soup)
         imgs_total, imgs_missing_alt = _image_alt_stats(html, soup)
-        links = _link_counts(html, final_url, soup)
-        resources = _resource_counts(html, soup)
+        links = _ = _resource_counts(html, soup)
 
         https = _is_https(final_url)
         server_header = str(headers.get("Server", "") or headers.get("server", "") or "")
