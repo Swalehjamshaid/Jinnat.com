@@ -1,16 +1,39 @@
 # --- Core Web & Parsing ---
-# Optional in your code, but highly recommended for better parsing/fetching
 requests==2.31.0
 beautifulsoup4==4.12.3
+lxml==4.9.3             # For faster and more robust HTML parsing
 
 # --- SSL & Security ---
-# REQUIRED for your _ssl_context() and _requests_verify_arg() logic
 certifi==2024.2.2
 
-# --- PDF Generation (app.audit.pdf_report) ---
-# Required by the generate_pdf_from_runner_result function
+# --- PDF Generation ---
 reportlab==4.1.0
-Pillow==10.2.0
+Pillow==10.2.0          # Required for images in PDFs
 
 # --- Utilities ---
 python-dateutil==2.8.2
+
+# --- FastAPI & ASGI Server ---
+fastapi==0.111.1
+uvicorn[standard]==0.26.1
+
+# --- WebSocket Support ---
+websockets==11.0.3
+
+# --- Data Validation ---
+pydantic==2.5.1
+
+# --- HTML scraping / parsing extras ---
+html5lib==1.1
+soupsieve==2.6.0        # Optional but improves BeautifulSoup selectors
+
+# --- NLP / AI scoring (if runner uses NLP) ---
+nltk==3.9
+textblob==0.17.1
+spacy==3.6.1
+
+# --- Optional: file uploads / forms (if ever needed) ---
+python-multipart==0.0.6
+
+# --- Optional: YAML config / logging ---
+pyyaml==6.0
