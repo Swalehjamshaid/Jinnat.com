@@ -1,57 +1,67 @@
-# ============================
-#  Core Web & Parsing
-# ============================
-beautifulsoup4==4.12.3
-html5lib==1.1
-lxml==4.9.3                  # Fast & robust HTML/XML parsing
-requests==2.31.0
-soupsieve==2.6.0             # Better CSS selectors for BeautifulSoup
+# ===================================================================
+# Environment
+# -------------------------------------------------------------------
+# Python: 3.11 (works with 3.12 too)
+# ===================================================================
 
-# ============================
-#  SSL & Security
-# ============================
-certifi==2024.2.2
+# --- Core Web & Parsing ---
+requests>=2.32,<3
+beautifulsoup4>=4.12,<5
+lxml>=5.1,<6                  # Fast & robust HTML/XML parsing
+soupsieve>=2.5,<3             # Better CSS selectors for BS4
+html5lib>=1.1,<2
 
-# ============================
-#  PDF Generation
-# ============================
-Pillow==10.2.0               # Image rendering support for PDF
-reportlab==4.1.0
+# Optional: faster HTML parsing (great for large audits)
+# selectolax is blazing fast for HTML parsing; keep optional
+# python-selectolax>=0.3,<0.4
 
-# ============================
-#  Utilities
-# ============================
-python-dateutil==2.8.2
+# --- SSL & Security ---
+certifi>=2024.2.2
+cryptography>=42,<45          # For future HTTPS checks, certificate parsing
 
-# ============================
-#  FastAPI & ASGI Server
-# ============================
-fastapi==0.111.1
-uvicorn==0.23.2              # Stable with Python 3.11/3.12
+# --- HTTP (sync + optional async for speed) ---
+# requests stays for sync; httpx is optional for async batches
+httpx>=0.27,<1                # Optional but recommended for concurrency
+brotli>=1.1,<2                # Improves compression/transfer checks (optional)
 
-# ============================
-#  WebSocket Support
-# ============================
-websockets==11.0.3
+# --- PDF Generation ---
+reportlab>=4.2,<5
+Pillow>=10.3,<11              # Images in PDFs
 
-# ============================
-#  Data Validation
-# ============================
-pydantic==2.5.1
+# --- Utilities ---
+python-dateutil>=2.9,<3
+tenacity>=9,<10               # Robust retries around flaky endpoints (optional)
+tldextract>=5.1,<6            # Domain & subdomain parsing (useful in audits)
+validators>=0.22,<0.23        # URL, email, etc. validation
 
-# ============================
-#  NLP / AI Scoring (Optional)
-# ============================
-nltk==3.9
-spacy==3.6.1
+# --- FastAPI & ASGI Server ---
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1    # Includes uvloop, httptools, websockets stack
+orjson>=3.10,<4               # Fast JSON for FastAPI responses
+
+# --- WebSocket Support ---
+# If you need a direct WS client; for server, uvicorn[standard] already covers
+websockets>=12,<13
+
+# --- Data Validation ---
+pydantic>=2.7,<3
+pydantic-settings>=2.4,<3     # For typed settings from env/files
+
+# --- NLP / AI Scoring (Optional) ---
+# Keep these only if you truly use them; they are heavier
+nltk>=3.9,<4
 textblob==0.17.1
+spacy>=3.7,<3.8
 
-# ============================
-#  Optional: File Uploads
-# ============================
-python-multipart==0.0.6
+# --- Optional: file uploads / forms ---
+python-multipart>=0.0.9,<0.0.10
 
-# ============================
-#  Optional: YAML Config / Logging
-# ============================
-pyyaml==6.0
+# --- Optional: YAML config / logging ---
+pyyaml>=6.0.1,<7
+loguru>=0.7,<0.8              # Cleaner structured logging (optional)
+
+# --- Optional: Sitemaps & robots ---
+# python-sitemap and robots parsers are fragmented; below are reliable picks:
+robots-txt-parse>=0.3,<0.4    # Simple robots.txt parsing
+# If you want sitemap parsing via requests+lxml, you can skip a package.
+# For full-featured crawlers, consider scrapy in a separate optional extra.
