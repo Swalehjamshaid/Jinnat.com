@@ -390,7 +390,6 @@
       el("debugBox").textContent = JSON.stringify(obj, null, 2);
     }
 
-    // Safe result extraction
     function extractRunnerResult(obj) {
       if (!obj || typeof obj !== "object") return null;
       if (obj.audited_url && typeof obj.overall_score !== "undefined") return obj;
@@ -430,21 +429,19 @@
 
       el("lastRunAt").textContent = new Date().toLocaleString();
 
-      // Safe access to nested data
+      // Safe access to data
       const breakdown = r.breakdown || {};
       const perfExtras = (breakdown.performance || {}).extras || {};
       const seoExtras = (breakdown.seo || {}).extras || {};
       const linksData = breakdown.links || {};
       const secData = breakdown.security || {};
 
-      // Scores with safe defaults
       const score = parseInt(r.overall_score || 0);
       const seo = breakdown.seo?.score ?? 0;
       const perf = breakdown.performance?.score ?? 0;
       const links = breakdown.links?.score ?? 0;
       const sec = breakdown.security?.score ?? 0;
 
-      // Update UI
       const deg = Math.max(0, Math.min(360, (score / 100) * 360));
       el("scoreRing").style.setProperty("--deg", `${deg}deg`);
       el("overallScore").textContent = score;
@@ -463,7 +460,7 @@
       // verdict
       el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
 
-      // Chart (safe fallback)
+      // Chart – safe fallback
       let labels = ["SEO", "Performance", "Links", "Security"];
       let dataPoints = [seo, perf, links, sec];
       let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
@@ -490,7 +487,7 @@
         }
       });
 
-      // Dynamic cards (safe)
+      // Dynamic cards – safe
       const dyn = r.dynamic || {};
       const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
       const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
@@ -515,22 +512,19 @@
         kvBody.appendChild(tr);
       }
 
-      // Enable PDF
+      // Enable PDF button
       el("pdfBtn").disabled = false;
 
-      // Final progress
+      // Final stage
       setStage("completed", 100);
 
       if (AUTO_SCROLL_ON_RESULT) {
         setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
       }
 
-      // Warning if no content was extracted
+      // Warning if score is 0 but no error
       if (score === 0 && !error) {
-        showAlert(
-          "Audit completed but no content was extracted (empty or blocked page).",
-          "warning", true
-        );
+        showAlert("Audit completed but no content was extracted (empty or blocked page).", "warning", true);
       }
     }
 
@@ -551,7 +545,7 @@
       return `<b>Audit failed</b><br><span class="mono">${escapeHtml(msg)}</span>`;
     }
 
-    // WebSocket
+    // WebSocket setup
     function ensureWs() {
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
       ws = new WebSocket(wsUrl());
@@ -581,7 +575,7 @@
       ws.onerror = () => setWsStatus(false);
     }
 
-    // REST fallback (if WS fails)
+    // REST fallback
     async function runAuditRest(url) {
       try {
         setStage("rest_fallback", 20);
@@ -609,7 +603,6 @@
       if (!url) {
         showAlert("Please enter a URL.", "warning"); return;
       }
-      // Reset UI
       lastResult = null; auditInProgress = true;
       el("pdfBtn").disabled = true;
       el("resultsArea").style.display = "none";
@@ -618,7 +611,7 @@
       setStage("starting", 1);
       showAlert("Audit started… please wait.", "info");
       ensureWs();
-      try { ws.send(JSON.stringify({ url })); } catch (e) { /* WS not ready; fallback below */ }
+      try { ws.send(JSON.stringify({ url })); } catch (e) {}
       clearTimeout(fallbackTimer);
       fallbackTimer = setTimeout(() => {
         if (auditInProgress && !lastResult) {
