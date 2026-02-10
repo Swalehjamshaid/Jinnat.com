@@ -5,13 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light">
   <title>Website Audit Pro</title>
-
   <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
   <style>
     :root{
       --radius: 18px;
@@ -26,10 +23,9 @@
       --brandB: rgba(99,102,241,.90);
       --good: #22c55e;
       --warn: #fbbf24;
-      --bad:  #ef4444;
+      --bad: #ef4444;
       --info: #38bdf8;
     }
-
     body{
       min-height:100vh;
       background:
@@ -38,9 +34,7 @@
         radial-gradient(800px 520px at 65% 85%, rgba(239,68,68,.12), transparent 52%),
         linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 100%);
     }
-
     .app-shell{ max-width:1200px; margin:0 auto; padding: 22px 16px 70px; }
-
     .glass{
       background: var(--glass);
       border: 1px solid var(--glassBorder);
@@ -48,7 +42,6 @@
       box-shadow: var(--shadow);
       backdrop-filter: blur(10px);
     }
-
     .brand-badge{
       width:46px; height:46px;
       border-radius: 14px;
@@ -59,10 +52,8 @@
       border: 1px solid rgba(255,255,255,.16);
       box-shadow: 0 18px 40px rgba(14,165,233,.22);
     }
-
     .subtle{ color: var(--muted); }
     .muted-2{ color: var(--muted2); }
-
     .pill{
       border:1px solid rgba(255,255,255,.14);
       background: rgba(255,255,255,.06);
@@ -73,7 +64,6 @@
       user-select:none;
       white-space:nowrap;
     }
-
     .btn-glow{
       background: linear-gradient(135deg, var(--brandA), var(--brandB));
       border:none;
@@ -81,10 +71,8 @@
     }
     .btn-glow:hover{ filter: brightness(1.06); transform: translateY(-1px); }
     .btn-glow:active{ transform: translateY(0); }
-
     .progress { height: 10px; }
     .progress-bar { transition: width .20s ease; }
-
     .mini-card{
       border-radius: 18px;
       border:1px solid rgba(255,255,255,.12);
@@ -95,11 +83,9 @@
     .mini-card .label{ font-size: 12px; opacity: .82; }
     .mini-card .value{ font-size: 34px; font-weight: 900; line-height: 1.1; }
     .mini-card .hint{ font-size: 12px; opacity: .72; margin-top: 8px; }
-
     .kv-table td,.kv-table th{ border-color: rgba(255,255,255,.10)!important; }
     .fade-in{ animation: fadeIn .30s ease both; }
     @keyframes fadeIn{ from{opacity:0; transform: translateY(8px)} to{opacity:1; transform: translateY(0)} }
-
     .score-ring{
       width: 180px; height: 180px;
       border-radius: 999px;
@@ -123,7 +109,6 @@
     .score-ring .score{ font-size: 40px; font-weight: 950; line-height: 1; }
     .score-ring .grade{ font-weight: 900; margin-top: 4px; opacity:.92; }
     .score-ring .tiny{ font-size: 12px; opacity:.78; margin-top: 6px; }
-
     .status-chip{
       display:inline-flex; align-items:center; gap:8px;
       padding: 6px 10px; border-radius: 999px;
@@ -136,9 +121,7 @@
     .dot.warn{ background: var(--warn); box-shadow: 0 0 0 6px rgba(251,191,36,.16); }
     .dot.bad{ background: var(--bad); box-shadow: 0 0 0 6px rgba(239,68,68,.16); }
     .dot.info{ background: var(--info); box-shadow: 0 0 0 6px rgba(56,189,248,.16); }
-
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-
     /* Light theme tweaks */
     [data-bs-theme="light"] body{
       background:
@@ -167,10 +150,8 @@
     [data-bs-theme="light"] .kv-table td, [data-bs-theme="light"] .kv-table th{ border-color: rgba(15,23,42,.10)!important; }
   </style>
 </head>
-
 <body>
   <div class="app-shell">
-
     <!-- HEADER -->
     <div class="d-flex align-items-center justify-content-between mb-4">
       <div class="d-flex align-items-center gap-3">
@@ -180,13 +161,11 @@
           <div class="subtle small">Runner.py results • WebSocket progress • PDF export</div>
         </div>
       </div>
-
       <div class="d-flex align-items-center gap-2">
         <span id="wsStatus" class="pill">WS: Disconnected</span>
         <button class="btn btn-sm btn-outline-secondary" id="themeToggle" type="button" aria-label="Toggle theme">🌙 / ☀️</button>
       </div>
     </div>
-
     <!-- INPUT + PROGRESS -->
     <div class="glass p-4 mb-4">
       <div class="row g-3 align-items-end">
@@ -194,10 +173,9 @@
           <label class="form-label fw-semibold">Website URL</label>
           <input id="urlInput" type="text" class="form-control form-control-lg"
                  placeholder="example.com or https://example.com"
-                 value="https://www.haier.com.pk/#/login" />
+                 value="https://www.haier.com.pk" />
           <div class="small muted-2 mt-1">Paste domain or full URL — the system normalizes it automatically.</div>
         </div>
-
         <div class="col-lg-5">
           <div class="d-grid gap-2 d-lg-flex justify-content-lg-end">
             <button id="startBtn" class="btn btn-lg btn-glow text-white fw-semibold" type="button">
@@ -209,9 +187,7 @@
           </div>
         </div>
       </div>
-
       <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,.12)">
-
       <div class="d-flex align-items-center justify-content-between mb-2">
         <div class="fw-semibold">Progress</div>
         <div class="d-flex align-items-center gap-2">
@@ -219,14 +195,11 @@
           <span class="subtle"><span id="progressText">0%</span></span>
         </div>
       </div>
-
       <div class="progress glass" style="border-radius:999px;">
         <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
       </div>
-
       <!-- Alerts -->
       <div id="alertArea" class="mt-3"></div>
-
       <!-- Debug drawer -->
       <div class="mt-3">
         <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#debugCollapse" aria-expanded="false">
@@ -237,7 +210,6 @@
         </div>
       </div>
     </div>
-
     <!-- RESULTS -->
     <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
       <div class="col-lg-4">
@@ -249,23 +221,19 @@
               <div class="tiny" id="auditedUrl">Audited: -</div>
             </div>
           </div>
-
           <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
             <span class="pill" id="lastRunAt">—</span>
             <span class="pill" id="fetcherPill">fetcher: —</span>
           </div>
-
           <div class="mt-3 subtle small">
             Overall score is computed from SEO, Performance, Links, and Security.
           </div>
-
           <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
             <button id="copyJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Copy JSON</button>
             <button id="openJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Open JSON</button>
           </div>
         </div>
       </div>
-
       <div class="col-lg-8">
         <div class="glass p-4 h-100">
           <div class="d-flex align-items-center justify-content-between mb-3">
@@ -279,7 +247,6 @@
         </div>
       </div>
     </div>
-
     <!-- CATEGORY CARDS -->
     <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
       <div class="col-md-6 col-lg-3">
@@ -311,7 +278,6 @@
         </div>
       </div>
     </div>
-
     <!-- DYNAMIC OUTPUT -->
     <div id="dynamicArea" class="row g-3" style="display:none;">
       <div class="col-lg-6">
@@ -337,23 +303,18 @@
         </div>
       </div>
     </div>
-
     <div class="text-center mt-5 subtle small">
       © FF Tech • WebSocket <code>/ws</code> • REST <code>/api/audit/run</code> • PDF <code>/api/audit/pdf</code>
     </div>
-
   </div>
-
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
   <script>
     // =========================================================
-    // CONTROLLER (Works with updated app/main.py + runner.py)
+    // CONTROLLER – FIXED VERSION (no more 'resources' error)
     // =========================================================
     const REST_FALLBACK_AFTER_MS = 9000;
     const AUTO_SCROLL_ON_RESULT = true;
-
     let ws = null;
     let lastResult = null;
     let chart = null;
@@ -404,12 +365,12 @@
       el("statusText").textContent = status || "working";
       const bar = el("progressBar");
       bar.classList.remove("bg-info","bg-success","bg-warning","bg-danger");
-      if (status === "error") bar.classList.add("bg-danger");
+      if (status === "error" || status === "failed") bar.classList.add("bg-danger");
       else if (p >= 100) bar.classList.add("bg-success");
       else bar.classList.add("bg-info");
       const dot = el("stageDot");
       dot.classList.remove("ok","warn","bad","info");
-      if (status === "error") dot.classList.add("bad");
+      if (status === "error" || status === "failed") dot.classList.add("bad");
       else if (p >= 100) dot.classList.add("ok");
       else dot.classList.add("info");
     }
@@ -429,7 +390,7 @@
       el("debugBox").textContent = JSON.stringify(obj, null, 2);
     }
 
-    // Extract runner_result in any reasonable shape
+    // Safe result extraction
     function extractRunnerResult(obj) {
       if (!obj || typeof obj !== "object") return null;
       if (obj.audited_url && typeof obj.overall_score !== "undefined") return obj;
@@ -446,40 +407,67 @@
 
     function renderResult(r) {
       lastResult = r;
+      auditInProgress = false;
+      clearTimeout(fallbackTimer);
+
+      // Reset UI
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      el("pdfBtn").disabled = true;
+
+      const error = extractError(r);
+      if (error) {
+        showAlert(`Audit failed: ${escapeHtml(error)}`, "danger", true);
+        setStage("failed", 100);
+        return;
+      }
+
+      // Show results area
       el("resultsArea").style.display = "";
       el("cardsArea").style.display = "";
       el("dynamicArea").style.display = "";
+
       el("lastRunAt").textContent = new Date().toLocaleString();
 
+      // Safe access to nested data
+      const breakdown = r.breakdown || {};
+      const perfExtras = (breakdown.performance || {}).extras || {};
+      const seoExtras = (breakdown.seo || {}).extras || {};
+      const linksData = breakdown.links || {};
+      const secData = breakdown.security || {};
+
+      // Scores with safe defaults
       const score = parseInt(r.overall_score || 0);
+      const seo = breakdown.seo?.score ?? 0;
+      const perf = breakdown.performance?.score ?? 0;
+      const links = breakdown.links?.score ?? 0;
+      const sec = breakdown.security?.score ?? 0;
+
+      // Update UI
       const deg = Math.max(0, Math.min(360, (score / 100) * 360));
       el("scoreRing").style.setProperty("--deg", `${deg}deg`);
       el("overallScore").textContent = score;
       el("gradeText").textContent = r.grade || "-";
       el("auditedUrl").textContent = `Audited: ${r.audited_url || "-"}`;
 
-      const breakdown = r.breakdown || {};
-      const seo = breakdown.seo?.score ?? 0;
-      const perf = breakdown.performance?.score ?? 0;
-      const links = breakdown.links?.score ?? 0;
-      const sec = breakdown.security?.score ?? 0;
-
       el("seoScore").textContent = seo;
       el("perfScore").textContent = perf;
       el("linksScore").textContent = links;
       el("secScore").textContent = sec;
 
-      // fetcher pill (if provided in performance extras)
-      const fetcher = breakdown.performance?.extras?.fetcher ?? "—";
+      // fetcher pill
+      const fetcher = perfExtras.fetcher ?? "—";
       el("fetcherPill").textContent = `fetcher: ${fetcher}`;
 
       // verdict
       el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
 
-      // Chart preferring runner.chart_data
+      // Chart (safe fallback)
       let labels = ["SEO", "Performance", "Links", "Security"];
       let dataPoints = [seo, perf, links, sec];
       let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
+
       const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
       if (chartSpec?.data?.labels && chartSpec?.data?.datasets?.[0]?.data) {
         labels = chartSpec.data.labels;
@@ -502,10 +490,11 @@
         }
       });
 
-      // dynamic cards
+      // Dynamic cards (safe)
       const dyn = r.dynamic || {};
-      const cards = dyn.cards || [];
-      const kv = dyn.kv || [];
+      const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
+      const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
+
       const cardsWrap = el("dynamicCards");
       cardsWrap.innerHTML = "";
       for (const c of cards) {
@@ -529,10 +518,19 @@
       // Enable PDF
       el("pdfBtn").disabled = false;
 
-      // final progress
+      // Final progress
       setStage("completed", 100);
+
       if (AUTO_SCROLL_ON_RESULT) {
         setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+      }
+
+      // Warning if no content was extracted
+      if (score === 0 && !error) {
+        showAlert(
+          "Audit completed but no content was extracted (empty or blocked page).",
+          "warning", true
+        );
       }
     }
 
@@ -541,19 +539,14 @@
       if (msg.includes("CERTIFICATE_VERIFY_FAILED") || msg.includes("unable to get local issuer certificate")) {
         return `
           <b>SSL certificate validation failed</b><br>
-          The target website's HTTPS certificate could not be verified from the server environment.<br>
-          Ensure the backend uses <code>certifi</code> CA bundle in SSL contexts (already applied in runner).<br>
-          <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>`;
+          The target website's HTTPS certificate could not be verified.<br>
+          Raw: <span class="mono">${escapeHtml(msg)}</span>`;
       }
       if (msg.includes("Name or service not known") || msg.includes("Temporary failure in name resolution")) {
-        return `<b>DNS / network resolution problem</b><br>
-                The server couldn't resolve the domain (try again later).<br>
-                <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>`;
+        return `<b>DNS resolution failed</b><br>The domain could not be resolved.<br>Raw: ${escapeHtml(msg)}`;
       }
       if (msg.toLowerCase().includes("timeout")) {
-        return `<b>Request timed out</b><br>
-                The target site took too long to respond.<br>
-                <span class="subtle mono">Raw:</span> <span class="mono">${escapeHtml(msg)}</span>`;
+        return `<b>Request timed out</b><br>The site did not respond in time.<br>Raw: ${escapeHtml(msg)}`;
       }
       return `<b>Audit failed</b><br><span class="mono">${escapeHtml(msg)}</span>`;
     }
@@ -561,18 +554,15 @@
     // WebSocket
     function ensureWs() {
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-
       ws = new WebSocket(wsUrl());
       ws.onopen = () => setWsStatus(true);
       ws.onmessage = (event) => {
         let msg = null;
         try { msg = JSON.parse(event.data); } catch (e) { return; }
         debugSet(msg);
-
         const status = msg.status ?? msg.message ?? msg.type ?? "working";
         const progress = msg.progress ?? msg.percent ?? 0;
         setStage(status, progress);
-
         const err = extractError(msg);
         if (err) {
           auditInProgress = false;
@@ -580,7 +570,6 @@
           showAlert(buildHumanError(err), "danger", true);
           return;
         }
-
         const r = extractRunnerResult(msg);
         if (r) {
           auditInProgress = false;
@@ -592,7 +581,7 @@
       ws.onerror = () => setWsStatus(false);
     }
 
-    // REST fallback
+    // REST fallback (if WS fails)
     async function runAuditRest(url) {
       try {
         setStage("rest_fallback", 20);
@@ -604,10 +593,8 @@
         if (!res.ok) throw new Error(await res.text());
         const j = await res.json();
         debugSet(j);
-
         const err = extractError(j);
         if (err) throw new Error(err);
-
         const r = extractRunnerResult(j);
         if (!r) throw new Error("REST response did not include runner_result.");
         renderResult(r);
@@ -622,8 +609,7 @@
       if (!url) {
         showAlert("Please enter a URL.", "warning"); return;
       }
-
-      // Reset
+      // Reset UI
       lastResult = null; auditInProgress = true;
       el("pdfBtn").disabled = true;
       el("resultsArea").style.display = "none";
@@ -631,10 +617,8 @@
       el("dynamicArea").style.display = "none";
       setStage("starting", 1);
       showAlert("Audit started… please wait.", "info");
-
       ensureWs();
       try { ws.send(JSON.stringify({ url })); } catch (e) { /* WS not ready; fallback below */ }
-
       clearTimeout(fallbackTimer);
       fallbackTimer = setTimeout(() => {
         if (auditInProgress && !lastResult) {
@@ -648,7 +632,6 @@
       const url = el("urlInput").value.trim();
       if (!url) return showAlert("Please enter a URL.", "warning");
       el("pdfBtn").disabled = true; el("pdfBtn").innerText = "Generating PDF…";
-
       try {
         const payload = { url, client_name:"", brand_name:"", report_title:"", website_name:"", logo_path:"" };
         const res = await fetch("/api/audit/pdf", {
@@ -656,7 +639,6 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
-
         const ct = res.headers.get("content-type") || "";
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
@@ -664,19 +646,16 @@
           else { detail = await res.text(); }
           throw new Error(detail);
         }
-
         const blob = await res.blob();
         const cd = res.headers.get("content-disposition") || "";
         let filename = "audit_report.pdf";
         const match = cd.match(/filename="?([^"]+)"?/i);
         if (match && match[1]) filename = match[1];
-
         const link = document.createElement("a");
         const objectUrl = URL.createObjectURL(blob);
         link.href = objectUrl; link.download = filename;
         document.body.appendChild(link); link.click(); link.remove();
         URL.revokeObjectURL(objectUrl);
-
         showAlert("PDF generated and downloaded ✅", "success");
       } catch (e) {
         showAlert(buildHumanError(e.message || String(e)), "danger", true);
@@ -700,10 +679,11 @@
       w.document.title = "Audit Result JSON"; w.document.close();
     });
 
-    // Wire
+    // Wire events
     el("startBtn").addEventListener("click", startAudit);
     el("pdfBtn").addEventListener("click", downloadPdf);
 
+    // Init
     setWsStatus(false);
     ensureWs();
     setStage("idle", 0);
