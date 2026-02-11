@@ -1,58 +1,75 @@
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt
 # Railway / Docker / SSL-safe
-# Updated: 10 Feb 2026
+# Updated: 11 Feb 2026
 # =========================================================
+
 # -------------------------
 # Core FastAPI Backend
 # -------------------------
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 gunicorn==23.0.0
+
 # -------------------------
 # Templates + Uploads
 # -------------------------
 jinja2==3.1.5
 python-multipart==0.0.20
+
 # -------------------------
 # WebSocket Support
 # -------------------------
 websockets==14.1
+
 # -------------------------
 # Validation & Settings
 # -------------------------
 pydantic==2.10.4
 pydantic-settings==2.7.0
 python-dotenv==1.0.1
+
 # -------------------------
-# HTTP Clients + SSL (CRITICAL SECTION)
+# HTTP Clients + SSL (CRITICAL)
 # -------------------------
 requests==2.32.3
 httpx==0.28.1
 urllib3==2.3.0
-# SSL certificate trust store (FIXES CERTIFICATE_VERIFY_FAILED)
+
+# SSL certificate trust store (prevents CERTIFICATE_VERIFY_FAILED)
 certifi==2024.12.14
-# Cryptography backend (important for modern TLS chains)
+
+# Cryptography backend (TLS & modern chains)
 cryptography==42.0.8
+
 # -------------------------
 # HTML Parsing / Analysis
 # -------------------------
 beautifulsoup4==4.12.3
 lxml==5.3.0
+
 # -------------------------
 # JSON Performance
 # -------------------------
 orjson==3.10.15
 ujson==5.10.0
+
 # -------------------------
-# PDF Generation
+# PDF Generation (PRIMARY)
 # -------------------------
 reportlab==4.2.5
+Pillow==10.4.0   # required for ReportLab image support + fonts
+
 # -------------------------
-# OPTIONAL (Enable only if used)
+# OPTIONAL (Enable only when needed)
 # -------------------------
-# pillow==10.4.0
 # qrcode==7.4.2
 # python-pptx==1.0.2
 # openpyxl==3.1.5
-# weasyprint==63.0 # requires OS-level libs
+# weasyprint==63.0   # requires cairo/pango OS libs
+
+# -------------------------
+# DOCKER NOTE (add to Dockerfile, NOT here)
+# -------------------------
+# RUN apt-get update && apt-get install -y fonts-dejavu-core
+``
