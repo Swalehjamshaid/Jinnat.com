@@ -9,9 +9,9 @@ MOST FLEXIBLE WebsiteAuditRunner
     Output: dict with keys:
         audited_url, overall_score, grade, breakdown, chart_data, dynamic
 PDF integration (SAFE ADDITION — does NOT change run() IO):
-- Adds helper generate_pdf_from_runner_result (optional)
-- Uses positional argument for generate_audit_pdf (fixes TypeError)
-- Logs clearly if PDF fails (audit still completes)
+- Fixed keyword mismatch (positional call to generate_audit_pdf)
+- Safe defaults and error handling for PDF (no crash on missing data)
+- Logs clearly if PDF fails (audit always completes)
 IMPORTANT FIX:
 - Uses certifi for SSL (fixes CERTIFICATE_VERIFY_FAILED on Railway)
 """
@@ -60,16 +60,11 @@ def _safe_int(v: Any, default: int = 0) -> int:
 
 def _grade(score: int) -> str:
     score = _safe_int(score, 0)
-    if score >= 90:
-        return "A+"
-    if score >= 80:
-        return "A"
-    if score >= 70:
-        return "B"
-    if score >= 60:
-        return "C"
-    if score >= 50:
-        return "D"
+    if score >= 90: return "A+"
+    if score >= 80: return "A"
+    if score >= 70: return "B"
+    if score >= 60: return "C"
+    if score >= 50: return "D"
     return "F"
 
 async def _maybe_progress(cb: ProgressCB, status: str, percent: int, payload: Optional[dict] = None) -> None:
@@ -203,9 +198,6 @@ def _best_fetch(url: str, timeout: float, user_agent: str, max_bytes: int) -> Di
 def _try_bs4_parse(html: str) -> Optional[Any]:
     try:
         from bs4 import BeautifulSoup
-    except Exception:
-        return None
-    try:
         return BeautifulSoup(html or "", "html.parser")
     except Exception:
         return None
@@ -318,127 +310,45 @@ def _resource_counts(html: str, soup: Any = None) -> Dict[str, int]:
 # ============================================================
 # PDF HELPERS (SAFE — does not affect run() output)
 # ============================================================
-def _today_str() -> str:
-    return _dt.date.today().isoformat()
-
 def runner_result_to_audit_data(
     runner_result: Dict[str, Any],
     *,
-    client_name: str = "N/A",
-    brand_name: str = "FF Tech",
+    client_name: str = PDF_CLIENT_NAME,
+    brand_name: str = PDF_BRAND_NAME,
     audit_date: Optional[str] = None,
     website_name: Optional[str] = None,
-    industry: str = "N/A",
-    audience: str = "N/A",
-    goals: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    goals = goals or []
-    audit_date = audit_date or _today_str()
-    audited_url = runner_result.get("audited_url") or "N/A"
-    overall_score = runner_result.get("overall_score")
-    grade = runner_result.get("grade") or "N/A"
-    breakdown = runner_result.get("breakdown") or {}
-    scores = {
-        "seo": (breakdown.get("seo") or {}).get("score"),
-        "performance": (breakdown.get("performance") or {}).get("score"),
-        "security": (breakdown.get("security") or {}).get("score"),
-        "ux_ui": None,
-        "accessibility": None,
-        "content_quality": None,
+    """Converts runner result to format expected by pdf_report.py"""
+    return {
+        "audited_url": runner_result.get("audited_url", "N/A"),
+        "overall_score": runner_result.get("overall_score", 0),
+        "grade": runner_result.get("grade", "N/A"),
+        "breakdown": runner_result.get("breakdown", {}),
+        "chart_data": runner_result.get("chart_data", []),
+        "dynamic": runner_result.get("dynamic", {"cards": [], "kv": []}),
     }
-    risks: List[str] = []
-    opportunities: List[str] = []
-    seo_extras = (breakdown.get("seo") or {}).get("extras", {})
-    perf_extras = (breakdown.get("performance") or {}).get("extras", {})
-    sec = (breakdown.get("security") or {})
-    # Simple risk/opportunity detection (can be expanded)
-    if not seo_extras.get("meta_description_present"):
-        risks.append("Meta description missing")
-        opportunities.append("Add meta description")
-    if seo_extras.get("h1_count") == 0:
-        risks.append("No H1 found")
-        opportunities.append("Add H1 heading")
-    if (seo_extras.get("images_missing_alt") or 0) > 0:
-        risks.append("Images missing ALT text")
-        opportunities.append("Add ALT attributes")
-    if perf_extras.get("load_ms", 0) > 3000:
-        risks.append("Slow load time")
-        opportunities.append("Optimize performance")
-    if not sec.get("https"):
-        risks.append("No HTTPS")
-        opportunities.append("Enable HTTPS")
-    on_page_issues = []
-    if not seo_extras.get("title"):
-        on_page_issues.append("Missing title tag")
-    if not seo_extras.get("meta_description_present"):
-        on_page_issues.append("Missing meta description")
-    technical_issues = []
-    if not seo_extras.get("canonical"):
-        technical_issues.append("Missing canonical tag")
-    page_size_issues = []
-    if perf_extras.get("load_ms", 0) > 3000:
-        page_size_issues.append(f"Load time: {perf_extras['load_ms']} ms")
-    verdict = "Healthy" if overall_score is not None and overall_score >= 80 else "Needs Improvement"
-    audit_data = {
-        "website": {
-            "name": website_name or audited_url,
-            "url": audited_url,
-            "industry": industry,
-            "audience": audience,
-            "goals": goals,
-        },
-        "client": {"name": client_name},
-        "brand": {"name": brand_name},
-        "audit": {
-            "date": audit_date,
-            "overall_score": overall_score,
-            "grade": grade,
-            "verdict": verdict,
-            "executive_summary": "Automated audit summary across key metrics.",
-            "key_risks": risks,
-            "opportunities": opportunities,
-        },
-        "scores": scores,
-        "scope": {
-            "what": ["SEO", "Performance", "Links", "Security"],
-            "why": "These factors affect visibility, speed, trust, and UX.",
-            "tools": ["Custom runner.py"],
-        },
-        "seo": {
-            "on_page_issues": on_page_issues,
-            "technical_issues": technical_issues,
-        },
-        "performance": {
-            "page_size_issues": page_size_issues,
-        },
-    }
-    return audit_data
 
 def generate_pdf_from_runner_result(
     runner_result: Dict[str, Any],
     output_path: str,
     *,
     logo_path: Optional[str] = None,
-    report_title: str = "Website Audit Report",
-    client_name: str = "N/A",
-    brand_name: str = "FF Tech",
+    report_title: str = PDF_REPORT_TITLE,
+    client_name: str = PDF_CLIENT_NAME,
+    brand_name: str = PDF_BRAND_NAME,
     audit_date: Optional[str] = None,
     website_name: Optional[str] = None,
 ) -> str:
     """
-    Generate PDF from runner result (SAFE helper — does not affect run())
+    SAFE PDF generation helper – does not affect run() output.
     Uses positional argument to avoid TypeError.
+    Logs errors but does not crash the audit.
     """
-    audit_data = runner_result_to_audit_data(
-        runner_result,
-        client_name=client_name,
-        brand_name=brand_name,
-        audit_date=audit_date,
-        website_name=website_name,
-    )
+    audit_data = runner_result_to_audit_data(runner_result)
+
     try:
         from app.audit.pdf_report import generate_audit_pdf
-        # FIXED: Use positional argument (no 'audit_data=')
+        # FIXED: positional first argument (no 'audit_data=' keyword)
         return generate_audit_pdf(
             audit_data,
             output_path=output_path,
@@ -446,14 +356,15 @@ def generate_pdf_from_runner_result(
             report_title=report_title,
         )
     except ImportError as e:
-        logger.error("PDF generation failed: missing dependencies")
-        raise RuntimeError("PDF generation failed: install required libraries (reportlab/weasyprint)") from e
+        logger.error("PDF generation failed: missing dependencies (reportlab/weasyprint)")
+        raise RuntimeError("PDF dependencies missing. Install reportlab or weasyprint.") from e
     except Exception as e:
         logger.exception("PDF generation error")
+        # Do NOT crash the audit — return fallback path or raise controlled error
         raise RuntimeError(f"PDF generation failed: {str(e)}") from e
 
 # -------------------------------
-# Runner (stable IO, flexible internals)
+# Runner Core (unchanged IO, stable logic)
 # -------------------------------
 @dataclass
 class WebsiteAuditRunner:
@@ -468,10 +379,8 @@ class WebsiteAuditRunner:
     })
 
     async def run(self, url: str, html: str = "", progress_cb: ProgressCB = None) -> Dict[str, Any]:
-        """
-        Main audit method — IO signature unchanged
-        """
         audited_url = _normalize_url(url)
+
         def fail(message: str) -> Dict[str, Any]:
             return {
                 "audited_url": audited_url or "",
@@ -488,7 +397,7 @@ class WebsiteAuditRunner:
 
         await _maybe_progress(progress_cb, "starting", 5, {"url": audited_url})
 
-        # Use pre-fetched HTML if provided
+        # Fetch
         if html.strip():
             fetch = {
                 "final_url": audited_url,
@@ -532,7 +441,7 @@ class WebsiteAuditRunner:
 
         await _maybe_progress(progress_cb, "scoring", 60, None)
 
-        # Scoring logic (unchanged)
+        # Scoring (unchanged)
         perf = 100
         if load_ms > 8000: perf -= 45
         elif load_ms > 5000: perf -= 35
