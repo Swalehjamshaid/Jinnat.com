@@ -9,11 +9,9 @@ MOST FLEXIBLE WebsiteAuditRunner
     Output: dict with keys:
         audited_url, overall_score, grade, breakdown, chart_data, dynamic
 PDF integration (SAFE ADDITION — does NOT change run() IO):
-- Fixed keyword mismatch (positional call to generate_audit_pdf)
-- Added logger import and setup (fixes NameError)
-- Safe error handling so PDF failure never crashes audit
-IMPORTANT FIX:
-- Uses certifi for SSL (fixes CERTIFICATE_VERIFY_FAILED on Railway)
+- Fixed keyword mismatch (now positional only)
+- Safe error handling so PDF failure never crashes the audit
+- Logs clearly if PDF fails
 """
 from __future__ import annotations
 import asyncio
@@ -28,23 +26,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse, urljoin
 from urllib.request import Request, urlopen
 
-# Logger setup (used in PDF helper)
 logger = logging.getLogger(__name__)
 
-# Progress callback type
 ProgressCB = Optional[Callable[[str, int, Optional[dict]], Union[None, Any]]]
 
-# ============================================================
-# PDF CONFIG (SAFE ADDITION — does not affect runner output)
-# ============================================================
 PDF_REPORT_TITLE: str = os.getenv("PDF_REPORT_TITLE", "Website Audit Report")
 PDF_BRAND_NAME: str = os.getenv("PDF_BRAND_NAME", "FF Tech")
 PDF_CLIENT_NAME: str = os.getenv("PDF_CLIENT_NAME", "N/A")
-PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")  # e.g. "app/assets/logo.png"
+PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")
 
-# -------------------------------
-# Helpers (unchanged)
-# -------------------------------
 def _normalize_url(url: str) -> str:
     url = (url or "").strip()
     if not url:
@@ -97,13 +87,10 @@ def _truncate(s: str, n: int = 240) -> str:
     s = s or ""
     return s if len(s) <= n else s[:n - 1] + "…"
 
-# -------------------------------
-# SSL Helper (INTERNAL ONLY)
-# -------------------------------
 def _ssl_context() -> ssl.SSLContext:
     insecure = os.getenv("AUDIT_INSECURE_SSL", "").lower() in {"1", "true", "yes"}
     if insecure:
-        return ssl._create_unverified_context()  # TEST ONLY
+        return ssl._create_unverified_context()
     try:
         import certifi
         return ssl.create_default_context(cafile=certifi.where())
@@ -120,9 +107,6 @@ def _requests_verify_arg() -> Any:
     except Exception:
         return True
 
-# -------------------------------
-# Fetchers (flexible)
-# -------------------------------
 def _fetch_with_stdlib(url: str, timeout: float, user_agent: str, max_bytes: int) -> Dict[str, Any]:
     start = time.perf_counter()
     req = Request(
@@ -196,9 +180,6 @@ def _best_fetch(url: str, timeout: float, user_agent: str, max_bytes: int) -> Di
         return data
     return _fetch_with_stdlib(url, timeout, user_agent, max_bytes)
 
-# -------------------------------
-# Parsing (flexible)
-# -------------------------------
 def _try_bs4_parse(html: str) -> Optional[Any]:
     try:
         from bs4 import BeautifulSoup
@@ -335,7 +316,6 @@ def runner_result_to_audit_data(
 def generate_pdf_from_runner_result(
     runner_result: Dict[str, Any],
     output_path: str,
-    *,
     logo_path: Optional[str] = None,
     report_title: str = PDF_REPORT_TITLE,
     client_name: str = PDF_CLIENT_NAME,
@@ -345,8 +325,7 @@ def generate_pdf_from_runner_result(
 ) -> str:
     """
     SAFE PDF generation helper — does not affect run() output.
-    Uses positional arguments to avoid TypeError.
-    Logs errors clearly but does not crash the audit.
+    Uses positional arguments only to avoid keyword errors.
     """
     audit_data = runner_result_to_audit_data(runner_result)
 
@@ -356,15 +335,14 @@ def generate_pdf_from_runner_result(
         return generate_audit_pdf(
             audit_data,
             output_path,
-            logo_path=logo_path,
-            report_title=report_title,
+            logo_path,
+            report_title,
         )
     except ImportError as e:
         logger.error("PDF generation failed: missing dependencies (reportlab or weasyprint)")
-        raise RuntimeError("PDF dependencies missing. Install required libraries.") from e
+        raise RuntimeError("PDF dependencies missing. Install reportlab or weasyprint.") from e
     except Exception as e:
         logger.exception("PDF generation error")
-        # Do NOT crash the whole response — raise controlled error
         raise RuntimeError(f"PDF generation failed: {str(e)}") from e
 
 # -------------------------------
@@ -444,7 +422,6 @@ class WebsiteAuditRunner:
 
         await _maybe_progress(progress_cb, "scoring", 60, None)
 
-        # Scoring logic (unchanged)
         perf = 100
         if load_ms > 8000: perf -= 45
         elif load_ms > 5000: perf -= 35
