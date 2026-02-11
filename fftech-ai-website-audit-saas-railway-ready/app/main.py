@@ -16,7 +16,6 @@ import time
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
-
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -168,11 +167,9 @@ async def ws_audit(ws: WebSocket):
                     continue
 
                 await _ws_send(ws, {"status": "completed", "progress": 100, "result": result})
-
             except Exception as e:
                 logger.exception("WebSocket audit error")
                 await _ws_send(ws, {"status": "error", "progress": 100, "payload": {"error": str(e)}})
-
     except WebSocketDisconnect:
         pass
     except Exception:
@@ -189,7 +186,6 @@ async def api_audit_run(req: AuditRunRequest) -> JSONResponse:
         return JSONResponse(cached)
 
     runner = WebsiteAuditRunner()
-
     success, html_content, fetch_mode = _fetch_html(url)
     if not success:
         return JSONResponse({"error": f"Could not fetch page: {fetch_mode}"}, status_code=400)
@@ -237,28 +233,21 @@ async def api_audit_pdf(req: PdfRequest):
         raise HTTPException(status_code=500, detail="Invalid audit result structure")
 
     report_title = (req.report_title or "").strip() or "Website Audit Report"
-    client_name = (req.client_name or "").strip() or "N/A"
-    brand_name = (req.brand_name or "").strip() or "FF Tech"
-    website_name = (req.website_name or "").strip() or ""
     logo_path = (req.logo_path or "").strip() or None
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="audit_pdf_"))
-    fname = _safe_filename(website_name or runner_result.get("audited_url") or "audit_report")
+    fname = _safe_filename(url or "audit_report")
     pdf_path = tmp_dir / f"{fname}.pdf"
 
     logger.info(f"Generating PDF at: {pdf_path}")
 
     try:
-        # FIXED HERE: Pass runner_result positionally (no 'runner_result=' keyword)
+        # FIXED: Only use accepted parameters – no client_name, brand_name, etc.
         pdf_generated_path = generate_pdf_from_runner_result(
-            runner_result,  # ← positional argument (matches pdf_report.py / runner.py signature)
+            runner_result,
             output_path=str(pdf_path),
             logo_path=logo_path,
             report_title=report_title,
-            client_name=client_name,
-            brand_name=brand_name,
-            website_name=website_name or None,
-            audit_date=None,
         )
         logger.info(f"PDF successfully generated: {pdf_generated_path}")
     except ImportError as e:
