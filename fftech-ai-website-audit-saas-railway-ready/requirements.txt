@@ -1,7 +1,7 @@
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt
 # Railway / Docker / SSL-safe
-# Updated: 11 Feb 2026
+# Updated: February 11, 2026
 # =========================================================
 
 # -------------------------
@@ -55,21 +55,21 @@ orjson==3.10.15
 ujson==5.10.0
 
 # -------------------------
-# PDF Generation (PRIMARY)
+# PDF Generation (PRIMARY - ReportLab based)
 # -------------------------
 reportlab==4.2.5
-Pillow==10.4.0   # required for ReportLab image support + fonts
+Pillow==10.4.0          # REQUIRED for ReportLab image support + fonts
 
 # -------------------------
-# OPTIONAL (Enable only when needed)
+# OPTIONAL (uncomment if you want to use)
 # -------------------------
+# weasyprint==63.0      # Alternative HTML-to-PDF (needs cairo/pango libs in Dockerfile)
 # qrcode==7.4.2
 # python-pptx==1.0.2
 # openpyxl==3.1.5
-# weasyprint==63.0   # requires cairo/pango OS libs
 
 # -------------------------
-# DOCKER NOTE (add to Dockerfile, NOT here)
+# DOCKER / RAILWAY NOTE (add to Dockerfile if needed)
 # -------------------------
+# For DejaVuSans font support (used in ReportLab for better Unicode/emoji)
 # RUN apt-get update && apt-get install -y fonts-dejavu-core
-``
