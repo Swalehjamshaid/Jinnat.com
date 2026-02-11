@@ -2,17 +2,19 @@
 
 import io
 import os
+import re
 import json
+import time
 import hashlib
 import datetime as dt
 from typing import Dict, Any, List, Tuple, Optional
+from urllib.parse import urlparse, urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
@@ -58,6 +60,11 @@ PRIMARY_WARN = colors.HexColor("#f39c12") # Orange
 PRIMARY_BAD = colors.HexColor("#e74c3c")  # Red
 GRID = colors.HexColor("#DDE1E6")
 
+DEFAULT_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
 
 # =========================================================
 # WHITE LABEL BRANDING
@@ -86,16 +93,20 @@ def fetch_lighthouse_data(url: str, api_key: str = None) -> Dict[str, Any]:
         params = {"url": url, "strategy": "desktop"}
         if api_key:
             params["key"] = api_key
-        resp = requests.get(endpoint, params=params, timeout=15)
+        resp = requests.get(endpoint, params=params, timeout=20)
         data = resp.json()
         cats = data.get("lighthouseResult", {}).get("categories", {})
+        audits = data.get("lighthouseResult", {}).get("audits", {}) or {}
+        lcp = audits.get("largest-contentful-paint", {}).get("numericValue")
+        cls = audits.get("cumulative-layout-shift", {}).get("numericValue")
+        inp = audits.get("interactive", {}).get("numericValue")
         return {
             "performance": cats.get("performance", {}).get("score", 0) * 100,
             "seo": cats.get("seo", {}).get("score", 0) * 100,
             "accessibility": cats.get("accessibility", {}).get("score", 0) * 100,
-            # Not directly provided; placeholders if you want
-            "security": 80,
-            "ux": 75,
+            "lcp_ms": float(lcp) if lcp is not None else None,
+            "cls": float(cls) if cls is not None else None,
+            "inp_ms": float(inp) if inp is not None else None,
         }
     except Exception:
         return {k: 0 for k in WEIGHTAGE}
@@ -110,7 +121,7 @@ def run_basic_vulnerability_scan(url: str) -> List[str]:
     try:
         if not url:
             return ["No URL provided for security scan"]
-        r = requests.get(url, timeout=12)
+        r = requests.get(url, timeout=12, headers={"User-Agent": DEFAULT_UA})
         # Header checks:
         if "X-Frame-Options" not in r.headers:
             findings.append("Missing X-Frame-Options header")
@@ -130,7 +141,7 @@ def run_basic_vulnerability_scan(url: str) -> List[str]:
         if imgs:
             missing_alt = sum(1 for im in imgs if not im.get("alt"))
             if missing_alt > 0:
-                findings.append(f"{missing_alt} image(s) missing alt text")
+                findings.append(f"{missing_alt} image(s) missing alt text)")
         # SEO quick checks:
         title_tag = soup.find("title")
         if not title_tag or not title_tag.get_text(strip=True):
@@ -141,7 +152,7 @@ def run_basic_vulnerability_scan(url: str) -> List[str]:
 
         # robots.txt / sitemap hint
         try:
-            robots = requests.get(_robots_url(url), timeout=6)
+            robots = requests.get(_robots_url(url), timeout=6, headers={"User-Agent": DEFAULT_UA})
             if robots.status_code == 200:
                 if "Sitemap:" not in robots.text:
                     findings.append("robots.txt found but no Sitemap directive present")
@@ -158,11 +169,227 @@ def run_basic_vulnerability_scan(url: str) -> List[str]:
 
 def _robots_url(url: str) -> str:
     try:
-        from urllib.parse import urlparse
         p = urlparse(url)
         return f"{p.scheme}://{p.netloc}/robots.txt"
     except Exception:
         return url.rstrip("/") + "/robots.txt"
+
+
+# =========================================================
+# LIVE AUDIT (Fill sections from the actual site)
+# =========================================================
+
+def _fetch(url: str, timeout: int = 12) -> requests.Response:
+    return requests.get(url, timeout=timeout, headers={"User-Agent": DEFAULT_UA}, allow_redirects=True)
+
+def _safe_domain(url: str) -> str:
+    try:
+        return urlparse(url).netloc
+    except Exception:
+        return ""
+
+def _is_same_domain(root: str, link: str) -> bool:
+    try:
+        rp, lp = urlparse(root), urlparse(link)
+        return (rp.netloc.lower() == lp.netloc.lower()) and (lp.scheme in ("http", "https"))
+    except Exception:
+        return False
+
+def _detect_cdn(headers: Dict[str, str]) -> str:
+    hl = {k.lower(): v for k, v in headers.items()}
+    if "cf-ray" in hl or "cf-cache-status" in hl:
+        return "Cloudflare"
+    if "x-amz-cf-id" in hl or "x-amz-cf-pop" in hl:
+        return "AWS CloudFront"
+    if "x-fastly-request-id" in hl:
+        return "Fastly"
+    if "x-akamai-transformed" in hl or "akamai-grn" in hl:
+        return "Akamai"
+    if "x-cache" in hl and "hit" in str(hl.get("x-cache", "")).lower():
+        return "CDN (cache hit)"
+    return "Unknown/No signal"
+
+def _visible_text(soup: BeautifulSoup) -> str:
+    for tag in soup(["script", "style", "noscript", "template"]):
+        tag.extract()
+    text = soup.get_text(separator=" ")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+def audit_live_site(url: str, link_sample: int = 12) -> Dict[str, Any]:
+    result: Dict[str, Any] = {"ok": False}
+    if not url:
+        return result
+    try:
+        r = _fetch(url, timeout=18)
+        ttfb_ms = r.elapsed.total_seconds() * 1000.0
+        page_weight_mb = round(len(r.content or b"") / (1024 * 1024), 2)
+        compressed = r.headers.get("content-encoding") in ("gzip", "br", "deflate")
+        cdn = _detect_cdn(r.headers)
+        content_type = r.headers.get("content-type", "")
+
+        soup = BeautifulSoup(r.text, "html.parser")
+        title = (soup.find("title").get_text(strip=True) if soup.find("title") else "")
+        meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+        meta_desc_present = "Yes" if (meta_desc_tag and meta_desc_tag.get("content")) else "No"
+        canonical = soup.find("link", rel=lambda x: x and "canonical" in x)
+        canonical_url = canonical.get("href") if canonical else ""
+        viewport = soup.find("meta", attrs={"name": "viewport"})
+        has_viewport = True if viewport and ("width" in (viewport.get("content") or "").lower()) else False
+
+        h1 = len(soup.find_all("h1"))
+        h2 = len(soup.find_all("h2"))
+        h3 = len(soup.find_all("h3"))
+
+        imgs = soup.find_all("img")
+        img_alt_coverage = round(100.0 * (sum(1 for im in imgs if (im.get("alt") not in (None, ""))) / max(1, len(imgs))), 2)
+
+        aria_missing = 0
+        for el in soup.find_all(True):
+            if el.name in ("button", "a", "input") and not any(k.startswith("aria-") for k in el.attrs.keys()):
+                aria_missing += 1
+
+        schema_scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
+        has_schema = True if schema_scripts else False
+
+        # Internal links sample for 404
+        root = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
+        internal = []
+        for a in soup.find_all("a", href=True):
+            abs_url = urljoin(root, a.get("href"))
+            if _is_same_domain(root, abs_url):
+                internal.append(abs_url)
+        sample = []
+        seen = set()
+        for l in internal:
+            if l in seen:
+                continue
+            sample.append(l)
+            seen.add(l)
+            if len(sample) >= link_sample:
+                break
+
+        broken = 0
+        for l in sample:
+            try:
+                rr = requests.head(l, timeout=6, headers={"User-Agent": DEFAULT_UA}, allow_redirects=True)
+                st = rr.status_code
+                if st >= 400:
+                    rr2 = _fetch(l, timeout=8)
+                    st = rr2.status_code
+                if st >= 400:
+                    broken += 1
+            except Exception:
+                broken += 1
+
+        robots_present, sitemap_declared = False, False
+        try:
+            rob = requests.get(_robots_url(url), timeout=8, headers={"User-Agent": DEFAULT_UA})
+            if rob.status_code == 200:
+                robots_present = True
+                sitemap_declared = ("sitemap:" in rob.text.lower())
+        except Exception:
+            pass
+
+        # Security headers
+        hl = {k.lower(): v for k, v in r.headers.items()}
+        https_tls = url.lower().startswith("https")
+        has_hsts = ("strict-transport-security" in hl)
+        has_csp = ("content-security-policy" in hl)
+        has_xfo = ("x-frame-options" in hl)
+        has_xss = ("x-xss-protection" in hl)
+
+        # Counts
+        script_count = len(soup.find_all("script"))
+        css_count = len(soup.find_all("link", attrs={"rel": "stylesheet"}))
+        img_count = len(imgs)
+
+        # Simple derived scores (0..100)
+        perf = 100.0
+        if ttfb_ms > 1500: perf -= 35
+        elif ttfb_ms > 800: perf -= 20
+        elif ttfb_ms > 400: perf -= 10
+        if page_weight_mb > 6: perf -= 35
+        elif page_weight_mb > 3: perf -= 20
+        elif page_weight_mb > 1.5: perf -= 10
+        perf -= max(0, (script_count + css_count + img_count) - 120) * 0.2
+        if not compressed: perf -= 10
+        if _detect_cdn(r.headers) == "Unknown/No signal": perf -= 5
+        perf = max(0.0, min(100.0, perf))
+
+        seo = 100.0
+        if not title: seo -= 25
+        if meta_desc_present != "Yes": seo -= 20
+        if h1 != 1: seo -= 10
+        if not robots_present: seo -= 10
+        if not sitemap_declared: seo -= 5
+        if broken > 0: seo -= min(25, broken * 3)
+        if not canonical_url: seo -= 5
+        if not has_schema: seo -= 5
+        seo = max(0.0, min(100.0, seo))
+
+        acc = 100.0
+        if img_count > 0 and img_alt_coverage < 80: acc -= 25
+        if aria_missing > 10: acc -= 15
+        acc = max(0.0, min(100.0, acc))
+
+        ux = 100.0
+        if not has_viewport: ux -= 30
+        if broken > 0: ux -= min(20, broken * 2)
+        ux = max(0.0, min(100.0, ux))
+
+        sec = 100.0
+        if not https_tls: sec -= 40
+        if https_tls and not has_hsts: sec -= 10
+        if not has_csp: sec -= 20
+        if not has_xfo: sec -= 10
+        if not has_xss: sec -= 5
+        sec = max(0.0, min(100.0, sec))
+
+        result.update({
+            "ok": True,
+            "ttfb_ms": round(ttfb_ms, 2),
+            "page_weight_mb": page_weight_mb,
+            "compressed": "Yes" if compressed else "No",
+            "cdn": cdn,
+            "content_type": content_type,
+            "title": title,
+            "meta_description_present": meta_desc_present,
+            "canonical_url": canonical_url,
+            "viewport_present": "Yes" if has_viewport else "No",
+            "h1_count": h1,
+            "h2_count": h2,
+            "h3_count": h3,
+            "img_count": img_count,
+            "img_alt_coverage_pct": img_alt_coverage,
+            "aria_missing_count": aria_missing,
+            "schema_org_present": "Yes" if has_schema else "No",
+            "robots_present": "Yes" if robots_present else "No",
+            "sitemap_declared": "Yes" if sitemap_declared else "No",
+            "script_count": script_count,
+            "css_count": css_count,
+            "internal_links_sampled": len(sample),
+            "broken_links_detected": broken,
+            "security_headers": {
+                "https_tls": "Yes" if https_tls else "No",
+                "hsts": "Yes" if has_hsts else "No",
+                "csp": "Yes" if has_csp else "No",
+                "x_frame_options": "Yes" if has_xfo else "No",
+                "x_xss_protection": "Yes" if has_xss else "No",
+            },
+            "scores": {
+                "performance": perf,
+                "seo": seo,
+                "accessibility": acc,
+                "ux": ux,
+                "security": sec,
+            }
+        })
+
+    except Exception:
+        result["ok"] = False
+
+    return result
 
 
 # =========================================================
@@ -208,8 +435,10 @@ def _fig_to_buf() -> io.BytesIO:
 
 
 def line_chart(points: List[Tuple[str, float]], title: str, xlabel: str = "", ylabel: str = "") -> io.BytesIO:
+    if not points:
+        return _empty_chart("No data")
     labels = [p[0] for p in points]
-    values = [p[1] for p in points]
+    values = [float(p[1]) for p in points]
     fig, ax = plt.subplots(figsize=(6.4, 3.4))
     ax.plot(labels, values, marker="o", color="#0F62FE")
     ax.set_title(title)
@@ -221,8 +450,10 @@ def line_chart(points: List[Tuple[str, float]], title: str, xlabel: str = "", yl
 
 
 def bar_chart(items: List[Tuple[str, float]], title: str, xlabel: str = "", ylabel: str = "") -> io.BytesIO:
+    if not items:
+        return _empty_chart("No data")
     labels = [i[0] for i in items]
-    values = [i[1] for i in items]
+    values = [float(i[1]) for i in items]
     fig, ax = plt.subplots(figsize=(6.4, 3.4))
     ax.bar(labels, values, color="#27AE60")
     ax.set_title(title)
@@ -233,11 +464,13 @@ def bar_chart(items: List[Tuple[str, float]], title: str, xlabel: str = "", ylab
 
 
 def pie_chart(parts: List[Tuple[str, float]], title: str = "") -> io.BytesIO:
+    if not parts:
+        return _empty_chart("No data")
     labels = [p[0] for p in parts]
-    sizes = [p[1] for p in parts]
-    fig, ax = plt.subplots(figsize=(5, 5))
+    sizes = [max(0.0, float(p[1])) for p in parts]
     if sum(sizes) <= 0:
-        sizes = [1 for _ in sizes] or [1]
+        sizes = [1.0 for _ in sizes]
+    fig, ax = plt.subplots(figsize=(5, 5))
     ax.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=140)
     ax.axis("equal")
     ax.set_title(title)
@@ -245,24 +478,21 @@ def pie_chart(parts: List[Tuple[str, float]], title: str = "") -> io.BytesIO:
 
 
 def radar_chart(categories: List[str], values: List[float], title: str = "") -> io.BytesIO:
-    # Radar chart expects circular closure
-    N = len(categories)
-    if N == 0:
+    if not categories or not values:
         return _empty_chart("No data")
+    N = len(categories)
+    vals = [float(v) for v in values[:N]]
     angles = np.linspace(0, 2 * np.pi, N, endpoint=False).tolist()
-    values = values[:N]
-    values += values[:1]
+    vals += vals[:1]
     angles += angles[:1]
-
     fig = plt.figure(figsize=(5.6, 5.0))
     ax = fig.add_subplot(111, polar=True)
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
-
     ax.set_thetagrids(np.degrees(angles[:-1]), categories)
     ax.set_ylim(0, 100)
-    ax.plot(angles, values, color="#2F80ED", linewidth=2)
-    ax.fill(angles, values, color="#2F80ED", alpha=0.2)
+    ax.plot(angles, vals, color="#2F80ED", linewidth=2)
+    ax.fill(angles, vals, color="#2F80ED", alpha=0.2)
     ax.set_title(title, y=1.1)
     return _fig_to_buf()
 
@@ -270,7 +500,7 @@ def radar_chart(categories: List[str], values: List[float], title: str = "") -> 
 def heatmap(matrix: List[List[float]], xlabels: List[str], ylabels: List[str], title: str = "") -> io.BytesIO:
     data = np.array(matrix) if matrix else np.zeros((1, 1))
     fig, ax = plt.subplots(figsize=(6.4, 3.8))
-    c = ax.imshow(data, cmap="RdYlGn", vmin=0, vmax=100, aspect="auto")
+    c = ax.imshow(data, cmap("RdYlGn"), vmin=0, vmax=100, aspect="auto")
     ax.set_xticks(range(len(xlabels)))
     ax.set_yticks(range(len(ylabels)))
     ax.set_xticklabels(xlabels, rotation=35, ha="right")
@@ -281,10 +511,12 @@ def heatmap(matrix: List[List[float]], xlabels: List[str], ylabels: List[str], t
 
 
 def multi_line_chart(series: Dict[str, List[Tuple[str, float]]], title: str, xlabel: str = "", ylabel: str = "") -> io.BytesIO:
+    if not series:
+        return _empty_chart("No data")
     fig, ax = plt.subplots(figsize=(6.8, 3.8))
     for name, pts in series.items():
         labels = [p[0] for p in pts]
-        values = [p[1] for p in pts]
+        values = [float(p[1]) for p in pts]
         ax.plot(labels, values, marker="o", linewidth=2, label=name)
     ax.set_title(title)
     ax.set_xlabel(xlabel)
@@ -379,6 +611,21 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
                        history_scores: List[float] = None) -> bytes:
 
     branding = get_branding(client_config or {})
+    url = audit_data.get("url", "")
+    tool_version = audit_data.get("tool_version", "v1.0")
+
+    # Run the live audit for real data filling
+    live = audit_live_site(url)
+
+    # If caller didn't supply category scores, derive from live audit
+    derived_scores = live.get("scores", {}) if live.get("ok") else {}
+    merged_for_overall = {
+        k: float(audit_data.get(k, derived_scores.get(k, 0))) for k in WEIGHTAGE
+    }
+    score_data = {
+        "category_scores": merged_for_overall,
+        "overall_score": round(sum(merged_for_overall[k] * WEIGHTAGE[k] for k in WEIGHTAGE), 2)
+    }
 
     buf = io.BytesIO()
     doc = _DocWithTOC(
@@ -388,15 +635,11 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         author=branding.get("company_name", "FF Tech")
     )
     styles = getSampleStyleSheet()
-    # extra styles
     styles.add(ParagraphStyle(name="KPIHeader", parent=styles["Heading2"],
                               textColor=colors.HexColor(branding.get("primary_color", "#2c3e50"))))
     styles.add(ParagraphStyle(name="Small", parent=styles["Normal"], fontSize=9))
     styles.add(ParagraphStyle(name="Tiny", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#6F6F6F")))
     elements: List[Any] = []
-
-    url = audit_data.get("url", "")
-    tool_version = audit_data.get("tool_version", "v1.0")
 
     # -------------------- 1) COVER PAGE --------------------
     logo_path = branding.get("logo_path")
@@ -411,7 +654,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     elements.append(Paragraph("FF Tech Web Audit Report", styles["Heading1"]))
     elements.append(Spacer(1, 0.06 * inch))
     elements.append(Paragraph(f"Website: {url}", styles["Normal"]))
-    elements.append(Paragraph(f"Domain: {(_safe_domain(url) or '')}", styles["Small"]))
+    elements.append(Paragraph(f"Domain: {_safe_domain(url)}", styles["Small"]))
     elements.append(Paragraph(f"Report Time (UTC): {dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}", styles["Normal"]))
     elements.append(Paragraph(f"Audit/Tool Version: {tool_version}", styles["Normal"]))
     elements.append(Spacer(1, 0.12 * inch))
@@ -419,12 +662,11 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     dashboard_link = audit_data.get("dashboard_url") or url
     if dashboard_link:
         try:
-            qr_code = qr.QrCodeWidget(dashboard_link)
-            bounds = qr_code.getBounds()
-            w = bounds[2] - bounds[0]
-            h = bounds[3] - bounds[1]
+            code = qr.QrCodeWidget(dashboard_link)
+            bx = code.getBounds()
+            w = bx[2] - bx[0]; h = bx[3] - bx[1]
             d = Drawing(1.4 * inch, 1.4 * inch, transform=[1.4 * inch / w, 0, 0, 1.4 * inch / h, 0, 0])
-            d.add(qr_code)
+            d.add(code)
             elements.append(d)
             if "Caption" in styles:
                 elements.append(Paragraph("Scan to view the online audit/dashboard", styles["Caption"]))
@@ -445,29 +687,23 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     elements.append(PageBreak())
 
     # -------------------- 2) EXECUTIVE SUMMARY --------------------
-    score_data = calculate_scores(audit_data)
     elements.append(Paragraph("Executive Summary", styles["Heading1"]))
     elements.append(Spacer(1, 0.06 * inch))
     elements.append(Paragraph(f"Overall Website Health Score: <b>{score_data['overall_score']}</b>/100", styles["Normal"]))
 
-    # Category table (includes core categories + optional traffic/mobile if present)
-    extra_categories = []
-    if "traffic" in audit_data:
-        t_score = float(audit_data.get("traffic_score", audit_data.get("traffic", {}).get("score", 0)))
-        extra_categories.append(("Traffic & Engagement", t_score))
-    if "mobile" in audit_data:
-        m_score = float(audit_data.get("mobile", 0))
-        extra_categories.append(("Mobile Responsiveness", m_score))
-
-    cat = score_data["category_scores"]
     cat_rows = [["Category", "Score", "Status"]]
     for k in WEIGHTAGE:
-        s = cat.get(k, 0)
-        status, color_ = score_to_status(s)
+        s = score_data["category_scores"].get(k, 0)
+        status, _ = score_to_status(s)
         cat_rows.append([k.capitalize(), f"{s:.0f}", status])
-    for label, s in extra_categories:
-        status, color_ = score_to_status(s)
-        cat_rows.append([label, f"{s:.0f}", status])
+
+    # Optional extra categories if caller provided
+    if "traffic_score" in audit_data:
+        ts = float(audit_data["traffic_score"]) if audit_data["traffic_score"] is not None else 0
+        cat_rows.append(["Traffic & Engagement", f"{ts:.0f}", score_to_status(ts)[0]])
+    if "mobile" in audit_data:
+        ms = float(audit_data["mobile"]) if audit_data["mobile"] is not None else 0
+        cat_rows.append(["Mobile Responsiveness", f"{ms:.0f}", score_to_status(ms)[0]])
 
     table = Table(cat_rows, colWidths=[3.1 * inch, 1.0 * inch, 1.6 * inch])
     table.setStyle(TableStyle([
@@ -481,36 +717,46 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FAFAFA")]),
     ]))
     elements.append(table)
-    elements.append(Spacer(1, 0.08 * inch))
+
+    # Live highlights to ensure filled attributes
+    if live.get("ok"):
+        elements.append(Spacer(1, 0.10 * inch))
+        hi_rows = [
+            ["TTFB (ms)", str(live.get("ttfb_ms"))],
+            ["Page Weight (MB)", str(live.get("page_weight_mb"))],
+            ["Compression", live.get("compressed", "No")],
+            ["CDN", live.get("cdn", "Unknown")],
+            ["robots.txt", live.get("robots_present", "No")],
+            ["Sitemap Declared", live.get("sitemap_declared", "No")],
+            ["Broken Links (sample)", str(live.get("broken_links_detected", 0))],
+        ]
+        elements.append(_mini_table(["Highlight", "Value"], hi_rows))
 
     # Trend summary chart if history_scores provided (last 6–12 months)
     if history_scores:
-        img = line_chart([(str(i + 1), v) for i, v in enumerate(history_scores)], "Overall Score Trend", "Period", "Score")
+        img = line_chart([(str(i + 1), float(v)) for i, v in enumerate(history_scores)], "Overall Score Trend", "Period", "Score")
         elements.append(Image(img, width=5.8 * inch, height=3.2 * inch))
 
     # AI recommendations summary
     elements.append(Spacer(1, 0.12 * inch))
     elements.append(Paragraph("AI-Generated Recommendations (Summary)", styles["KPIHeader"]))
-    for rec in _collect_ai_recommendations(audit_data, score_data):
+    for rec in _collect_ai_recommendations(live, score_data["category_scores"]):
         elements.append(Paragraph(f"- {rec}", styles["Normal"]))
 
     elements.append(PageBreak())
 
     # -------------------- 4) TRAFFIC & GOOGLE SEARCH METRICS --------------------
+    elements.append(Paragraph("Traffic & Google Search Metrics", styles["Heading1"]))
     traffic = audit_data.get("traffic") or {}
     gsc = audit_data.get("gsc") or {}
-
-    elements.append(Paragraph("Traffic & Google Search Metrics", styles["Heading1"]))
     if traffic:
-        # Line chart: traffic trend
         if isinstance(traffic.get("trend"), list) and traffic["trend"]:
             try:
-                trend_points = [(str(p[0]), float(p[1])) for p in traffic["trend"]]
-                img = line_chart(trend_points, "Traffic Trend (Visits/Sessions)", "Period", "Traffic")
+                pts = [(str(p[0]), float(p[1])) for p in traffic["trend"]]
+                img = line_chart(pts, "Traffic Trend (6–12 months)", "Period", "Visits")
                 elements.append(Image(img, width=5.8 * inch, height=3.2 * inch))
             except Exception:
                 pass
-        # Pie chart: source distribution
         if isinstance(traffic.get("sources"), dict) and traffic["sources"]:
             try:
                 parts = [(k, float(v)) for k, v in traffic["sources"].items()]
@@ -518,59 +764,30 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
                 elements.append(Image(img, width=4.8 * inch, height=4.8 * inch))
             except Exception:
                 pass
-        # Bar chart: top landing pages
-        if isinstance(traffic.get("top_pages"), list) and traffic["top_pages"]:
-            try:
-                top_pages = traffic["top_pages"][:10]
-                items = [(str(p.get("path") or p.get("url") or f"p{i+1}")[:24], float(p.get("visits", 0))) for i, p in enumerate(top_pages)]
-                img = bar_chart(items, "Top Landing Pages (Visits)", "Page", "Visits")
-                elements.append(Image(img, width=5.8 * inch, height=3.2 * inch))
-            except Exception:
-                pass
-
-        # Table of GA/GA4 metrics if provided
         ga_rows = []
-        def _add_row(label, key):
+        def _ga(label, key):
             v = traffic.get(key)
-            if v is not None:
-                ga_rows.append([label, str(v)])
-        _add_row("Total Visitors", "total_visitors")
-        _add_row("Organic Traffic", "organic")
-        _add_row("Direct", "direct")
-        _add_row("Referral", "referral")
-        _add_row("Social", "social")
-        _add_row("Paid", "paid")
-        _add_row("Bounce Rate (%)", "bounce_rate")
-        _add_row("Avg. Session Duration (s)", "avg_session_duration")
-        _add_row("Pageviews per Session", "pages_per_session")
-
-        if ga_rows:
-            t = Table([["Metric", "Value"]] + ga_rows, colWidths=[2.6 * inch, 1.6 * inch])
-            t.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F2F4F8")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.25, GRID),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ]))
-            elements.append(t)
+            ga_rows.append([label, str(v) if v is not None else "N/A"])
+        for label, key in [
+            ("Total Visitors", "total_visitors"),
+            ("Organic Traffic", "organic"),
+            ("Direct", "direct"),
+            ("Referral", "referral"),
+            ("Social", "social"),
+            ("Paid", "paid"),
+            ("Bounce Rate (%)", "bounce_rate"),
+            ("Avg. Session Duration (s)", "avg_session_duration"),
+            ("Pageviews per Session", "pages_per_session"),
+        ]: _ga(label, key)
+        elements.append(_mini_table(["Metric", "Value"], ga_rows))
+    else:
+        elements.append(Paragraph("Google Analytics/GA4 data not available (no credentials/data provided).", styles["Small"]))
 
     if gsc:
-        # KPIs: impressions, clicks, ctr
         gsc_rows = []
         for lbl, key in [("Impressions", "impressions"), ("Clicks", "clicks"), ("CTR (%)", "ctr")]:
-            if key in gsc:
-                gsc_rows.append([lbl, str(gsc.get(key))])
-        if gsc_rows:
-            t = Table([["GSC Metric", "Value"]] + gsc_rows, colWidths=[2.6 * inch, 1.6 * inch])
-            t.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F2F4F8")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.25, GRID),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ]))
-            elements.append(t)
-
-        # Bar chart: top queries
+            gsc_rows.append([lbl, str(gsc.get(key)) if gsc.get(key) is not None else "N/A"])
+        elements.append(_mini_table(["GSC Metric", "Value"], gsc_rows))
         if isinstance(gsc.get("queries"), list) and gsc["queries"]:
             try:
                 top_q = gsc["queries"][:10]
@@ -579,61 +796,27 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
                 elements.append(Image(img, width=5.8 * inch, height=3.2 * inch))
             except Exception:
                 pass
+    else:
+        elements.append(Paragraph("Google Search Console data not available (no credentials/data provided).", styles["Small"]))
 
     elements.append(PageBreak())
 
-    # -------------------- 5) SEO KPIs (~40) --------------------
+    # -------------------- 5) SEO KPIs (~40)
     elements.append(Paragraph("SEO KPIs", styles["Heading1"]))
-    seo_rows = _build_seo_kpis_table(url, audit_data)
-    if seo_rows:
-        t = _kpi_scorecard_table(seo_rows)
-        elements.append(t)
-    # Example chart: Page speed histogram (if provided)
-    if isinstance(audit_data.get("page_speed_hist"), list) and audit_data["page_speed_hist"]:
-        try:
-            pairs = [(str(b), float(v)) for b, v in audit_data["page_speed_hist"]]
-            img = bar_chart(pairs, "Page Speed Histogram (ms buckets)", "Bucket", "Pages")
-            elements.append(Image(img, width=5.8 * inch, height=3.2 * inch))
-        except Exception:
-            pass
+    seo_rows = _build_seo_kpis_table(url, audit_data, live)
+    elements.append(_kpi_scorecard_table(seo_rows))
     elements.append(PageBreak())
 
-    # -------------------- 6) PERFORMANCE KPIs (~20) --------------------
+    # -------------------- 6) PERFORMANCE KPIs (~20)
     elements.append(Paragraph("Performance KPIs", styles["Heading1"]))
-    perf_rows = _build_performance_kpis_table(audit_data)
-    if perf_rows:
-        elements.append(_kpi_scorecard_table(perf_rows))
-    # Trend charts if present
-    if isinstance(audit_data.get("perf_trend"), list) and audit_data["perf_trend"]:
-        try:
-            pts = [(str(p[0]), float(p[1])) for p in audit_data["perf_trend"]]
-            img = line_chart(pts, "Load Time Trend (ms)", "Period", "ms")
-            elements.append(Image(img, width=5.8 * inch, height=3.2 * inch))
-        except Exception:
-            pass
+    perf_rows = _build_performance_kpis_table(audit_data, live)
+    elements.append(_kpi_scorecard_table(perf_rows))
     elements.append(PageBreak())
 
-    # -------------------- 7) SECURITY KPIs (15–20) --------------------
+    # -------------------- 7) SECURITY KPIs (15–20)
     elements.append(Paragraph("Security KPIs", styles["Heading1"]))
-    sec_rows = _build_security_kpis_table(url, audit_data)
-    if sec_rows:
-        elements.append(_kpi_scorecard_table(sec_rows))
-    # Heatmap for vulnerability severities
-    if isinstance(audit_data.get("vuln_heatmap"), dict) and audit_data["vuln_heatmap"]:
-        try:
-            sev = ["Critical", "High", "Medium", "Low"]
-            months = list(audit_data["vuln_heatmap"].keys())[:12]
-            matrix = []
-            for m in months:
-                row = audit_data["vuln_heatmap"][m]
-                matrix.append([float(row.get(s, 0)) for s in sev])
-            # transpose to severity rows
-            matrix_T = np.array(matrix).T.tolist()
-            img = heatmap(matrix_T, months, sev, "Vulnerability Severity Heatmap")
-            elements.append(Image(img, width=6.2 * inch, height=3.6 * inch))
-        except Exception:
-            pass
-    # Basic findings from our simple scan:
+    sec_rows = _build_security_kpis_table(url, audit_data, live)
+    elements.append(_kpi_scorecard_table(sec_rows))
     findings = run_basic_vulnerability_scan(url)
     if findings:
         elements.append(Paragraph("Automated Quick Findings", styles["KPIHeader"]))
@@ -641,39 +824,39 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
             elements.append(Paragraph(f"- {f}", styles["Normal"]))
     elements.append(PageBreak())
 
-    # -------------------- 8) ACCESSIBILITY KPIs (15–20) --------------------
+    # -------------------- 8) ACCESSIBILITY KPIs (15–20)
     elements.append(Paragraph("Accessibility KPIs", styles["Heading1"]))
-    acc_rows = _build_accessibility_kpis_table(audit_data)
-    if acc_rows:
-        elements.append(_kpi_scorecard_table(acc_rows))
-    # Radar chart of accessibility sub-scores if provided
-    acc_radar = audit_data.get("accessibility_radar") or {}
-    if acc_radar:
-        cats = list(acc_radar.keys())
-        vals = [float(acc_radar[c]) for c in cats]
-        img = radar_chart(cats, vals, "Accessibility Radar")
-        elements.append(Image(img, width=5.2 * inch, height=4.8 * inch))
+    acc_rows = _build_accessibility_kpis_table(audit_data, live)
+    elements.append(_kpi_scorecard_table(acc_rows))
+    # Radar (derived)
+    acc_radar = {
+        "Alt Coverage": live.get("img_alt_coverage_pct", 0),
+        "ARIA Coverage": max(0.0, 100.0 - min(100.0, live.get("aria_missing_count", 0) * 5.0)),
+        "Structure (H1/H2/H3)": 100.0 if live.get("h1_count") == 1 else 70.0,
+        "Viewport": 100.0 if live.get("viewport_present") == "Yes" else 40.0,
+    }
+    img = radar_chart(list(acc_radar.keys()), list(acc_radar.values()), "Accessibility Radar")
+    elements.append(Image(img, width=5.2 * inch, height=4.8 * inch))
     elements.append(PageBreak())
 
-    # -------------------- 9) UX / USER EXPERIENCE KPIs (15–20) --------------------
+    # -------------------- 9) UX / User Experience KPIs (15–20)
     elements.append(Paragraph("UX / User Experience KPIs", styles["Heading1"]))
-    ux_rows = _build_ux_kpis_table(audit_data)
-    if ux_rows:
-        elements.append(_kpi_scorecard_table(ux_rows))
-    # Radar chart for UX
-    ux_radar = audit_data.get("ux_radar") or {}
-    if ux_radar:
-        cats = list(ux_radar.keys())
-        vals = [float(ux_radar[c]) for c in cats]
-        img = radar_chart(cats, vals, "UX Radar")
-        elements.append(Image(img, width=5.2 * inch, height=4.8 * inch))
+    ux_rows = _build_ux_kpis_table(audit_data, live)
+    elements.append(_kpi_scorecard_table(ux_rows))
+    ux_radar = {
+        "Mobile": 100.0 if live.get("viewport_present") == "Yes" else 40.0,
+        "Broken Links": max(0.0, 100.0 - min(100.0, live.get("broken_links_detected", 0) * 8.0)),
+        "Readability (proxy)": 70.0,
+        "Interactivity (proxy)": 70.0,
+    }
+    img = radar_chart(list(ux_radar.keys()), list(ux_radar.values()), "UX Radar")
+    elements.append(Image(img, width=5.2 * inch, height=4.8 * inch))
     elements.append(PageBreak())
 
-    # -------------------- 🔟 COMPETITOR COMPARISON --------------------
+    # -------------------- 10) Competitor Comparison
     elements.append(Paragraph("Competitor Comparison", styles["Heading1"]))
     competitors = audit_data.get("competitors") or []
     if competitors:
-        # Multi-line chart of traffic trend
         series = {}
         for comp in competitors[:5]:
             name = comp.get("name") or comp.get("domain") or "Competitor"
@@ -682,22 +865,17 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         if series:
             img = multi_line_chart(series, "Traffic vs Competitors", "Period", "Traffic")
             elements.append(Image(img, width=6.2 * inch, height=3.6 * inch))
-        # Stacked or side-by-side bars for SEO score comparison
-        seo_comp = []
-        for comp in competitors[:5]:
-            name = comp.get("name") or comp.get("domain") or "Competitor"
-            seo_comp.append((name[:20], float(comp.get("seo", 0))))
+        seo_comp = [(str((c.get("name") or c.get("domain") or "Comp"))[:22], float(c.get("seo", 0))) for c in competitors[:5]]
         if seo_comp:
             img = bar_chart(seo_comp, "SEO Performance (Score)", "Competitor", "Score")
             elements.append(Image(img, width=6.2 * inch, height=3.6 * inch))
     else:
-        elements.append(Paragraph("No competitor dataset provided.", styles["Small"]))
+        elements.append(Paragraph("Not available (no competitor data provided).", styles["Small"]))
     elements.append(PageBreak())
 
-    # -------------------- 1️⃣1️⃣ HISTORICAL COMPARISON / TRENDS --------------------
+    # -------------------- 11) Historical Comparison / Trend Analysis
     elements.append(Paragraph("Historical Comparison / Trend Analysis", styles["Heading1"]))
     hist = audit_data.get("history") or {}
-    # Generic series: traffic, keyword_rank, page_speed, sec_vulns, engagement
     for key, label, ylabel in [
         ("traffic", "Traffic Trend", "Traffic"),
         ("keyword_rank", "Keyword Ranking Trend", "Avg Rank"),
@@ -714,26 +892,25 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
                 pass
     elements.append(PageBreak())
 
-    # -------------------- 1️⃣3️⃣ KPI SCORECARDS (ALL) --------------------
+    # -------------------- 13) KPI Scorecards (Consolidated)
     elements.append(Paragraph("KPI Scorecards (Consolidated)", styles["Heading1"]))
-    all_scorecards = audit_data.get("scorecards") or []
-    # expected row dict: {"name": str, "value": str/float, "status": "Good/Warning/Critical", "weight": float, "link": str(optional)}
-    if all_scorecards:
-        elements.append(_kpi_scorecard_table(all_scorecards, show_weight=True, show_link=True))
-    else:
-        elements.append(Paragraph("No consolidated KPI scorecard supplied.", styles["Small"]))
+    consolidated = _consolidate_kpis(
+        seo_rows,
+        perf_rows,
+        sec_rows,
+        acc_rows,
+        ux_rows,
+    )
+    elements.append(_kpi_scorecard_table(consolidated, show_weight=True, show_link=False))
     elements.append(PageBreak())
 
-    # -------------------- 1️⃣4️⃣ AI RECOMMENDATIONS (DETAILED) --------------------
+    # -------------------- 14) AI Recommendations (Detailed)
     elements.append(Paragraph("AI Recommendations (Detailed)", styles["Heading1"]))
-    ai_recs = _collect_ai_recommendations(audit_data, score_data)
-    if ai_recs:
-        for r in ai_recs:
-            elements.append(Paragraph(f"- {r}", styles["Normal"]))
-    else:
-        elements.append(Paragraph("No AI recommendations provided or generated.", styles["Small"]))
+    detailed_recs = _collect_ai_recommendations(live, score_data["category_scores"])
+    for r in detailed_recs:
+        elements.append(Paragraph(f"- {r}", styles["Normal"]))
 
-    # -------------------- BUILD DOC --------------------
+    # Build document
     def _first(c, d): _draw_header_footer(c, d, url, branding)
     def _later(c, d): _draw_header_footer(c, d, url, branding)
     doc.build(elements, onFirstPage=_first, onLaterPages=_later)
@@ -758,11 +935,20 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
 # HELPERS FOR KPI TABLES / RECOMMENDATIONS
 # =========================================================
 
+def _mini_table(headers: List[str], rows: List[List[Any]]) -> Table:
+    data = [headers] + rows
+    t = Table(data, colWidths=[2.6 * inch, 2.0 * inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#F2F4F8")),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("GRID", (0,0), (-1,-1), 0.25, GRID),
+        ("FONTSIZE", (0,0), (-1,-1), 9),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+    ]))
+    return t
+
+
 def _kpi_scorecard_table(rows: List[Dict[str, Any]], show_weight: bool = False, show_link: bool = False) -> Table:
-    """
-    rows: list of dicts
-      - name (str), value (str/float), status (Good/Warning/Critical), weight (optional float), link (optional)
-    """
     headers = ["KPI Name", "Value", "Status"]
     col_widths = [3.1 * inch, 1.1 * inch, 1.0 * inch]
     if show_weight:
@@ -781,7 +967,7 @@ def _kpi_scorecard_table(rows: List[Dict[str, Any]], show_weight: bool = False, 
         link = r.get("link", "")
         row = [name, str(value), status]
         if show_weight:
-            row.append(f"{weight}" if isinstance(weight, (int, float)) else str(weight))
+            row.append(f"{weight}" if isinstance(weight, (int, float)) else str(weight or ""))
         if show_link:
             row.append(str(link)[:60] if link else "")
         data.append(row)
@@ -797,241 +983,179 @@ def _kpi_scorecard_table(rows: List[Dict[str, Any]], show_weight: bool = False, 
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FAFAFA")]),
     ]
-    # Status colors
+    # Color-code status column
     for r_i in range(1, len(data)):
         try:
             status = (data[r_i][2] or "").strip().lower()
             if status.startswith("good"):
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_OK))
-            elif status.startswith("warn"):
+            elif status.startswith("warn")):
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_WARN))
             else:
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_BAD))
         except Exception:
             pass
-
     t.setStyle(TableStyle(styles))
     return t
 
 
-def _build_seo_kpis_table(url: str, audit_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Build ~40 SEO KPIs if available (mix of provided + quick checks).
-    Accepts optional audit_data['seo_kpis'] to override/enhance.
-    """
+def _build_seo_kpis_table(url: str, audit_data: Dict[str, Any], live: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     custom = audit_data.get("seo_kpis") or []
     rows.extend(custom)
 
-    # Quick checks from live HTML (best effort)
-    try:
-        if url:
-            r = requests.get(url, timeout=10)
-            soup = BeautifulSoup(r.text, "html.parser")
-            title = (soup.find("title").get_text(strip=True) if soup.find("title") else "")
-            meta_desc = soup.find("meta", attrs={"name": "description"})
-            desc = (meta_desc.get("content") if meta_desc else "")
-            h1_count = len(soup.find_all("h1"))
-            h2_count = len(soup.find_all("h2"))
-            h3_count = len(soup.find_all("h3"))
-            robots = _robots_fetch(url)
+    # Live checks
+    rows += [
+        {"name": "Title Tag Present", "value": "Yes" if live.get("title") else "No", "status": "Good" if live.get("title") else "Critical"},
+        {"name": "Meta Description Present", "value": live.get("meta_description_present", "No"), "status": "Good" if live.get("meta_description_present") == "Yes" else "Warning"},
+        {"name": "Canonical Tag Present", "value": "Yes" if live.get("canonical_url") else "No", "status": "Good" if live.get("canonical_url") else "Warning"},
+        {"name": "H1 Count", "value": live.get("h1_count", 0), "status": "Good" if live.get("h1_count", 0) == 1 else "Warning"},
+        {"name": "H2 Count", "value": live.get("h2_count", 0), "status": "Good" if live.get("h2_count", 0) >= 1 else "Warning"},
+        {"name": "H3 Count", "value": live.get("h3_count", 0), "status": "Good" if live.get("h3_count", 0) >= 1 else "Warning"},
+        {"name": "robots.txt Present", "value": live.get("robots_present", "No"), "status": "Good" if live.get("robots_present") == "Yes" else "Warning"},
+        {"name": "Sitemap Declared", "value": live.get("sitemap_declared", "No"), "status": "Good" if live.get("sitemap_declared") == "Yes" else "Warning"},
+        {"name": "Broken Links (sample)", "value": live.get("broken_links_detected", 0), "status": "Good" if live.get("broken_links_detected", 0) == 0 else "Warning"},
+        {"name": "Image Alt Coverage (%)", "value": live.get("img_alt_coverage_pct", 0), "status": "Good" if live.get("img_alt_coverage_pct", 0) >= 80 else "Warning"},
+        {"name": "Structured Data (Schema.org)", "value": live.get("schema_org_present", "No"), "status": "Good" if live.get("schema_org_present") == "Yes" else "Warning"},
+    ]
 
-            rows += [
-                {"name": "Title Tag Present", "value": "Yes" if title else "No", "status": "Good" if title else "Critical"},
-                {"name": "Meta Description Present", "value": "Yes" if desc else "No", "status": "Good" if desc else "Warning"},
-                {"name": "H1 Count", "value": h1_count, "status": "Good" if h1_count == 1 else "Warning"},
-                {"name": "H2 Count", "value": h2_count, "status": "Good" if h2_count >= 1 else "Warning"},
-                {"name": "H3 Count", "value": h3_count, "status": "Good" if h3_count >= 1 else "Warning"},
-                {"name": "robots.txt Present", "value": "Yes" if robots["ok"] else "No", "status": "Good" if robots["ok"] else "Warning"},
-                {"name": "Sitemap Declared in robots.txt", "value": robots["sitemap"], "status": "Good" if robots["sitemap"] == "Yes" else "Warning"},
-            ]
-    except Exception:
-        rows.append({"name": "Live SEO Checks", "value": "Unavailable", "status": "Warning"})
-
-    # Fill the rest with provided aggregates if present
-    for label_key in [
-        "canonical_tags", "broken_links_404", "index_coverage_ok", "internal_linking_score",
-        "image_alt_coverage", "mobile_responsiveness", "structured_data", "keyword_density_ok",
-        "backlink_count", "backlink_quality", "competitor_seo_relative",
-    ]:
-        if label_key in audit_data:
-            val = audit_data[label_key]
-            status, _ = score_to_status(float(val)) if isinstance(val, (int, float)) else ("Good", PRIMARY_OK)
-            rows.append({"name": label_key.replace("_", " ").title(), "value": val, "status": status})
-
-    return rows[:40]  # cap at ~40 for layout consistency
+    return rows[:40]
 
 
-def _build_performance_kpis_table(audit_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_performance_kpis_table(audit_data: Dict[str, Any], live: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     perf = audit_data.get("performance_kpis") or {}
-    def add(name, key, warn_gt=None):
-        v = perf.get(key, audit_data.get(key))
-        if v is None:
-            return
-        status = "Good"
-        try:
-            fv = float(v)
-            if warn_gt and fv > warn_gt:
-                status = "Warning"
-        except Exception:
-            pass
-        rows.append({"name": name, "value": v, "status": status})
 
-    add("Page Load Speed (ms)", "page_load_ms", warn_gt=3000)
-    add("Time To First Byte (ms)", "ttfb", warn_gt=800)
-    add("Render Start (ms)", "render_start_ms", warn_gt=1200)
-    add("Fully Loaded (ms)", "fully_loaded_ms", warn_gt=4000)
-    add("HTTP Requests (count)", "http_requests", warn_gt=100)
-    add("Page Weight (MB)", "page_weight_mb", warn_gt=4)
-    add("Caching Efficiency (%)", "caching_efficiency")
-    add("Compression (gzip/brotli)", "compression")
-    add("CDN Present", "cdn_present")
-    add("CDN Avg Speed (ms)", "cdn_speed_ms", warn_gt=200)
+    def add(name, value, good_when):
+        status = "Good" if good_when(value) else "Warning"
+        rows.append({"name": name, "value": value, "status": status})
 
-    # Add extra metrics if provided:
+    add("Time To First Byte (ms)", live.get("ttfb_ms", "N/A"), lambda v: isinstance(v, (int, float)) and v <= 800)
+    add("Page Weight (MB)", live.get("page_weight_mb", "N/A"), lambda v: isinstance(v, (int, float)) and v <= 3)
+    rows.append({"name": "Compression (gzip/brotli)", "value": live.get("compressed", "No"), "status": "Good" if live.get("compressed") == "Yes" else "Warning"})
+    rows.append({"name": "CDN Detected", "value": live.get("cdn", "Unknown"), "status": "Good" if live.get("cdn") != "Unknown/No signal" else "Warning"})
+    add("Scripts (count)", live.get("script_count", 0), lambda v: isinstance(v, (int, float)) and v <= 60)
+    add("Stylesheets (count)", live.get("css_count", 0), lambda v: isinstance(v, (int, float)) and v <= 15)
+    add("Images (count)", live.get("img_count", 0), lambda v: isinstance(v, (int, float)) and v <= 120)
+
+    # Extra provided metrics
     for k, v in perf.items():
-        if all(k not in r["name"].lower() for r in rows):
-            rows.append({"name": k.replace("_", " ").title(), "value": v, "status": "Good"})
+        label = k.replace("_", " ").title()
+        if all(label != r["name"] for r in rows):
+            rows.append({"name": label, "value": v, "status": "Good"})
 
     return rows[:20]
 
 
-def _build_security_kpis_table(url: str, audit_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_security_kpis_table(url: str, audit_data: Dict[str, Any], live: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
+    sh = live.get("security_headers", {}) or {}
+
+    rows += [
+        {"name": "HTTPS / TLS", "value": sh.get("https_tls", "No"), "status": "Good" if sh.get("https_tls") == "Yes" else "Critical"},
+        {"name": "HSTS Header", "value": sh.get("hsts", "No"), "status": "Good" if sh.get("hsts") == "Yes" else "Warning"},
+        {"name": "Content-Security-Policy", "value": sh.get("csp", "No"), "status": "Good" if sh.get("csp") == "Yes" else "Warning"},
+        {"name": "X-Frame-Options", "value": sh.get("x_frame_options", "No"), "status": "Good" if sh.get("x_frame_options") == "Yes" else "Warning"},
+        {"name": "X-XSS-Protection", "value": sh.get("x_xss_protection", "No"), "status": "Good" if sh.get("x_xss_protection") == "Yes" else "Warning"},
+        {"name": "Broken Links (proxy risk)", "value": live.get("broken_links_detected", 0), "status": "Good" if live.get("broken_links_detected", 0) == 0 else "Warning"},
+    ]
+
     sec = audit_data.get("security_kpis") or {}
-
-    def add(name, key, yes_good=True):
-        v = sec.get(key, audit_data.get(key))
-        if v is None:
-            return
-        val = str(v)
-        status = "Good" if ((val.lower() in ["true", "yes", "1"] or (isinstance(v, (int, float)) and v > 0)) if yes_good else False) else "Warning"
-        rows.append({"name": name, "value": val, "status": status})
-
-    add("HTTPS / TLS", "https_tls")
-    add("HSTS Header", "hsts")
-    add("Content-Security-Policy", "csp")
-    add("X-Frame-Options", "x_frame_options")
-    add("X-XSS-Protection", "x_xss_protection")
-    add("SSL Labs Rating", "ssl_labs_rating")  # value like A+, A, B...
-    add("SQLi Checks", "sqli_ok")
-    add("XSS Checks", "xss_ok")
-    add("CSRF Checks", "csrf_ok")
-    add("OWASP Top 10 Coverage", "owasp_top10")
-
-    # add counts if provided
     for key in ["critical_vulns", "high_vulns", "medium_vulns", "low_vulns"]:
         if key in sec:
             v = float(sec[key])
-            status, _ = score_to_status(100 - min(100, v * 10))
+            status = "Warning" if v > 0 else "Good"
             rows.append({"name": key.replace("_", " ").title(), "value": v, "status": status})
 
     return rows[:20]
 
 
-def _build_accessibility_kpis_table(audit_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_accessibility_kpis_table(audit_data: Dict[str, Any], live: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
+    rows += [
+        {"name": "Alt Text Coverage (%)", "value": live.get("img_alt_coverage_pct", 0), "status": "Good" if live.get("img_alt_coverage_pct", 0) >= 80 else "Warning"},
+        {"name": "ARIA Missing (count)", "value": live.get("aria_missing_count", 0), "status": "Good" if live.get("aria_missing_count", 0) <= 10 else "Warning"},
+        {"name": "Viewport (mobile)", "value": live.get("viewport_present", "No"), "status": "Good" if live.get("viewport_present") == "Yes" else "Warning"},
+        {"name": "Headings Structure (H1)", "value": live.get("h1_count", 0), "status": "Good" if live.get("h1_count", 0) == 1 else "Warning"},
+    ]
+
     acc = audit_data.get("accessibility_kpis") or {}
-
-    def add(name, key):
-        v = acc.get(key, audit_data.get(key))
-        if v is None:
-            return
-        status, _ = score_to_status(float(v)) if isinstance(v, (int, float)) else ("Good", PRIMARY_OK)
-        rows.append({"name": name, "value": v, "status": status})
-
-    add("WCAG 2.1 Compliance (%)", "wcag_compliance")
-    add("Contrast Ratio Issues (count)", "contrast_issues")
-    add("Keyboard Navigation Issues", "keyboard_issues")
-    add("Missing ARIA Labels (count)", "aria_missing")
-    add("Alt Text Coverage (%)", "alt_coverage")
-    add("Screen Reader Compatibility (%)", "screen_reader_compat")
-
-    # fill up with any extras provided
     for k, v in acc.items():
-        if all(k.replace("_", " ").title() != r["name"] for r in rows):
-            rows.append({"name": k.replace("_", " ").title(), "value": v, "status": "Good"})
+        label = k.replace("_", " ").title()
+        if all(label != r["name"] for r in rows):
+            rows.append({"name": label, "value": v, "status": "Good"})
 
     return rows[:20]
 
 
-def _build_ux_kpis_table(audit_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_ux_kpis_table(audit_data: Dict[str, Any], live: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
+    rows += [
+        {"name": "Mobile-Friendliness (Viewport)", "value": live.get("viewport_present", "No"), "status": "Good" if live.get("viewport_present") == "Yes" else "Warning"},
+        {"name": "Broken Links (count)", "value": live.get("broken_links_detected", 0), "status": "Good" if live.get("broken_links_detected", 0) == 0 else "Warning"},
+        {"name": "Page Weight (MB)", "value": live.get("page_weight_mb", 0), "status": "Good" if live.get("page_weight_mb", 0) <= 3 else "Warning"},
+    ]
+
     ux = audit_data.get("ux_kpis") or {}
-
-    def add(name, key):
-        v = ux.get(key, audit_data.get(key))
-        if v is None:
-            return
-        status, _ = score_to_status(float(v)) if isinstance(v, (int, float)) else ("Good", PRIMARY_OK)
-        rows.append({"name": name, "value": v, "status": status})
-
-    add("Mobile-Friendliness Score (%)", "mobile_friendly")
-    add("Interactive Elements Usability (%)", "interactive_usability")
-    add("Broken Links & 404 (count)", "broken_links_count")
-    add("CTA Visibility & Clicks (score)", "cta_score")
-    add("Form Validation Errors (count)", "form_errors")
-    add("Popup/Modal Impact (score)", "popup_impact")
-
-    # fill up with extras
     for k, v in ux.items():
-        if all(k.replace("_", " ").title() != r["name"] for r in rows):
-            rows.append({"name": k.replace("_", " ").title(), "value": v, "status": "Good"})
+        label = k.replace("_", " ").title()
+        if all(label != r["name"] for r in rows):
+            rows.append({"name": label, "value": v, "status": "Good"})
 
     return rows[:20]
 
 
-def _robots_fetch(url: str) -> Dict[str, str]:
-    try:
-        r = requests.get(_robots_url(url), timeout=6)
-        if r.status_code == 200:
-            return {"ok": "Yes", "sitemap": "Yes" if "Sitemap:" in r.text else "No"}
-        return {"ok": "No", "sitemap": "No"}
-    except Exception:
-        return {"ok": "No", "sitemap": "No"}
+def _consolidate_kpis(*sections: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for sec in sections:
+        for row in (sec or []):
+            out.append({
+                "name": row.get("name", ""),
+                "value": row.get("value", ""),
+                "status": row.get("status", "")
+            })
+    return out[:150]
 
 
-def _safe_domain(url: str) -> str:
-    try:
-        from urllib.parse import urlparse
-        p = urlparse(url)
-        return p.netloc
-    except Exception:
-        return ""
-
-
-def _collect_ai_recommendations(audit_data: Dict[str, Any], score_data: Dict[str, Any]) -> List[str]:
-    # If provided externally, use them:
-    provided = audit_data.get("ai_recommendations")
-    if isinstance(provided, list) and provided:
-        return [str(x) for x in provided][:15]
-
-    # Otherwise generate simple rule-based suggestions from category scores:
+def _collect_ai_recommendations(live: Dict[str, Any], scores: Dict[str, float]) -> List[str]:
     recs: List[str] = []
-    cats = score_data.get("category_scores", {})
-    def add(msg): 
-        if msg not in recs: 
+    def add(msg):
+        if msg not in recs:
             recs.append(msg)
 
     # SEO
-    if cats.get("seo", 100) < 80:
-        add("Add or improve meta descriptions and ensure a single H1 per page; audit robots.txt and sitemap.")
-        add("Enhance internal linking and image alt coverage; implement structured data (Schema.org) where relevant.")
+    if live.get("title", "") == "" or live.get("meta_description_present") != "Yes":
+        add("Add or improve <title> and meta description for better relevance and CTR.")
+    if live.get("h1_count", 0) != 1:
+        add("Ensure a single, descriptive H1 per page; organize H2/H3 for structure.")
+    if live.get("broken_links_detected", 0) > 0:
+        add("Fix broken internal links to improve crawlability and UX.")
+    if live.get("schema_org_present") != "Yes":
+        add("Implement structured data (Schema.org) on key templates.")
+
     # Performance
-    if cats.get("performance", 100) < 80:
-        add("Optimize images (compression, next-gen formats), enable brotli/gzip, leverage caching and a CDN.")
-        add("Reduce render-blocking JS/CSS and minimize third-party scripts; aim for LCP < 2.5s.")
+    if (isinstance(live.get("ttfb_ms"), (int, float)) and live.get("ttfb_ms") > 800) or (isinstance(live.get("page_weight_mb"), (int, float)) and live.get("page_weight_mb") > 3):
+        add("Optimize server TTFB and reduce page weight (image compression, lazy-loading, code splitting).")
+    if live.get("compressed") != "Yes":
+        add("Enable brotli/gzip compression and HTTP/2/3 where possible.")
+    if live.get("cdn", "Unknown") == "Unknown/No signal":
+        add("Use a CDN for global delivery and better caching performance.")
+
     # Security
-    if cats.get("security", 100) < 85:
-        add("Enforce HTTPS with HSTS; set CSP, X-Frame-Options, and X-XSS-Protection headers.")
-        add("Perform regular OWASP Top 10 checks; review SSL/TLS configuration.")
+    sh = live.get("security_headers", {}) or {}
+    if sh.get("https_tls") != "Yes" or sh.get("hsts") != "Yes":
+        add("Enforce HTTPS with HSTS to prevent protocol downgrade/SSL stripping.")
+    if sh.get("csp") != "Yes":
+        add("Set a strict Content-Security-Policy (script-src/style-src) to mitigate XSS.")
+    if sh.get("x_frame_options") != "Yes":
+        add("Set X-Frame-Options or frame-ancestors in CSP to prevent clickjacking.")
+
     # Accessibility
-    if cats.get("accessibility", 100) < 85:
-        add("Improve color contrast, add ARIA labels, and ensure keyboard navigability across all components.")
-        add("Increase alt text coverage and test with screen readers (NVDA/VoiceOver).")
+    if live.get("img_alt_coverage_pct", 100) < 80 or live.get("aria_missing_count", 0) > 10:
+        add("Increase alt text coverage and add appropriate ARIA attributes; test with screen readers.")
+
     # UX
-    if cats.get("ux", 100) < 85:
-        add("Improve mobile tap targets, simplify forms, and prioritize clear CTAs above the fold.")
-        add("Reduce intrusive pop-ups and ensure consistent component behavior.")
+    if live.get("viewport_present") != "Yes":
+        add("Add responsive viewport meta for mobile users.")
+
     return recs[:15]
