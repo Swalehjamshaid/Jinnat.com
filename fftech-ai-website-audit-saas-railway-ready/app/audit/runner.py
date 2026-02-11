@@ -10,8 +10,8 @@ MOST FLEXIBLE WebsiteAuditRunner
         audited_url, overall_score, grade, breakdown, chart_data, dynamic
 PDF integration (SAFE ADDITION — does NOT change run() IO):
 - Fixed keyword mismatch (positional call to generate_audit_pdf)
-- Safe defaults and error handling for PDF (no crash on missing data)
-- Logs clearly if PDF fails (audit always completes)
+- Added logger import and setup (fixes NameError)
+- Safe error handling so PDF failure never crashes audit
 IMPORTANT FIX:
 - Uses certifi for SSL (fixes CERTIFICATE_VERIFY_FAILED on Railway)
 """
@@ -22,10 +22,14 @@ import re
 import ssl
 import time
 import datetime as _dt
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse, urljoin
 from urllib.request import Request, urlopen
+
+# Logger setup (used in PDF helper)
+logger = logging.getLogger(__name__)
 
 # Progress callback type
 ProgressCB = Optional[Callable[[str, int, Optional[dict]], Union[None, Any]]]
@@ -39,7 +43,7 @@ PDF_CLIENT_NAME: str = os.getenv("PDF_CLIENT_NAME", "N/A")
 PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")  # e.g. "app/assets/logo.png"
 
 # -------------------------------
-# Helpers (safe & stable)
+# Helpers (unchanged)
 # -------------------------------
 def _normalize_url(url: str) -> str:
     url = (url or "").strip()
@@ -340,31 +344,31 @@ def generate_pdf_from_runner_result(
     website_name: Optional[str] = None,
 ) -> str:
     """
-    SAFE PDF generation helper – does not affect run() output.
-    Uses positional argument to avoid TypeError.
-    Logs errors but does not crash the audit.
+    SAFE PDF generation helper — does not affect run() output.
+    Uses positional arguments to avoid TypeError.
+    Logs errors clearly but does not crash the audit.
     """
     audit_data = runner_result_to_audit_data(runner_result)
 
     try:
         from app.audit.pdf_report import generate_audit_pdf
-        # FIXED: positional first argument (no 'audit_data=' keyword)
+        # FIXED: positional arguments only (no keywords for first params)
         return generate_audit_pdf(
             audit_data,
-            output_path=output_path,
+            output_path,
             logo_path=logo_path,
             report_title=report_title,
         )
     except ImportError as e:
-        logger.error("PDF generation failed: missing dependencies (reportlab/weasyprint)")
-        raise RuntimeError("PDF dependencies missing. Install reportlab or weasyprint.") from e
+        logger.error("PDF generation failed: missing dependencies (reportlab or weasyprint)")
+        raise RuntimeError("PDF dependencies missing. Install required libraries.") from e
     except Exception as e:
         logger.exception("PDF generation error")
-        # Do NOT crash the audit — return fallback path or raise controlled error
+        # Do NOT crash the whole response — raise controlled error
         raise RuntimeError(f"PDF generation failed: {str(e)}") from e
 
 # -------------------------------
-# Runner Core (unchanged IO, stable logic)
+# Runner Core (unchanged IO)
 # -------------------------------
 @dataclass
 class WebsiteAuditRunner:
@@ -397,7 +401,6 @@ class WebsiteAuditRunner:
 
         await _maybe_progress(progress_cb, "starting", 5, {"url": audited_url})
 
-        # Fetch
         if html.strip():
             fetch = {
                 "final_url": audited_url,
@@ -441,7 +444,7 @@ class WebsiteAuditRunner:
 
         await _maybe_progress(progress_cb, "scoring", 60, None)
 
-        # Scoring (unchanged)
+        # Scoring logic (unchanged)
         perf = 100
         if load_ms > 8000: perf -= 45
         elif load_ms > 5000: perf -= 35
