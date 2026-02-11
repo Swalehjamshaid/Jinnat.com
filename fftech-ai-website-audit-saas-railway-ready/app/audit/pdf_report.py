@@ -8,6 +8,8 @@ Comprehensive, graph-rich Website Audit PDF Generator
 - Page numbers (Page X of Y)
 - Visuals across sections: pies, donuts, grouped bars, coverage bars, heat map
 - Competitor Comparison: apple-to-apple table + grouped bar charts (scores & CWV)
+- Traffic & Acquisition: GA-style KPIs, channel mix, geo, trends
+- Google Search Reach: GSC KPIs, coverage, web vitals, top queries/pages, backlinks, Discover
 - Smarter fallbacks and optional hide-empty-rows mode to avoid 'N/A' noise
 """
 from __future__ import annotations
@@ -35,6 +37,8 @@ from reportlab.pdfgen import canvas
 from reportlab.graphics.shapes import Drawing, String, Line, Circle, Wedge, Rect
 from reportlab.graphics.charts.piecharts import Pie
 from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.lineplots import LinePlot
+from reportlab.graphics.widgets.markers import makeMarker
 
 
 # ============================================================================
@@ -224,7 +228,7 @@ def _status_from_value(metric: str, value: Any) -> str:
 
     if m in ("css size",):
         try:
-            s = str(value).lower().replace("kb", "").strip()
+            s = str(value).lower().replace("kb","").strip()
             kb = float(s)
         except Exception:
             return "N/A"
@@ -276,6 +280,18 @@ def _filter_rows(rows: List[List[Any]], hide: bool) -> List[List[Any]]:
         if any(str(v).strip().upper() != "N/A" for v in vals):
             out.append(r)
     return out
+
+
+def _sec_to_hms(seconds: Any) -> str:
+    try:
+        s = int(float(seconds or 0))
+    except Exception:
+        return "N/A"
+    h = s // 3600
+    m = (s % 3600) // 60
+    sec = s % 60
+    if h: return f"{h:d}h {m:02d}m {sec:02d}s"
+    return f"{m:d}m {sec:02d}s"
 
 
 # ============================================================================
@@ -452,61 +468,99 @@ def _risk_heat_map(issues: List[Dict[str, Any]]) -> Table:
     return t
 
 
-# ----- Competitor helpers and charts -----
-def _norm_cwv_seconds(val: Any) -> Optional[float]:
-    """Normalize CWV-like values to seconds (supports ms/s/float)."""
-    try:
-        if isinstance(val, (int, float)): return float(val)
-        s = str(val).strip().lower()
-        if s.endswith("ms"): return float(s.replace("ms", "")) / 1000.0
-        if s.endswith("s"):  return float(s.replace("s", "").strip())
-        return float(s)
-    except Exception:
-        return None
-
-
+# ----- Generic charts (traffic/reach) -----
 def _series_colors():
-    # Distinct, accessible palette for up to 5 series
+    # Distinct, accessible palette for up to 6 series
     return [
         HexColor('#2563eb'),  # blue
         HexColor('#16a34a'),  # green
         HexColor('#f59e0b'),  # amber
         HexColor('#ef4444'),  # red
         HexColor('#8b5cf6'),  # violet
+        HexColor('#06b6d4'),  # cyan
     ]
 
 
-def _multi_grouped_bars(title: str, categories: List[str],
-                        series_data: List[List[Optional[float]]],
-                        series_names: List[str],
-                        width: int = 380, height: int = 180) -> Drawing:
-    """
-    Builds a grouped bar chart (ReportLab VerticalBarChart).
-    Any None values are treated as 0 for drawing.
-    """
-    d = Drawing(width + 20, height + 40)
+def _pie_from_mapping(title: str, mapping: Dict[str, Any]) -> Drawing:
+    labels = []
+    data = []
+    for k, v in (mapping or {}).items():
+        try:
+            val = float(v or 0)
+        except Exception:
+            val = 0
+        if val < 0: val = 0
+        labels.append(str(k).title())
+        data.append(val)
+    if not data or sum(data) == 0:
+        labels, data = ["No Data"], [1]
+    d = Drawing(260, 180)
+    p = Pie()
+    p.x = 40; p.y = 20; p.width = 140; p.height = 140
+    p.data = data
+    p.labels = [f"{labels[i]} ({int(round(data[i]))})" for i in range(len(data))]
+    cols = _series_colors()
+    for i in range(len(data)):
+        p.slices[i].fillColor = cols[i % len(cols)]
+    d.add(p); d.add(String(0, 165, title, fontName=BASE_FONT_BOLD, fontSize=10))
+    return d
+
+
+def _bar_from_categories(title: str, categories: List[str], values: List[Any], width: int = 380, height: int = 180) -> Drawing:
+    vals = []
+    for v in values:
+        try:
+            vals.append(float(v or 0))
+        except Exception:
+            vals.append(0.0)
+    if not categories:
+        categories = ["N/A"]; vals = [0]
+    d = Drawing(width+20, height+40)
     chart = VerticalBarChart()
     chart.x, chart.y = 40, 30
     chart.width, chart.height = width, height
-    # sanitize None -> 0 for chart
-    data = [[(v if (isinstance(v, (int, float)) and v is not None) else 0.0) for v in row] for row in series_data]
-    chart.data = data
+    chart.data = [vals]
     chart.categoryAxis.categoryNames = categories
     chart.categoryAxis.labels.boxAnchor = 'n'
     chart.valueAxis.labels.fontName = BASE_FONT
     chart.categoryAxis.labels.fontName = BASE_FONT
+    chart.bars[0].fillColor = HexColor('#2563eb')
+    d.add(chart)
+    d.add(String(0, height+35, title, fontName=BASE_FONT_BOLD, fontSize=10))
+    return d
 
+
+def _multiseries_bar(title: str, categories: List[str], series: Dict[str, List[Any]], width: int = 380, height: int = 180) -> Drawing:
+    # series: name -> list of values aligned to categories
+    names = list(series.keys())
     cols = _series_colors()
+    data = []
+    for name in names:
+        row = []
+        for v in series[name]:
+            try:
+                row.append(float(v or 0))
+            except Exception:
+                row.append(0.0)
+        data.append(row)
+
+    d = Drawing(width+20, height+40)
+    chart = VerticalBarChart()
+    chart.x, chart.y = 40, 30
+    chart.width, chart.height = width, height
+    chart.data = data or [[0]*len(categories)]
+    chart.categoryAxis.categoryNames = categories or ["N/A"]
+    chart.categoryAxis.labels.boxAnchor = 'n'
+    chart.valueAxis.labels.fontName = BASE_FONT
+    chart.categoryAxis.labels.fontName = BASE_FONT
     for i, bar in enumerate(chart.bars):
         bar.fillColor = cols[i % len(cols)]
-
-    # Title and simple legend
+    # simple legend above
+    d.add(String(0, height+35, title, fontName=BASE_FONT_BOLD, fontSize=10))
     x_offset = 0
-    d.add(String(0, height + 35, title, fontName=BASE_FONT_BOLD, fontSize=10))
-    for i, name in enumerate(series_names):
-        d.add(String(0 + x_offset, height + 20, f"■ {name}", fontName=BASE_FONT, fontSize=8, fillColor=cols[i % len(cols)]))
-        x_offset += max(60, len(name) * 4 + 30)
-
+    for i, name in enumerate(names):
+        d.add(String(0 + x_offset, height+20, f"■ {name}", fontName=BASE_FONT, fontSize=8, fillColor=cols[i % len(cols)]))
+        x_offset += max(60, len(name)*4 + 30)
     d.add(chart)
     return d
 
@@ -664,10 +718,10 @@ def _page_competitor_comparison(audit: Dict, styles) -> List[Any]:
         ("SEO Score (%)", your_scores["seo"], [_score(c.get("scores", {}), "seo") for c in comps]),
         ("Security Score (%)", your_scores["security"], [_score(c.get("scores", {}), "security") for c in comps]),
         ("Accessibility Score (%)", your_scores["accessibility"], [_score(c.get("scores", {}), "accessibility") for c in comps]),
-        ("FCP (s)", _fmt(_norm_cwv_seconds(your_cwv["fcp"])), [_fmt(_norm_cwv_seconds(c.get("cwv", {}).get("fcp"))) for c in comps]),
-        ("LCP (s)", _fmt(_norm_cwv_seconds(your_cwv["lcp"])), [_fmt(_norm_cwv_seconds(c.get("cwv", {}).get("lcp"))) for c in comps]),
-        ("TBT (s)", _fmt(_norm_cwv_seconds(your_cwv["tbt"])), [_fmt(_norm_cwv_seconds(c.get("cwv", {}).get("tbt"))) for c in comps]),
-        ("TTI (s)", _fmt(_norm_cwv_seconds(your_cwv["tti"])), [_fmt(_norm_cwv_seconds(c.get("cwv", {}).get("tti"))) for c in comps]),
+        ("FCP (s)", _fmt(_parse_time_to_seconds(your_cwv["fcp"])), [_fmt(_parse_time_to_seconds(c.get("cwv", {}).get("fcp"))) for c in comps]),
+        ("LCP (s)", _fmt(_parse_time_to_seconds(your_cwv["lcp"])), [_fmt(_parse_time_to_seconds(c.get("cwv", {}).get("lcp"))) for c in comps]),
+        ("TBT (s)", _fmt(_parse_time_to_seconds(your_cwv["tbt"])), [_fmt(_parse_time_to_seconds(c.get("cwv", {}).get("tbt"))) for c in comps]),
+        ("TTI (s)", _fmt(_parse_time_to_seconds(your_cwv["tti"])), [_fmt(_parse_time_to_seconds(c.get("cwv", {}).get("tti"))) for c in comps]),
         ("CLS", _fmt(your_cwv["cls"]), [_fmt(c.get("cwv", {}).get("cls")) for c in comps]),
         ("Page Size (MB)", _fmt(your_cwv["page_size_mb"]), [_fmt(c.get("cwv", {}).get("page_size_mb")) for c in comps]),
         ("Total Requests", _fmt(your_cwv["total_requests"]), [_fmt(c.get("cwv", {}).get("total_requests")) for c in comps]),
@@ -708,37 +762,44 @@ def _page_competitor_comparison(audit: Dict, styles) -> List[Any]:
             float(s.get("accessibility") or 0),
         ])
         series_names.append(c.get("name") or c.get("url") or "Competitor")
-    story.append(_multi_grouped_bars("Headline Scores (0–100)", categories, series_data, series_names))
+
+    # grouped bars for scores
+    d_scores = Drawing(400, 230)
+    d_scores.add(_multiseries_bar("Headline Scores (0–100)", categories, {name: data for name, data in zip(series_names, series_data)}))
+    story.append(d_scores)
 
     # Charts: CWV in seconds (FCP/LCP/TBT/TTI)
     cwv_cats = ["FCP", "LCP", "TBT", "TTI"]
     def cwv_row_from(obj: Optional[Dict]) -> List[Optional[float]]:
         cwv = obj.get("cwv", {}) if obj else {}
         return [
-            _norm_cwv_seconds(cwv.get("fcp")),
-            _norm_cwv_seconds(cwv.get("lcp")),
-            _norm_cwv_seconds(cwv.get("tbt")),
-            _norm_cwv_seconds(cwv.get("tti")),
+            _parse_time_to_seconds(cwv.get("fcp")),
+            _parse_time_to_seconds(cwv.get("lcp")),
+            _parse_time_to_seconds(cwv.get("tbt")),
+            _parse_time_to_seconds(cwv.get("tti")),
         ]
     your_row = [
-        _norm_cwv_seconds(your_cwv["fcp"]),
-        _norm_cwv_seconds(your_cwv["lcp"]),
-        _norm_cwv_seconds(your_cwv["tbt"]),
-        _norm_cwv_seconds(your_cwv["tti"]),
+        _parse_time_to_seconds(your_cwv["fcp"]),
+        _parse_time_to_seconds(your_cwv["lcp"]),
+        _parse_time_to_seconds(your_cwv["tbt"]),
+        _parse_time_to_seconds(your_cwv["tti"]),
     ]
-    cwv_series = [your_row] + [cwv_row_from(c) for c in comps]
+    series = {"Your Site": your_row}
+    for c in comps:
+        nm = c.get("name") or c.get("url") or "Competitor"
+        series[nm] = cwv_row_from(c)
     story.append(Spacer(1, 6))
-    story.append(_multi_grouped_bars("Core Web Vitals (seconds)", cwv_cats, cwv_series, series_names))
+    story.append(_multiseries_bar("Core Web Vitals (seconds)", cwv_cats, series))
 
     # Charts: CLS (unitless) – one category, N series
     cls_cats = ["CLS"]
-    cls_values = [your_cwv["cls"] if isinstance(your_cwv["cls"], (int, float)) else None]
+    series_cls = {"Your Site": [your_cwv["cls"] if isinstance(your_cwv["cls"], (int, float)) else 0]}
     for c in comps:
+        nm = c.get("name") or c.get("url") or "Competitor"
         v = c.get("cwv", {}).get("cls")
-        cls_values.append(v if isinstance(v, (int, float)) else None)
-    cls_series = [[v] for v in cls_values]  # each series is a [value] list
+        series_cls[nm] = [v if isinstance(v, (int, float)) else 0]
     story.append(Spacer(1, 6))
-    story.append(_multi_grouped_bars("CLS (unitless)", cls_cats, cls_series, series_names, width=200, height=140))
+    story.append(_multiseries_bar("CLS (unitless)", cls_cats, series_cls, width=240, height=120))
 
     story.append(PageBreak())
     return story
@@ -847,8 +908,162 @@ def _page_performance(audit: Dict, styles) -> List[Any]:
     story.append(PageBreak()); return story
 
 
+def _page_traffic(audit: Dict, styles) -> List[Any]:
+    story = [Paragraph("5. Traffic & Acquisition", styles['H1'])]
+    tr = _safe_get(audit, "traffic", default={})
+
+    # KPIs
+    totals = _safe_get(tr, "totals", default={})
+    period = _safe_get(tr, "period", default="N/A")
+    kpi_rows = [
+        ["Period", period],
+        ["Users", _fmt(_safe_get(totals, "users"))],
+        ["Sessions", _fmt(_safe_get(totals, "sessions"))],
+        ["Pageviews", _fmt(_safe_get(totals, "pageviews"))],
+        ["Bounce Rate", f"{_fmt(_safe_get(totals, 'bounce_rate'))}%"],
+        ["Avg Session Duration", _sec_to_hms(_safe_get(totals, "avg_session_duration_sec"))],
+    ]
+    hide = bool(_safe_get(audit, "render_options", "hide_empty_rows", default=False))
+    kpi_rows = _filter_rows(kpi_rows, hide)
+    kpi_tbl = Table(kpi_rows, colWidths=[60*mm, 100*mm])
+    kpi_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#f1f5f9')),
+        ('FONT', (0, 0), (-1, -1), BASE_FONT, 10.5),
+        ('GRID', (0, 0), (-1, -1), 0.4, HexColor('#e5e7eb')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(kpi_tbl)
+
+    # Channel mix pie
+    channels = _safe_get(tr, "channels", default={})
+    story.append(Spacer(1, 8))
+    story.append(_pie_from_mapping("Traffic Channels Mix", channels))
+
+    # Geo top countries bar
+    geo = _safe_get(tr, "geo", default=[])
+    if isinstance(geo, list) and geo:
+        cats = [str(it.get("country","N/A")) for it in geo[:8]]
+        vals = [it.get("sessions", 0) for it in geo[:8]]
+        story.append(Spacer(1, 6))
+        story.append(_bar_from_categories("Top Countries by Sessions", cats, vals, width=360, height=160))
+
+    # Time series (sessions/users) as grouped bars
+    times = _safe_get(tr, "timeseries", default={})
+    labels = _safe_get(times, "labels", default=[])
+    sessions = _safe_get(times, "sessions", default=[])
+    users = _safe_get(times, "users", default=[])
+    if labels and (sessions or users):
+        series = {}
+        if sessions: series["Sessions"] = sessions
+        if users: series["Users"] = users
+        story.append(Spacer(1, 6))
+        story.append(_multiseries_bar("Traffic Trend", labels, series, width=380, height=180))
+
+    # Top pages table (optional)
+    top_pages = _safe_get(tr, "top_pages", default=[])
+    if isinstance(top_pages, list) and top_pages:
+        rows = [["Page", "Pageviews", "Avg Time on Page", "Bounce Rate"]]
+        for p in top_pages[:8]:
+            rows.append([
+                p.get("url","N/A"),
+                _fmt(p.get("pageviews")),
+                _sec_to_hms(p.get("avg_time_on_page_sec")),
+                f"{_fmt(p.get('bounce_rate'))}%"
+            ])
+        story.append(Spacer(1, 8))
+        tp_tbl = Table(rows, colWidths=[80*mm, 25*mm, 35*mm, 25*mm])
+        tp_tbl.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#ecfeff')),
+            ('FONT', (0, 0), (-1, -1), BASE_FONT, 9.8),
+            ('GRID', (0, 0), (-1, -1), 0.4, HexColor('#e5e7eb')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        story.append(tp_tbl)
+
+    story.append(PageBreak()); return story
+
+
+def _page_google_reach(audit: Dict, styles) -> List[Any]:
+    story = [Paragraph("6. Google Search Reach (GSC + Discover)", styles['H1'])]
+    gr = _safe_get(audit, "google_reach", default={})
+    sc = _safe_get(gr, "search_console", default={})
+
+    # KPIs
+    kpis_rows = [
+        ["Impressions", _fmt(_safe_get(sc, "impressions"))],
+        ["Clicks", _fmt(_safe_get(sc, "clicks"))],
+        ["CTR", f"{_fmt(_safe_get(sc, 'ctr_pct'))}%"],
+        ["Average Position", _fmt(_safe_get(sc, "avg_position"))],
+        ["Indexed Pages", _fmt(_safe_get(sc, "indexed_pages"))],
+    ]
+    hide = bool(_safe_get(audit, "render_options", "hide_empty_rows", default=False))
+    kpis_rows = _filter_rows(kpis_rows, hide)
+    kpi_tbl = Table(kpis_rows, colWidths=[60*mm, 100*mm])
+    kpi_tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#f8fafc')),
+        ('FONT', (0, 0), (-1, -1), BASE_FONT, 10.5),
+        ('GRID', (0, 0), (-1, -1), 0.4, HexColor('#e5e7eb')),
+    ]))
+    story.append(kpi_tbl)
+
+    # Coverage pie
+    cov = _safe_get(sc, "coverage", default={})
+    cov_map = {"Valid": _safe_get(cov, "valid", default=0),
+               "Warnings": _safe_get(cov, "warnings", default=0),
+               "Errors": _safe_get(cov, "errors", default=0)}
+    story.append(Spacer(1, 6))
+    story.append(_pie_from_mapping("Index Coverage", cov_map))
+
+    # CWV from GSC (good/needs/poor)
+    wv = _safe_get(sc, "web_vitals", default={})
+    wv_map = {"Good": _safe_get(wv, "good", default=0),
+              "Needs Improvement": _safe_get(wv, "needs", default=0),
+              "Poor": _safe_get(wv, "poor", default=0)}
+    story.append(Spacer(1, 6))
+    story.append(_pie_from_mapping("Core Web Vitals (URLs)", wv_map))
+
+    # Top queries bar (Clicks)
+    tq = _safe_get(sc, "top_queries", default=[])
+    if isinstance(tq, list) and tq:
+        cats = [q.get("query","N/A")[:18] + ("…" if len(str(q.get("query",""))) > 18 else "") for q in tq[:8]]
+        clicks = [q.get("clicks",0) for q in tq[:8]]
+        story.append(Spacer(1, 6))
+        story.append(_bar_from_categories("Top Queries by Clicks", cats, clicks, width=360, height=160))
+
+    # Top landing pages bar (Impressions)
+    tp = _safe_get(sc, "top_pages", default=[])
+    if isinstance(tp, list) and tp:
+        cats = [p.get("url","/")[:22] + ("…" if len(str(p.get("url",""))) > 22 else "") for p in tp[:8]]
+        imps = [p.get("impressions",0) for p in tp[:8]]
+        story.append(Spacer(1, 6))
+        story.append(_bar_from_categories("Top Pages by Impressions", cats, imps, width=360, height=160))
+
+    # Backlinks & Discover
+    bl = _safe_get(gr, "backlinks", default={})
+    disc = _safe_get(gr, "discover", default={})
+    rows = [
+        ["Referring Domains", _fmt(_safe_get(bl, "referring_domains"))],
+        ["Total Backlinks", _fmt(_safe_get(bl, "total_backlinks"))],
+        ["Discover Impressions", _fmt(_safe_get(disc, "impressions"))],
+        ["Discover Clicks", _fmt(_safe_get(disc, "clicks"))],
+        ["Discover CTR", f"{_fmt(_safe_get(disc, 'ctr_pct'))}%"],
+    ]
+    rows = _filter_rows(rows, hide)
+    if rows:
+        story.append(Spacer(1, 8))
+        tbl = Table(rows, colWidths=[60*mm, 100*mm])
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#fff7ed')),
+            ('FONT', (0, 0), (-1, -1), BASE_FONT, 10.5),
+            ('GRID', (0, 0), (-1, -1), 0.4, HexColor('#e5e7eb')),
+        ]))
+        story.append(tbl)
+
+    story.append(PageBreak()); return story
+
+
 def _page_security(audit: Dict, styles) -> List[Any]:
-    story = [Paragraph("5. Security Audit (OWASP Based)", styles['H1'])]
+    story = [Paragraph("7. Security Audit (OWASP Based)", styles['H1'])]
     sec = _safe_get(audit, "security_details", default={})
     ssl_rows = [
         ["SSL & Encryption", _yes_no(_safe_get(sec, "ssl_enabled"))],
@@ -914,7 +1129,7 @@ def _page_security(audit: Dict, styles) -> List[Any]:
 
 
 def _page_seo(audit: Dict, styles) -> List[Any]:
-    story = [Paragraph("6. SEO Audit (Technical + On Page)", styles['H1'])]
+    story = [Paragraph("8. SEO Audit (Technical + On Page)", styles['H1'])]
     seo = _safe_get(audit, "seo_details", default={})
 
     # Technical SEO
@@ -968,7 +1183,7 @@ def _page_seo(audit: Dict, styles) -> List[Any]:
 
 
 def _page_accessibility(audit: Dict, styles) -> List[Any]:
-    story = [Paragraph("7. Accessibility Audit (WCAG 2.1)", styles['H1'])]
+    story = [Paragraph("9. Accessibility Audit (WCAG 2.1)", styles['H1'])]
     acc = _safe_get(audit, "accessibility_details", default={})
     rows = [
         ["Alt Text for Images", _yes_no(_safe_get(acc, "alt_text"))],
@@ -998,7 +1213,7 @@ def _page_accessibility(audit: Dict, styles) -> List[Any]:
 
 
 def _page_mobile(audit: Dict, styles) -> List[Any]:
-    story = [Paragraph("8. Mobile Responsiveness Audit", styles['H1'])]
+    story = [Paragraph("10. Mobile Responsiveness Audit", styles['H1'])]
     mob = _safe_get(audit, "mobile_details", default={})
     rows = [
         ["Viewport Meta Tag", _yes_no(_safe_get(mob, "viewport_meta_tag"))],
@@ -1023,7 +1238,7 @@ def _page_mobile(audit: Dict, styles) -> List[Any]:
 
 
 def _page_ux(audit: Dict, styles) -> List[Any]:
-    story = [Paragraph("9. UX / UI Audit (Nielsen Heuristics)", styles['H1'])]
+    story = [Paragraph("11. UX / UI Audit (Nielsen Heuristics)", styles['H1'])]
     ux = _safe_get(audit, "ux_details", default={})
     rows = [
         ["Navigation Clarity", _fmt(_safe_get(ux, "navigation_clarity"))],
@@ -1049,7 +1264,7 @@ def _page_ux(audit: Dict, styles) -> List[Any]:
 
 
 def _page_compliance(audit: Dict, styles) -> List[Any]:
-    story = [Paragraph("10. Compliance & Privacy", styles['H1'])]
+    story = [Paragraph("12. Compliance & Privacy", styles['H1'])]
     cp = _safe_get(audit, "compliance_privacy", default={})
     rows = [
         ["GDPR Cookie Consent", _yes_no(_safe_get(cp, "gdpr_cookie_consent"))],
@@ -1069,13 +1284,13 @@ def _page_compliance(audit: Dict, styles) -> List[Any]:
 
 
 def _page_detailed_issues(audit: Dict, styles) -> List[Any]:
-    story = [Paragraph("11. Detailed Issue Breakdown", styles['H1'])]
+    story = [Paragraph("13. Detailed Issue Breakdown", styles['H1'])]
     issues = _safe_get(audit, "issues", default=[])
     if not issues:
         story.append(Paragraph("No issues were provided for breakdown.", styles['Body']))
         return story
     for i, it in enumerate(issues, 1):
-        story.append(Paragraph(f"Issue {i}: {it.get('issue_name','Issue')}", styles['H2']))
+        story.append(Paragraph(f"Issue {i}: {it.get('issue_name','Issue')}", styles['H2'])))
         rows = [
             ["Category", _fmt(it.get("category"))],
             ["Severity", _fmt(it.get("severity"))],
@@ -1121,9 +1336,11 @@ def generate_audit_pdf(audit: Dict[str, Any]) -> bytes:
     story: List[Any] = []
     story.extend(_page_cover(audit, styles))
     story.extend(_page_summary(audit, styles))
-    story.extend(_page_competitor_comparison(audit, styles))   # <-- New section (skips if no competitors)
+    story.extend(_page_competitor_comparison(audit, styles))   # skips if no competitors
     story.extend(_page_overview(audit, styles))
     story.extend(_page_performance(audit, styles))
+    story.extend(_page_traffic(audit, styles))                  # NEW: Traffic & Acquisition
+    story.extend(_page_google_reach(audit, styles))             # NEW: Google Search Reach
     story.extend(_page_security(audit, styles))
     story.extend(_page_seo(audit, styles))
     story.extend(_page_accessibility(audit, styles))
@@ -1170,6 +1387,36 @@ if __name__ == "__main__":
             "hosting_provider": "ExampleHost", "server_location": "US",
             "cms": "Custom", "tech_stack": ["React", "Node", "Nginx"],
             "ssl_status": True, "redirect_http_to_https": True, "robots_txt": True, "sitemap_xml": True
+        },
+
+        "traffic": {
+            "period": "Last 30 days",
+            "totals": {"users": 152340, "sessions": 204510, "pageviews": 612300, "bounce_rate": 42.7, "avg_session_duration_sec": 184},
+            "channels": {"organic": 92000, "paid": 21000, "direct": 48000, "referral": 15000, "social": 11500, "email": 4000},
+            "geo": [{"country":"Pakistan","sessions":52000},{"country":"UAE","sessions":21000},{"country":"USA","sessions":18000}],
+            "timeseries": {"labels":["W1","W2","W3","W4"], "sessions":[49000, 52000, 51000, 52510], "users":[36000, 39000, 38500, 39200]},
+            "top_pages": [
+                {"url":"/","pageviews":128000,"avg_time_on_page_sec":95,"bounce_rate":38.2},
+                {"url":"/products","pageviews":76000,"avg_time_on_page_sec":132,"bounce_rate":41.5}
+            ]
+        },
+
+        "google_reach": {
+            "search_console": {
+                "impressions": 4_200_000, "clicks": 126_000, "ctr_pct": 3.0, "avg_position": 14.8, "indexed_pages": 1240,
+                "coverage": {"valid": 1180, "warnings": 40, "errors": 20},
+                "web_vitals": {"good": 860, "needs": 260, "poor": 120},
+                "top_queries": [
+                    {"query":"brand name","clicks": 18400, "impressions": 320000, "ctr_pct": 5.75, "position": 2.1},
+                    {"query":"category x","clicks": 9200, "impressions": 210000, "ctr_pct": 4.38, "position": 6.3}
+                ],
+                "top_pages": [
+                    {"url":"/","clicks": 24500, "impressions": 510000, "ctr_pct": 4.80, "position": 4.1},
+                    {"url":"/products","clicks": 14200, "impressions": 350000, "ctr_pct": 4.06, "position": 7.2}
+                ]
+            },
+            "backlinks": {"referring_domains": 980, "total_backlinks": 18200},
+            "discover": {"impressions": 180000, "clicks": 5400, "ctr_pct": 3.0}
         },
 
         "security_details": {
@@ -1229,7 +1476,6 @@ if __name__ == "__main__":
              "impact":"Slower main content load","estimated_fix_time":"1–2h","likelihood":"Medium"}
         ],
 
-        # --- OPTIONAL: Competitor Comparison (add as many as you like; shown up to 4) ---
         "competitors": [
             {
                 "name": "Competitor A",
