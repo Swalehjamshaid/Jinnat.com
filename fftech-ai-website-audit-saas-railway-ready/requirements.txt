@@ -1,101 +1,93 @@
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt
-# Extremely comprehensive & future-proof version
-# Covers all current features + PDF excellence + potential extensions
+# Comprehensive & future-proof version
+# Covers all current + enterprise PDF + AI + PPT + charts + QR
 # Railway / Docker / SSL-safe
 # Updated: February 11, 2026
 # =========================================================
 
 # ───────────────────────────────────────────────
-# Core FastAPI Backend (must-have)
+# Core FastAPI Backend
 # ───────────────────────────────────────────────
-fastapi==0.115.6                  # Main API framework
-uvicorn[standard]==0.32.1         # ASGI server
-gunicorn==23.0.0                  # Production WSGI server for Railway
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+gunicorn==23.0.0
 
 # ───────────────────────────────────────────────
 # Templates, Static Files & Uploads
 # ───────────────────────────────────────────────
-jinja2==3.1.5                     # HTML templating
-python-multipart==0.0.20          # File uploads / form data
+jinja2==3.1.5
+python-multipart==0.0.20
 
 # ───────────────────────────────────────────────
 # WebSocket Support
 # ───────────────────────────────────────────────
-websockets==14.1                  # Real-time progress & results
+websockets==14.1
 
 # ───────────────────────────────────────────────
 # Data Validation & Configuration
 # ───────────────────────────────────────────────
-pydantic==2.10.4                  # Data models & validation
-pydantic-settings==2.7.0          # Settings from env / .env
-python-dotenv==1.0.1              # Load .env files
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
 
 # ───────────────────────────────────────────────
-# HTTP Clients & SSL / Security (critical for fetching)
+# HTTP Clients & SSL / Security
 # ───────────────────────────────────────────────
-requests==2.32.3                  # Simple HTTP requests
-httpx==0.28.1                     # Modern async HTTP client
-urllib3==2.3.0                    # Underlying HTTP library
-certifi==2024.12.14               # Trusted CA certificates (fixes CERTIFICATE_VERIFY_FAILED)
-cryptography==42.0.8              # TLS / modern crypto support
+requests==2.32.3
+httpx==0.28.1
+urllib3==2.3.0
+certifi==2024.12.14
+cryptography==42.0.8
 
 # ───────────────────────────────────────────────
-# HTML Parsing & Website Analysis (core audit features)
+# HTML Parsing & Website Analysis
 # ───────────────────────────────────────────────
-beautifulsoup4==4.12.3            # HTML parsing
-lxml==5.3.0                       # Fast XML/HTML parser for BeautifulSoup
+beautifulsoup4==4.12.3
+lxml==5.3.0
 
 # ───────────────────────────────────────────────
 # High-performance JSON handling
 # ───────────────────────────────────────────────
-orjson==3.10.15                   # Fastest JSON library
-ujson==5.10.0                     # Alternative fast JSON
+orjson==3.10.15
+ujson==5.10.0
 
 # ───────────────────────────────────────────────
-# PDF Generation – Core & Professional Quality (MUST-HAVE)
+# PDF Generation – Core & Professional Quality
 # ───────────────────────────────────────────────
-reportlab>=4.2.0                  # Primary PDF generation engine
-Pillow>=10.0.0                    # Images, fonts, image manipulation (required by ReportLab)
-fonttools>=4.53.0                 # Advanced font handling (optional but improves PDF quality)
+reportlab>=4.2.0
+Pillow>=10.0.0
+fonttools>=4.53.0
 
 # ───────────────────────────────────────────────
-# Optional but highly recommended for better PDFs
+# PDF Charts & Visualization
 # ───────────────────────────────────────────────
-# pypdf2==3.0.1                   # PDF merging / splitting / metadata (uncomment if needed)
-# PyPDF2==3.0.1                   # Alternative (older name, same lib)
-# pdfkit==1.0.0                   # HTML to PDF via wkhtmltopdf (needs wkhtmltopdf binary)
+matplotlib>=3.8.0
 
 # ───────────────────────────────────────────────
-# Advanced PDF Alternative (WeasyPrint – HTML/CSS → PDF)
-# Uncomment only if you want to switch from ReportLab
-# Requires OS dependencies: cairo, pango, gdk-pixbuf (add to Dockerfile)
+# QR Codes & PowerPoint Export
 # ───────────────────────────────────────────────
-# weasyprint==63.0
+qrcode[pil]>=7.4.2
+python-pptx>=1.0.2
+openpyxl>=3.1.5                  # Optional Excel export
 
 # ───────────────────────────────────────────────
-# Optional Export Features (Excel, PowerPoint, QR codes)
-# Uncomment only when you implement these features
+# Optional Advanced PDF / HTML → PDF
 # ───────────────────────────────────────────────
-# openpyxl==3.1.5                 # Excel (.xlsx) export
-# python-pptx==1.0.2              # PowerPoint (.pptx) export
-# qrcode[pil]==7.4.2              # QR code generation (with Pillow support)
+# weasyprint==63.0                 # Uncomment only if switching from ReportLab
 
 # ───────────────────────────────────────────────
 # Optional – Debugging & Performance
 # ───────────────────────────────────────────────
-# python-dotenv[cli]==1.0.1       # For dotenv CLI (optional)
-# structlog==24.4.0               # Structured logging (better than basic logging)
+# structlog==24.4.0                # Optional structured logging
 
 # ───────────────────────────────────────────────
-# RAILWAY / DOCKER INSTALLATION NOTES
-# Add these to your Dockerfile if using advanced PDF features:
-#
-# For ReportLab + DejaVuSans font (better Unicode/emoji):
+# RAILWAY / DOCKER NOTES
+# ───────────────────────────────────────────────
+# For ReportLab + DejaVuSans font:
 # RUN apt-get update && apt-get install -y fonts-dejavu-core fontconfig
 #
-# For WeasyPrint (if uncommented):
+# For WeasyPrint:
 # RUN apt-get update && apt-get install -y \
 #     libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
 #     libffi-dev shared-mime-info
-# ───────────────────────────────────────────────
