@@ -9,9 +9,11 @@ MOST FLEXIBLE WebsiteAuditRunner
     Output: dict with keys:
         audited_url, overall_score, grade, breakdown, chart_data, dynamic
 PDF integration (SAFE ADDITION — does NOT change run() IO):
-- Fixed keyword mismatch (now positional only)
-- Safe error handling so PDF failure never crashes the audit
-- Logs clearly if PDF fails
+- Fixed keyword mismatch (now uses positional arguments only)
+- Proper logger setup (no more NameError)
+- Safe error handling — PDF failure never crashes the audit
+IMPORTANT FIX:
+- Uses certifi for SSL (fixes CERTIFICATE_VERIFY_FAILED on Railway)
 """
 from __future__ import annotations
 import asyncio
@@ -26,15 +28,23 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse, urljoin
 from urllib.request import Request, urlopen
 
+# Logger setup (used in PDF helper)
 logger = logging.getLogger(__name__)
 
+# Progress callback type
 ProgressCB = Optional[Callable[[str, int, Optional[dict]], Union[None, Any]]]
 
+# ============================================================
+# PDF CONFIG (SAFE ADDITION — does not affect runner output)
+# ============================================================
 PDF_REPORT_TITLE: str = os.getenv("PDF_REPORT_TITLE", "Website Audit Report")
 PDF_BRAND_NAME: str = os.getenv("PDF_BRAND_NAME", "FF Tech")
 PDF_CLIENT_NAME: str = os.getenv("PDF_CLIENT_NAME", "N/A")
-PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")
+PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")  # e.g. "app/assets/logo.png"
 
+# -------------------------------
+# Helpers (unchanged)
+# -------------------------------
 def _normalize_url(url: str) -> str:
     url = (url or "").strip()
     if not url:
@@ -87,10 +97,13 @@ def _truncate(s: str, n: int = 240) -> str:
     s = s or ""
     return s if len(s) <= n else s[:n - 1] + "…"
 
+# -------------------------------
+# SSL Helper (INTERNAL ONLY)
+# -------------------------------
 def _ssl_context() -> ssl.SSLContext:
     insecure = os.getenv("AUDIT_INSECURE_SSL", "").lower() in {"1", "true", "yes"}
     if insecure:
-        return ssl._create_unverified_context()
+        return ssl._create_unverified_context()  # TEST ONLY
     try:
         import certifi
         return ssl.create_default_context(cafile=certifi.where())
@@ -107,6 +120,9 @@ def _requests_verify_arg() -> Any:
     except Exception:
         return True
 
+# -------------------------------
+# Fetchers (flexible)
+# -------------------------------
 def _fetch_with_stdlib(url: str, timeout: float, user_agent: str, max_bytes: int) -> Dict[str, Any]:
     start = time.perf_counter()
     req = Request(
@@ -180,6 +196,9 @@ def _best_fetch(url: str, timeout: float, user_agent: str, max_bytes: int) -> Di
         return data
     return _fetch_with_stdlib(url, timeout, user_agent, max_bytes)
 
+# -------------------------------
+# Parsing (flexible)
+# -------------------------------
 def _try_bs4_parse(html: str) -> Optional[Any]:
     try:
         from bs4 import BeautifulSoup
@@ -325,13 +344,14 @@ def generate_pdf_from_runner_result(
 ) -> str:
     """
     SAFE PDF generation helper — does not affect run() output.
-    Uses positional arguments only to avoid keyword errors.
+    Uses positional arguments only (no keyword arguments) to avoid TypeError.
     """
     audit_data = runner_result_to_audit_data(runner_result)
 
     try:
         from app.audit.pdf_report import generate_audit_pdf
-        # FIXED: positional arguments only (no keywords for first params)
+        # FIXED: positional arguments only (matches your pdf_report.py signature)
+        # Order: audit_data, output_path, logo_path, report_title, ...
         return generate_audit_pdf(
             audit_data,
             output_path,
