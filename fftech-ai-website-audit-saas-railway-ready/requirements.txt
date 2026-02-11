@@ -1,3 +1,5 @@
+reportlab
+Pillow
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt
 # Railway / Docker / SSL-safe
