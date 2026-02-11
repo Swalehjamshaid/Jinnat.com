@@ -1,5 +1,3 @@
-reportlab
-Pillow
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt
 # Railway / Docker / SSL-safe
@@ -37,11 +35,7 @@ python-dotenv==1.0.1
 requests==2.32.3
 httpx==0.28.1
 urllib3==2.3.0
-
-# SSL certificate trust store (prevents CERTIFICATE_VERIFY_FAILED)
 certifi==2024.12.14
-
-# Cryptography backend (TLS & modern chains)
 cryptography==42.0.8
 
 # -------------------------
@@ -57,21 +51,21 @@ orjson==3.10.15
 ujson==5.10.0
 
 # -------------------------
-# PDF Generation (PRIMARY - ReportLab based)
+# PDF Generation (REQUIRED to fix your current error)
 # -------------------------
-reportlab==4.2.5
-Pillow==10.4.0          # REQUIRED for ReportLab image support + fonts
+reportlab>=4.2.0      # Core PDF library
+Pillow>=10.0.0        # Required for images, fonts, and better ReportLab support
 
 # -------------------------
-# OPTIONAL (uncomment if you want to use)
+# OPTIONAL (uncomment only when needed)
 # -------------------------
-# weasyprint==63.0      # Alternative HTML-to-PDF (needs cairo/pango libs in Dockerfile)
+# weasyprint==63.0      # Alternative HTML-to-PDF renderer (requires cairo/pango in Dockerfile)
 # qrcode==7.4.2
 # python-pptx==1.0.2
 # openpyxl==3.1.5
 
 # -------------------------
-# DOCKER / RAILWAY NOTE (add to Dockerfile if needed)
+# RAILWAY / DOCKER NOTE (add to Dockerfile if using ReportLab with fonts)
 # -------------------------
-# For DejaVuSans font support (used in ReportLab for better Unicode/emoji)
+# For better Unicode/emoji support in PDF (DejaVuSans font):
 # RUN apt-get update && apt-get install -y fonts-dejavu-core
