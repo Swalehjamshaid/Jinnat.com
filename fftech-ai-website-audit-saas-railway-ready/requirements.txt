@@ -1,93 +1,82 @@
 # =========================================================
 # FF Tech Website Audit SaaS – requirements.txt
-# Comprehensive & future-proof version
-# Covers all current + enterprise PDF + AI + PPT + charts + QR
-# Railway / Docker / SSL-safe
-# Updated: February 11, 2026
+# Optimized for Railway build speed & reliability – Feb 2026
 # =========================================================
 
 # ───────────────────────────────────────────────
-# Core FastAPI Backend
+# Core FastAPI Backend (fast & stable)
 # ───────────────────────────────────────────────
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
 gunicorn==23.0.0
 
 # ───────────────────────────────────────────────
-# Templates, Static Files & Uploads
+# Templates & Uploads
 # ───────────────────────────────────────────────
-jinja2==3.1.5
-python-multipart==0.0.20
+jinja2==3.1.4
+python-multipart==0.0.9
 
 # ───────────────────────────────────────────────
-# WebSocket Support
+# WebSocket support
 # ───────────────────────────────────────────────
-websockets==14.1
+websockets==13.1
 
 # ───────────────────────────────────────────────
-# Data Validation & Configuration
+# Data validation & settings
 # ───────────────────────────────────────────────
-pydantic==2.10.4
-pydantic-settings==2.7.0
+pydantic==2.9.2
+pydantic-settings==2.5.2
 python-dotenv==1.0.1
 
 # ───────────────────────────────────────────────
-# HTTP Clients & SSL / Security
+# HTTP & Security
 # ───────────────────────────────────────────────
 requests==2.32.3
-httpx==0.28.1
-urllib3==2.3.0
-certifi==2024.12.14
-cryptography==42.0.8
+httpx==0.27.2
+urllib3==2.2.3
+certifi==2024.8.30
+cryptography==43.0.1
 
 # ───────────────────────────────────────────────
-# HTML Parsing & Website Analysis
+# HTML parsing & scraping
 # ───────────────────────────────────────────────
 beautifulsoup4==4.12.3
 lxml==5.3.0
 
 # ───────────────────────────────────────────────
-# High-performance JSON handling
+# Fast JSON (optional but keeps uvicorn fast)
 # ───────────────────────────────────────────────
-orjson==3.10.15
+orjson==3.10.7
 ujson==5.10.0
 
 # ───────────────────────────────────────────────
-# PDF Generation – Core & Professional Quality
+# PDF Generation – stable & fast versions
 # ───────────────────────────────────────────────
-reportlab>=4.2.0
-Pillow>=10.0.0
-fonttools>=4.53.0
+reportlab==4.2.2
+Pillow==10.4.0
+fonttools==4.53.1
 
 # ───────────────────────────────────────────────
-# PDF Charts & Visualization
+# Charts & Visualization (lighter matplotlib)
 # ───────────────────────────────────────────────
-matplotlib>=3.8.0
+matplotlib==3.9.2
+numpy==2.1.1
+contourpy==1.3.0
+cycler==0.12.1
+kiwisolver==1.4.5
+pyparsing==3.1.4
+python-dateutil==2.9.0.post0
 
 # ───────────────────────────────────────────────
-# QR Codes & PowerPoint Export
+# QR Codes & PowerPoint
 # ───────────────────────────────────────────────
-qrcode[pil]>=7.4.2
-python-pptx>=1.0.2
-openpyxl>=3.1.5                  # Optional Excel export
+qrcode[pil]==7.4.2
+python-pptx==0.6.23
+openpyxl==3.1.5
 
 # ───────────────────────────────────────────────
-# Optional Advanced PDF / HTML → PDF
+# Optional / commented – only enable if needed
 # ───────────────────────────────────────────────
-# weasyprint==63.0                 # Uncomment only if switching from ReportLab
-
-# ───────────────────────────────────────────────
-# Optional – Debugging & Performance
-# ───────────────────────────────────────────────
-# structlog==24.4.0                # Optional structured logging
-
-# ───────────────────────────────────────────────
-# RAILWAY / DOCKER NOTES
-# ───────────────────────────────────────────────
-# For ReportLab + DejaVuSans font:
-# RUN apt-get update && apt-get install -y fonts-dejavu-core fontconfig
-#
-# For WeasyPrint:
-# RUN apt-get update && apt-get install -y \
-#     libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
-#     libffi-dev shared-mime-info
+# weasyprint==63.0                  # Alternative PDF engine – heavy, avoid unless necessary
+# structlog==24.4.0                 # Structured logging – optional
+# psutil==6.0.0                     # Memory/CPU monitoring – optional
