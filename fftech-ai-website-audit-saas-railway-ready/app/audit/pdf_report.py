@@ -989,7 +989,7 @@ def _kpi_scorecard_table(rows: List[Dict[str, Any]], show_weight: bool = False, 
             status = (data[r_i][2] or "").strip().lower()
             if status.startswith("good"):
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_OK))
-            elif status.startswith("warn")):
+            elif status.startswith("warn)
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_WARN))
             else:
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_BAD))
