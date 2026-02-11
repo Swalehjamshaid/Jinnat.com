@@ -8,11 +8,12 @@ MOST FLEXIBLE WebsiteAuditRunner
     Input : await WebsiteAuditRunner().run(url, html="", progress_cb=None)
     Output: dict with keys:
         audited_url, overall_score, grade, breakdown, chart_data, dynamic
+
 PDF integration (SAFE ADDITION — does NOT change run() IO):
-- Fixed keyword mismatch (now uses positional arguments only)
-- Proper logger setup (no more NameError)
-- Safe error handling — PDF failure never crashes the audit
-IMPORTANT FIX:
+- Proper logger setup
+- Safe error handling — PDF failure never crashes the audit helper when used externally
+
+IMPORTANT:
 - Uses certifi for SSL (fixes CERTIFICATE_VERIFY_FAILED on Railway)
 """
 from __future__ import annotations
@@ -42,6 +43,7 @@ PDF_BRAND_NAME: str = os.getenv("PDF_BRAND_NAME", "FF Tech")
 PDF_CLIENT_NAME: str = os.getenv("PDF_CLIENT_NAME", "N/A")
 PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")  # e.g. "app/assets/logo.png"
 
+
 # -------------------------------
 # Helpers (unchanged)
 # -------------------------------
@@ -53,14 +55,17 @@ def _normalize_url(url: str) -> str:
         url = "https://" + url
     return url
 
+
 def _clamp(n: int, lo: int = 0, hi: int = 100) -> int:
     return max(lo, min(hi, int(n)))
+
 
 def _safe_int(v: Any, default: int = 0) -> int:
     try:
         return int(v)
     except Exception:
         return default
+
 
 def _grade(score: int) -> str:
     score = _safe_int(score, 0)
@@ -70,6 +75,7 @@ def _grade(score: int) -> str:
     if score >= 60: return "C"
     if score >= 50: return "D"
     return "F"
+
 
 async def _maybe_progress(cb: ProgressCB, status: str, percent: int, payload: Optional[dict] = None) -> None:
     if not cb:
@@ -81,11 +87,13 @@ async def _maybe_progress(cb: ProgressCB, status: str, percent: int, payload: Op
     except Exception:
         pass
 
+
 def _hostname(url: str) -> str:
     try:
         return (urlparse(url).netloc or "").lower()
     except Exception:
         return ""
+
 
 def _is_https(url: str) -> bool:
     try:
@@ -93,9 +101,11 @@ def _is_https(url: str) -> bool:
     except Exception:
         return False
 
+
 def _truncate(s: str, n: int = 240) -> str:
     s = s or ""
     return s if len(s) <= n else s[:n - 1] + "…"
+
 
 # -------------------------------
 # SSL Helper (INTERNAL ONLY)
@@ -110,6 +120,7 @@ def _ssl_context() -> ssl.SSLContext:
     except Exception:
         return ssl.create_default_context()
 
+
 def _requests_verify_arg() -> Any:
     insecure = os.getenv("AUDIT_INSECURE_SSL", "").lower() in {"1", "true", "yes"}
     if insecure:
@@ -119,6 +130,7 @@ def _requests_verify_arg() -> Any:
         return certifi.where()
     except Exception:
         return True
+
 
 # -------------------------------
 # Fetchers (flexible)
@@ -156,6 +168,7 @@ def _fetch_with_stdlib(url: str, timeout: float, user_agent: str, max_bytes: int
         "fetcher": "urllib",
     }
 
+
 def _optional_fetch_with_requests(url: str, timeout: float, user_agent: str, max_bytes: int) -> Optional[Dict[str, Any]]:
     try:
         import requests
@@ -190,11 +203,13 @@ def _optional_fetch_with_requests(url: str, timeout: float, user_agent: str, max
         "fetcher": "requests",
     }
 
+
 def _best_fetch(url: str, timeout: float, user_agent: str, max_bytes: int) -> Dict[str, Any]:
     data = _optional_fetch_with_requests(url, timeout, user_agent, max_bytes)
     if data is not None:
         return data
     return _fetch_with_stdlib(url, timeout, user_agent, max_bytes)
+
 
 # -------------------------------
 # Parsing (flexible)
@@ -205,6 +220,7 @@ def _try_bs4_parse(html: str) -> Optional[Any]:
         return BeautifulSoup(html or "", "html.parser")
     except Exception:
         return None
+
 
 def _extract_title(html: str, soup: Any = None) -> str:
     if soup is not None:
@@ -219,6 +235,7 @@ def _extract_title(html: str, soup: Any = None) -> str:
     title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
     return _truncate(title, 200)
 
+
 def _has_meta_description(html: str, soup: Any = None) -> bool:
     if soup is not None:
         try:
@@ -227,6 +244,7 @@ def _has_meta_description(html: str, soup: Any = None) -> bool:
         except Exception:
             pass
     return bool(re.search(r'<meta[^>]+name=["\']description["\'][^>]*content=', html or "", flags=re.I))
+
 
 def _canonical_url(html: str, base_url: str, soup: Any = None) -> str:
     if soup is not None:
@@ -241,6 +259,7 @@ def _canonical_url(html: str, base_url: str, soup: Any = None) -> str:
         return urljoin(base_url, m.group(1))
     return ""
 
+
 def _count_h1(html: str, soup: Any = None) -> int:
     if soup is not None:
         try:
@@ -248,6 +267,7 @@ def _count_h1(html: str, soup: Any = None) -> int:
         except Exception:
             pass
     return len(re.findall(r"<h1\b", html or "", flags=re.I))
+
 
 def _image_alt_stats(html: str, soup: Any = None) -> Tuple[int, int]:
     if soup is not None:
@@ -263,8 +283,10 @@ def _image_alt_stats(html: str, soup: Any = None) -> Tuple[int, int]:
     missing = sum(1 for tag in imgs if not re.search(r'\balt\s*=\s*["\'].*?["\']', tag, flags=re.I | re.S))
     return total, missing
 
+
 def _link_counts(html: str, base_url: str, soup: Any = None) -> Dict[str, int]:
     base_host = _hostname(base_url)
+
     def classify(href: str) -> Optional[bool]:
         href = (href or "").strip()
         if not href or href.startswith(("#", "mailto:", "javascript:")):
@@ -274,6 +296,7 @@ def _link_counts(html: str, base_url: str, soup: Any = None) -> Dict[str, int]:
         if not host:
             return None
         return host == base_host
+
     internal = external = 0
     if soup is not None:
         try:
@@ -298,6 +321,7 @@ def _link_counts(html: str, base_url: str, soup: Any = None) -> Dict[str, int]:
             external += 1
     return {"internal": internal, "external": external, "total": internal + external}
 
+
 def _resource_counts(html: str, soup: Any = None) -> Dict[str, int]:
     scripts = styles = 0
     if soup is not None:
@@ -311,6 +335,7 @@ def _resource_counts(html: str, soup: Any = None) -> Dict[str, int]:
     styles = len(re.findall(r'rel\s*=\s*["\']stylesheet["\']', html or "", flags=re.I))
     return {"scripts": scripts, "styles": styles}
 
+
 # ============================================================
 # PDF HELPERS (SAFE — does not affect run() output)
 # ============================================================
@@ -322,7 +347,7 @@ def runner_result_to_audit_data(
     audit_date: Optional[str] = None,
     website_name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Converts runner result to format expected by pdf_report.py"""
+    """Converts runner result to format expected by pdf_report.generate_audit_pdf()"""
     return {
         "audited_url": runner_result.get("audited_url", "N/A"),
         "overall_score": runner_result.get("overall_score", 0),
@@ -331,6 +356,7 @@ def runner_result_to_audit_data(
         "chart_data": runner_result.get("chart_data", []),
         "dynamic": runner_result.get("dynamic", {"cards": [], "kv": []}),
     }
+
 
 def generate_pdf_from_runner_result(
     runner_result: Dict[str, Any],
@@ -344,26 +370,33 @@ def generate_pdf_from_runner_result(
 ) -> str:
     """
     SAFE PDF generation helper — does not affect run() output.
-    Uses positional arguments only (no keyword arguments) to avoid TypeError.
+    It adapts runner_result to the format expected by pdf_report.generate_audit_pdf(),
+    writes the produced PDF bytes to `output_path`, and returns that path.
     """
     audit_data = runner_result_to_audit_data(runner_result)
 
     try:
         from app.audit.pdf_report import generate_audit_pdf
-        # FIXED: positional arguments only (matches your pdf_report.py signature)
-        # Order: audit_data, output_path, logo_path, report_title, ...
-        return generate_audit_pdf(
-            audit_data,
-            output_path,
-            logo_path,
-            report_title,
-        )
-    except ImportError as e:
-        logger.error("PDF generation failed: missing dependencies (reportlab or weasyprint)")
-        raise RuntimeError("PDF dependencies missing. Install reportlab or weasyprint.") from e
+    except Exception as e:
+        logger.error("PDF generation failed: missing or invalid pdf_report dependency")
+        raise RuntimeError("PDF dependencies missing. Install reportlab and ensure app.audit.pdf_report is importable.") from e
+
+    try:
+        pdf_bytes = generate_audit_pdf(audit_data)
+
+        # Ensure directory exists if a directory is part of output_path
+        out_dir = os.path.dirname(os.path.abspath(output_path))
+        if out_dir and not os.path.exists(out_dir):
+            os.makedirs(out_dir, exist_ok=True)
+
+        with open(output_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        return output_path
     except Exception as e:
         logger.exception("PDF generation error")
         raise RuntimeError(f"PDF generation failed: {str(e)}") from e
+
 
 # -------------------------------
 # Runner Core (unchanged IO)
