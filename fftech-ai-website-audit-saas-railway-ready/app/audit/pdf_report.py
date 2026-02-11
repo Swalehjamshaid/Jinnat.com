@@ -37,9 +37,6 @@ from reportlab.pdfgen import canvas
 from reportlab.graphics.shapes import Drawing, String, Line, Circle, Wedge, Rect
 from reportlab.graphics.charts.piecharts import Pie
 from reportlab.graphics.charts.barcharts import VerticalBarChart
-from reportlab.graphics.charts.lineplots import LinePlot
-from reportlab.graphics.widgets.markers import makeMarker
-
 
 # ============================================================================
 # Fonts: register sharp, professional sans fonts with sensible fallbacks
@@ -67,7 +64,6 @@ def _register_fonts():
 
 _register_fonts()
 
-
 # ============================================================================
 # Styles
 # ============================================================================
@@ -90,7 +86,6 @@ def get_styles():
     s.add(ParagraphStyle(name='Footer', fontName=BASE_FONT, fontSize=8, textColor=HexColor('#6b7280'), alignment=TA_CENTER))
     return s
 
-
 # ============================================================================
 # Utilities & helpers
 # ============================================================================
@@ -103,19 +98,16 @@ def _safe_get(data: Dict, *keys: str, default: Any = "N/A") -> Any:
             return default
     return default if cur in (None, "", {}) else cur
 
-
 def _yes_no(v: Any) -> str:
     if isinstance(v, bool): return "Yes" if v else "No"
     s = str(v).strip().lower()
-    if s in ("yes", "y", "true", "1"): return "Yes"
-    if s in ("no", "n", "false", "0"): return "No"
+    if s in ("yes","y","true","1"): return "Yes"
+    if s in ("no","n","false","0"): return "No"
     return "N/A"
-
 
 def _fmt(value: Any, suffix: str = "") -> str:
     if value in (None, "", {}, []): return "N/A"
     return f"{value}{suffix}"
-
 
 def _letter_grade(score: Optional[float]) -> str:
     try: s = float(score or 0)
@@ -132,11 +124,9 @@ def _letter_grade(score: Optional[float]) -> str:
     if s >= 60: return "D"
     return "F"
 
-
 def _risk_to_value(risk: str) -> float:
     r = (risk or "").strip().lower()
-    return {"low": 0.2, "medium": 0.5, "high": 0.75, "critical": 0.95}.get(r, 0.5)
-
+    return {"low":0.2, "medium":0.5, "high":0.75, "critical":0.95}.get(r, 0.5)
 
 def _parse_time_to_seconds(val: Any) -> Optional[float]:
     """Accepts floats, '120 ms', '1.8 s', '1.8s', '120ms'… Returns seconds."""
@@ -151,11 +141,9 @@ def _parse_time_to_seconds(val: Any) -> Optional[float]:
     except Exception:
         return None
 
-
 def _parse_float(val: Any) -> Optional[float]:
     try: return float(val)
     except Exception: return None
-
 
 def _status_from_value(metric: str, value: Any) -> str:
     """
@@ -163,14 +151,14 @@ def _status_from_value(metric: str, value: Any) -> str:
     """
     m = (metric or "").strip().lower()
 
-    if m in ("fcp", "first contentful paint"):
+    if m in ("fcp","first contentful paint"):
         t = _parse_time_to_seconds(value)
         if t is None: return "N/A"
         if t < 1.8: return "Good"
         if t <= 3.0: return "Needs Improvement"
         return "Poor"
 
-    if m in ("lcp", "largest contentful paint"):
+    if m in ("lcp","largest contentful paint"):
         t = _parse_time_to_seconds(value)
         if t is None: return "N/A"
         if t < 2.5: return "Good"
@@ -184,21 +172,21 @@ def _status_from_value(metric: str, value: Any) -> str:
         if t <= 5.8: return "Needs Improvement"
         return "Poor"
 
-    if m in ("tbt", "total blocking time"):
+    if m in ("tbt","total blocking time"):
         t = _parse_time_to_seconds(value)
         if t is None: return "N/A"
         if t < 0.2: return "Good"
         if t <= 0.6: return "Needs Improvement"
         return "Poor"
 
-    if m in ("tti", "time to interactive"):
+    if m in ("tti","time to interactive"):
         t = _parse_time_to_seconds(value)
         if t is None: return "N/A"
         if t < 3.8: return "Good"
         if t <= 7.3: return "Needs Improvement"
         return "Poor"
 
-    if m in ("cls", "cumulative layout shift"):
+    if m in ("cls","cumulative layout shift"):
         f = _parse_float(value)
         if f is None: return "N/A"
         if f < 0.10: return "Good"
@@ -239,7 +227,7 @@ def _status_from_value(metric: str, value: Any) -> str:
     if m in ("caching enabled",):
         return "Good" if _yes_no(value) == "Yes" else "Poor"
 
-    if m in ("compression", "gzip/brotli compression"):
+    if m in ("compression","gzip/brotli compression"):
         s = str(value).lower()
         if "brotli" in s or "br" in s: return "Good"
         if "gzip" in s or "gz" in s: return "Needs Improvement"
@@ -256,12 +244,10 @@ def _status_from_value(metric: str, value: Any) -> str:
 
     return "N/A"
 
-
 def _autogen_report_id() -> str:
     ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     rn = random.randint(1000, 9999)
     return f"RPT-{ts}-{rn}"
-
 
 def _filter_rows(rows: List[List[Any]], hide: bool) -> List[List[Any]]:
     """
@@ -272,15 +258,12 @@ def _filter_rows(rows: List[List[Any]], hide: bool) -> List[List[Any]]:
     out = []
     for r in rows:
         if not r: continue
-        if isinstance(r[0], str) and r[0].lower() in (
-            "metric", "header", "issue", "element", "device", "", "category"
-        ):
+        if isinstance(r[0], str) and r[0].lower() in ("metric","header","issue","element","device","","category"):
             out.append(r); continue
         vals = r[1:] if len(r) > 1 else []
         if any(str(v).strip().upper() != "N/A" for v in vals):
             out.append(r)
     return out
-
 
 def _sec_to_hms(seconds: Any) -> str:
     try:
@@ -293,7 +276,6 @@ def _sec_to_hms(seconds: Any) -> str:
     if h: return f"{h:d}h {m:02d}m {sec:02d}s"
     return f"{m:d}m {sec:02d}s"
 
-
 # ============================================================================
 # Flowables & Charts
 # ============================================================================
@@ -303,7 +285,6 @@ class ScoreBar(Flowable):
         try: self.score = max(0, min(100, float(score or 0)))
         except: self.score = 0.0
         self.width, self.height, self.label = width, height, label
-
     def draw(self):
         c = self.canv
         c.setFillColor(HexColor('#e5e7eb')); c.rect(0, 0, self.width, self.height, fill=1)
@@ -317,7 +298,6 @@ class ScoreBar(Flowable):
         c.setFillColor(colors.white if self.score < 30 else colors.black)
         c.setFont(BASE_FONT_BOLD, 12)
         c.drawCentredString(self.width / 2, self.height / 2 - 5, f"{self.label} {int(round(self.score))}%")
-
 
 def _issue_distribution_pie(issues: List[Dict[str, Any]]) -> Drawing:
     buckets = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
@@ -338,7 +318,6 @@ def _issue_distribution_pie(issues: List[Dict[str, Any]]) -> Drawing:
     d.add(p); d.add(String(0, 150, "Issue Distribution", fontName=BASE_FONT_BOLD, fontSize=10))
     return d
 
-
 def _risk_meter(risk_level: str) -> Drawing:
     w, h = 220, 140
     d = Drawing(w, h)
@@ -358,7 +337,6 @@ def _risk_meter(risk_level: str) -> Drawing:
     d.add(String(60, 120, "Risk Meter", fontName=BASE_FONT_BOLD, fontSize=10))
     d.add(String(80, 105, f"{risk_level or 'Medium'}", fontName=BASE_FONT, fontSize=10))
     return d
-
 
 def _headers_coverage_bar(headers: Dict[str, bool]) -> Drawing:
     items = [
@@ -381,7 +359,6 @@ def _headers_coverage_bar(headers: Dict[str, bool]) -> Drawing:
         else:
             d.add(Rect(x0, y, bar_w * 0.35, bar_h, strokeColor=None, fillColor=HexColor('#dc2626')))
     return d
-
 
 def _grouped_perf_bars(values: Dict[str, Any]) -> Drawing:
     """
@@ -429,7 +406,6 @@ def _grouped_perf_bars(values: Dict[str, Any]) -> Drawing:
     d.add(String(0, 160, "Core Web Vitals — Current vs Ideal", fontName=BASE_FONT_BOLD, fontSize=10))
     return d
 
-
 def _pass_fail_donut(passed: int, failed: int, title: str) -> Drawing:
     d = Drawing(220, 160)
     p = Pie(); p.x = 40; p.y = 20; p.width = 120; p.height = 120
@@ -438,7 +414,6 @@ def _pass_fail_donut(passed: int, failed: int, title: str) -> Drawing:
     p.slices[0].fillColor = HexColor('#16a34a'); p.slices[1].fillColor = HexColor('#dc2626')
     d.add(p); d.add(String(0, 145, title, fontName=BASE_FONT_BOLD, fontSize=10))
     return d
-
 
 def _risk_heat_map(issues: List[Dict[str, Any]]) -> Table:
     severities = ["Low", "Medium", "High", "Critical"]
@@ -467,7 +442,6 @@ def _risk_heat_map(issues: List[Dict[str, Any]]) -> Table:
     ]))
     return t
 
-
 # ----- Generic charts (traffic/reach) -----
 def _series_colors():
     # Distinct, accessible palette for up to 6 series
@@ -479,7 +453,6 @@ def _series_colors():
         HexColor('#8b5cf6'),  # violet
         HexColor('#06b6d4'),  # cyan
     ]
-
 
 def _pie_from_mapping(title: str, mapping: Dict[str, Any]) -> Drawing:
     labels = []
@@ -505,7 +478,6 @@ def _pie_from_mapping(title: str, mapping: Dict[str, Any]) -> Drawing:
     d.add(p); d.add(String(0, 165, title, fontName=BASE_FONT_BOLD, fontSize=10))
     return d
 
-
 def _bar_from_categories(title: str, categories: List[str], values: List[Any], width: int = 380, height: int = 180) -> Drawing:
     vals = []
     for v in values:
@@ -528,7 +500,6 @@ def _bar_from_categories(title: str, categories: List[str], values: List[Any], w
     d.add(chart)
     d.add(String(0, height+35, title, fontName=BASE_FONT_BOLD, fontSize=10))
     return d
-
 
 def _multiseries_bar(title: str, categories: List[str], series: Dict[str, List[Any]], width: int = 380, height: int = 180) -> Drawing:
     # series: name -> list of values aligned to categories
@@ -564,7 +535,6 @@ def _multiseries_bar(title: str, categories: List[str], series: Dict[str, List[A
     d.add(chart)
     return d
 
-
 # ============================================================================
 # Page footer with page numbers
 # ============================================================================
@@ -572,11 +542,9 @@ class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
         self._saved_page_states = []
         super().__init__(*args, **kwargs)
-
     def showPage(self):
         self._saved_page_states.append(dict(self.__dict__))
         super().showPage()
-
     def save(self):
         page_count = len(self._saved_page_states)
         for state in self._saved_page_states:
@@ -584,12 +552,10 @@ class NumberedCanvas(canvas.Canvas):
             self.draw_page_number(page_count)
             super().showPage()
         super().save()
-
     def draw_page_number(self, page_count):
         self.setFont(BASE_FONT, 8)
         self.setFillColor(HexColor('#6b7280'))
         self.drawCentredString(A4[0] / 2.0, 10 * mm, f"Page {self._pageNumber} of {page_count}")
-
 
 # ============================================================================
 # Pages
@@ -636,7 +602,6 @@ def _page_cover(audit: Dict, styles) -> List[Any]:
     story.append(Paragraph("Confidential – For Client Use Only", styles['Small']))
     story.append(PageBreak()); return story
 
-
 def _page_summary(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("1. Executive Summary", styles['H1'])]
     overall = _safe_get(audit, "overall_score", 0)
@@ -676,7 +641,6 @@ def _page_summary(audit: Dict, styles) -> List[Any]:
     charts = [[_issue_distribution_pie(issues), _risk_meter(risk)]]
     ct = Table(charts, colWidths=[95 * mm, 85 * mm]); ct.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP')]))
     story.append(Spacer(1, 8)); story.append(ct); story.append(PageBreak()); return story
-
 
 def _page_competitor_comparison(audit: Dict, styles) -> List[Any]:
     comps = _safe_get(audit, "competitors", default=[])
@@ -741,7 +705,7 @@ def _page_competitor_comparison(audit: Dict, styles) -> List[Any]:
     story.append(tbl)
     story.append(Spacer(1, 8))
 
-    # Charts: Headline Scores (0-100)
+    # Charts: Headline Scores (0–100)
     categories = ["Overall", "Performance", "SEO", "Security", "Accessibility"]
     your_scores_series = [
         float(your_scores["overall"] or 0),
@@ -762,11 +726,7 @@ def _page_competitor_comparison(audit: Dict, styles) -> List[Any]:
             float(s.get("accessibility") or 0),
         ])
         series_names.append(c.get("name") or c.get("url") or "Competitor")
-
-    # grouped bars for scores
-    d_scores = Drawing(400, 230)
-    d_scores.add(_multiseries_bar("Headline Scores (0–100)", categories, {name: data for name, data in zip(series_names, series_data)}))
-    story.append(d_scores)
+    story.append(_multiseries_bar("Headline Scores (0–100)", categories, {name: data for name, data in zip(series_names, series_data)}))
 
     # Charts: CWV in seconds (FCP/LCP/TBT/TTI)
     cwv_cats = ["FCP", "LCP", "TBT", "TTI"]
@@ -804,7 +764,6 @@ def _page_competitor_comparison(audit: Dict, styles) -> List[Any]:
     story.append(PageBreak())
     return story
 
-
 def _page_overview(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("3. Website Overview", styles['H1'])]
     ov = _safe_get(audit, "website_overview", default={})
@@ -835,7 +794,6 @@ def _page_overview(audit: Dict, styles) -> List[Any]:
     story.append(Spacer(1, 8))
     story.append(_headers_coverage_bar(headers))
     story.append(PageBreak()); return story
-
 
 def _page_performance(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("4. Performance Audit (Core Web Vitals)", styles['H1'])]
@@ -906,7 +864,6 @@ def _page_performance(audit: Dict, styles) -> List[Any]:
     perf_score = _safe_get(audit, "breakdown", "performance", "score", 0)
     story.append(Spacer(1, 6)); story.append(ScoreBar(perf_score, label="Performance Score"))
     story.append(PageBreak()); return story
-
 
 def _page_traffic(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("5. Traffic & Acquisition", styles['H1'])]
@@ -981,7 +938,6 @@ def _page_traffic(audit: Dict, styles) -> List[Any]:
         story.append(tp_tbl)
 
     story.append(PageBreak()); return story
-
 
 def _page_google_reach(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("6. Google Search Reach (GSC + Discover)", styles['H1'])]
@@ -1061,7 +1017,6 @@ def _page_google_reach(audit: Dict, styles) -> List[Any]:
 
     story.append(PageBreak()); return story
 
-
 def _page_security(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("7. Security Audit (OWASP Based)", styles['H1'])]
     sec = _safe_get(audit, "security_details", default={})
@@ -1127,7 +1082,6 @@ def _page_security(audit: Dict, styles) -> List[Any]:
     story.append(Spacer(1, 6)); story.append(Paragraph("Risk Heat Map", styles['H2'])); story.append(_risk_heat_map(issues))
     story.append(PageBreak()); return story
 
-
 def _page_seo(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("8. SEO Audit (Technical + On Page)", styles['H1'])]
     seo = _safe_get(audit, "seo_details", default={})
@@ -1181,7 +1135,6 @@ def _page_seo(audit: Dict, styles) -> List[Any]:
     story.append(Spacer(1, 6)); story.append(ScoreBar(score, label="SEO Score"))
     story.append(PageBreak()); return story
 
-
 def _page_accessibility(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("9. Accessibility Audit (WCAG 2.1)", styles['H1'])]
     acc = _safe_get(audit, "accessibility_details", default={})
@@ -1211,7 +1164,6 @@ def _page_accessibility(audit: Dict, styles) -> List[Any]:
     story.append(Spacer(1, 6)); story.append(ScoreBar(score, label=f"Accessibility Score — Compliance: {_safe_get(acc, 'compliance_level', 'N/A')}"))
     story.append(PageBreak()); return story
 
-
 def _page_mobile(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("10. Mobile Responsiveness Audit", styles['H1'])]
     mob = _safe_get(audit, "mobile_details", default={})
@@ -1235,7 +1187,6 @@ def _page_mobile(audit: Dict, styles) -> List[Any]:
     device_pass = sum(1 for k in ("mobile", "tablet", "desktop") if comp.get(k))
     story.append(Spacer(1, 6)); story.append(_pass_fail_donut(device_pass, 3 - device_pass, "Device Compatibility"))
     story.append(PageBreak()); return story
-
 
 def _page_ux(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("11. UX / UI Audit (Nielsen Heuristics)", styles['H1'])]
@@ -1262,7 +1213,6 @@ def _page_ux(audit: Dict, styles) -> List[Any]:
     story.append(Spacer(1, 6)); story.append(ScoreBar(ux_score, label="UX Score"))
     story.append(PageBreak()); return story
 
-
 def _page_compliance(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("12. Compliance & Privacy", styles['H1'])]
     cp = _safe_get(audit, "compliance_privacy", default={})
@@ -1282,7 +1232,6 @@ def _page_compliance(audit: Dict, styles) -> List[Any]:
     ]))
     story.append(tbl); story.append(PageBreak()); return story
 
-
 def _page_detailed_issues(audit: Dict, styles) -> List[Any]:
     story = [Paragraph("13. Detailed Issue Breakdown", styles['H1'])]
     issues = _safe_get(audit, "issues", default=[])
@@ -1290,7 +1239,8 @@ def _page_detailed_issues(audit: Dict, styles) -> List[Any]:
         story.append(Paragraph("No issues were provided for breakdown.", styles['Body']))
         return story
     for i, it in enumerate(issues, 1):
-        story.append(Paragraph(f"Issue {i}: {it.get('issue_name','Issue')}", styles['H2'])))
+        # CORRECTED: removed stray extra ')'
+        story.append(Paragraph(f"Issue {i}: {it.get('issue_name','Issue')}", styles['H2']))
         rows = [
             ["Category", _fmt(it.get("category"))],
             ["Severity", _fmt(it.get("severity"))],
@@ -1319,7 +1269,6 @@ def _page_detailed_issues(audit: Dict, styles) -> List[Any]:
                 story.append(Paragraph("Screenshot could not be loaded.", styles['Small']))
         story.append(Spacer(1, 8))
     return story
-
 
 # ============================================================================
 # Master Generator (I/O unchanged)
@@ -1352,7 +1301,6 @@ def generate_audit_pdf(audit: Dict[str, Any]) -> bytes:
     # Build with numbered canvas
     doc.build(story, canvasmaker=NumberedCanvas)
     pdf_bytes = buffer.getvalue(); buffer.close(); return pdf_bytes
-
 
 # ============================================================================
 # Optional local demo (keeps I/O unchanged; safe to remove)
