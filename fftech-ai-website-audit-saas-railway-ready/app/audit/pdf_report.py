@@ -97,9 +97,10 @@ def fetch_lighthouse_data(url: str, api_key: str = None) -> Dict[str, Any]:
         data = resp.json()
         cats = data.get("lighthouseResult", {}).get("categories", {})
         audits = data.get("lighthouseResult", {}).get("audits", {}) or {}
+        # CWV (if available)
         lcp = audits.get("largest-contentful-paint", {}).get("numericValue")
         cls = audits.get("cumulative-layout-shift", {}).get("numericValue")
-        inp = audits.get("interactive", {}).get("numericValue")
+        inp = audits.get("interactive", {}).get("numericValue")  # proxy for interactivity
         return {
             "performance": cats.get("performance", {}).get("score", 0) * 100,
             "seo": cats.get("seo", {}).get("score", 0) * 100,
@@ -141,7 +142,7 @@ def run_basic_vulnerability_scan(url: str) -> List[str]:
         if imgs:
             missing_alt = sum(1 for im in imgs if not im.get("alt"))
             if missing_alt > 0:
-                findings.append(f"{missing_alt} image(s) missing alt text)")
+                findings.append(f"{missing_alt} image(s) missing alt text")
         # SEO quick checks:
         title_tag = soup.find("title")
         if not title_tag or not title_tag.get_text(strip=True):
@@ -393,15 +394,10 @@ def audit_live_site(url: str, link_sample: int = 12) -> Dict[str, Any]:
 
 
 # =========================================================
-# SCORING
+# SCORING (kept for compatibility if caller passes scores)
 # =========================================================
 
 def calculate_scores(audit_data: Dict[str, Any]):
-    """
-    Overall score is computed using WEIGHTAGE keys only (backward compatible).
-    We also surface extra categories (traffic, mobile) in the Executive Summary
-    if present in audit_data (but they don't affect overall unless added).
-    """
     scores: Dict[str, float] = {}
     for k in WEIGHTAGE:
         val = float(audit_data.get(k, 0))
@@ -500,7 +496,7 @@ def radar_chart(categories: List[str], values: List[float], title: str = "") -> 
 def heatmap(matrix: List[List[float]], xlabels: List[str], ylabels: List[str], title: str = "") -> io.BytesIO:
     data = np.array(matrix) if matrix else np.zeros((1, 1))
     fig, ax = plt.subplots(figsize=(6.4, 3.8))
-    c = ax.imshow(data, cmap("RdYlGn"), vmin=0, vmax=100, aspect="auto")
+    c = ax.imshow(data, cmap="RdYlGn", vmin=0, vmax=100, aspect="auto")
     ax.set_xticks(range(len(xlabels)))
     ax.set_yticks(range(len(ylabels)))
     ax.set_xticklabels(xlabels, rotation=35, ha="right")
@@ -718,7 +714,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     ]))
     elements.append(table)
 
-    # Live highlights to ensure filled attributes
+    # Live highlights (so Executive Summary is never empty)
     if live.get("ok"):
         elements.append(Spacer(1, 0.10 * inch))
         hi_rows = [
@@ -989,7 +985,7 @@ def _kpi_scorecard_table(rows: List[Dict[str, Any]], show_weight: bool = False, 
             status = (data[r_i][2] or "").strip().lower()
             if status.startswith("good"):
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_OK))
-            elif status.startswith("warn)
+            elif status.startswith("warn"):
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_WARN))
             else:
                 styles.append(("TEXTCOLOR", (2, r_i), (2, r_i), PRIMARY_BAD))
@@ -1038,7 +1034,7 @@ def _build_performance_kpis_table(audit_data: Dict[str, Any], live: Dict[str, An
     add("Stylesheets (count)", live.get("css_count", 0), lambda v: isinstance(v, (int, float)) and v <= 15)
     add("Images (count)", live.get("img_count", 0), lambda v: isinstance(v, (int, float)) and v <= 120)
 
-    # Extra provided metrics
+    # Add any extra provided metrics (without duplication of names)
     for k, v in perf.items():
         label = k.replace("_", " ").title()
         if all(label != r["name"] for r in rows):
