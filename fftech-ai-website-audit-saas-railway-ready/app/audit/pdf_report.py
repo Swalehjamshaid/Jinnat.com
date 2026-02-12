@@ -39,14 +39,15 @@ import numpy as np
 from pptx import Presentation
 from pptx.util import Inches
 
+# New: safe escaping for Paragraph inputs
+import html
+from xml.sax.saxutils import escape as xml_escape
+
 
 # =========================================================
 # CONFIGURATION
 # =========================================================
 
-# NOTE: We preserve the original WEIGHTAGE keys to avoid breaking callers.
-# Additional categories like "traffic" and "mobile" are supported for display
-# but are not included in the weighted overall score unless you add them here.
 WEIGHTAGE = {
     "performance": 0.30,
     "security": 0.25,
@@ -394,7 +395,7 @@ def audit_live_site(url: str, link_sample: int = 12) -> Dict[str, Any]:
 
 
 # =========================================================
-# SCORING (kept for compatibility if caller passes scores)
+# SCORING
 # =========================================================
 
 def calculate_scores(audit_data: Dict[str, Any]):
@@ -553,6 +554,33 @@ def generate_executive_ppt(audit_data: Dict[str, Any], file_path: str):
 
 
 # =========================================================
+# PARAGRAPH-SAFE HELPERS  🔒
+# =========================================================
+
+def rl_safe(text: Any) -> str:
+    """
+    Make text safe for ReportLab Paragraph:
+    - Unescape existing HTML entities (to avoid double-escaping),
+    - Strip any tags (remove <...> fragments),
+    - Escape &, <, > again for Paragraph safety.
+    """
+    s = "" if text is None else str(text)
+    # Convert &amp; &lt; &gt; etc. back to chars first
+    s = html.unescape(s)
+    # Strip any residual tags (defensive)
+    s = re.sub(r"<[^>]+>", "", s)
+    # Escape reserved for ReportLab parser
+    s = xml_escape(s)  # escapes &, <, >
+    return s
+
+def P(text: Any, style: ParagraphStyle, *, bullet: Optional[str] = None) -> Paragraph:
+    safe = rl_safe(text)
+    if bullet:
+        return Paragraph(safe, style, bulletText=bullet)
+    return Paragraph(safe, style)
+
+
+# =========================================================
 # DOC WITH CLICKABLE TOC + HEADER/FOOTER
 # =========================================================
 
@@ -562,8 +590,8 @@ class _DocWithTOC(SimpleDocTemplate):
         super().__init__(*args, **kwargs)
 
     def afterFlowable(self, flowable):
-        from reportlab.platypus import Paragraph
-        if isinstance(flowable, Paragraph):
+        from reportlab.platypus import Paragraph as RLParagraph
+        if isinstance(flowable, RLParagraph):
             style_name = getattr(flowable.style, "name", "")
             if style_name in self._heading_styles:
                 level = self._heading_styles[style_name]
@@ -599,7 +627,7 @@ def _draw_header_footer(c: canvas.Canvas, doc: SimpleDocTemplate, url: str, bran
 
 
 # =========================================================
-# MAIN GENERATOR (UNCHANGED SIGNATURE/RETURN)
+# MAIN GENERATOR
 # =========================================================
 
 def generate_audit_pdf(audit_data: Dict[str, Any],
@@ -631,6 +659,8 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         author=branding.get("company_name", "FF Tech")
     )
     styles = getSampleStyleSheet()
+    # Ensure we have a Caption style
+    styles.add(ParagraphStyle(name="Caption", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#6F6F6F")))
     styles.add(ParagraphStyle(name="KPIHeader", parent=styles["Heading2"],
                               textColor=colors.HexColor(branding.get("primary_color", "#2c3e50"))))
     styles.add(ParagraphStyle(name="Small", parent=styles["Normal"], fontSize=9))
@@ -645,14 +675,14 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         except Exception:
             pass
 
-    elements.append(Paragraph(branding["company_name"], styles["Title"]))
+    elements.append(P(branding["company_name"], styles["Title"]))
     elements.append(Spacer(1, 0.12 * inch))
-    elements.append(Paragraph("FF Tech Web Audit Report", styles["Heading1"]))
+    elements.append(P("FF Tech Web Audit Report", styles["Heading1"]))
     elements.append(Spacer(1, 0.06 * inch))
-    elements.append(Paragraph(f"Website: {url}", styles["Normal"]))
-    elements.append(Paragraph(f"Domain: {_safe_domain(url)}", styles["Small"]))
-    elements.append(Paragraph(f"Report Time (UTC): {dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}", styles["Normal"]))
-    elements.append(Paragraph(f"Audit/Tool Version: {tool_version}", styles["Normal"]))
+    elements.append(P(f"Website: {url}", styles["Normal"]))
+    elements.append(P(f"Domain: {_safe_domain(url)}", styles["Small"]))
+    elements.append(P(f"Report Time (UTC): {dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}", styles["Normal"]))
+    elements.append(P(f"Audit/Tool Version: {tool_version}", styles["Normal"]))
     elements.append(Spacer(1, 0.12 * inch))
 
     dashboard_link = audit_data.get("dashboard_url") or url
@@ -664,8 +694,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
             d = Drawing(1.4 * inch, 1.4 * inch, transform=[1.4 * inch / w, 0, 0, 1.4 * inch / h, 0, 0])
             d.add(code)
             elements.append(d)
-            if "Caption" in styles:
-                elements.append(Paragraph("Scan to view the online audit/dashboard", styles["Caption"]))
+            elements.append(P("Scan to view the online audit/dashboard", styles["Caption"]))
         except Exception:
             pass
 
@@ -677,15 +706,15 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         ParagraphStyle(fontName="Helvetica-Bold", name="TOCHeading1", fontSize=12, leftIndent=20, firstLineIndent=-10, spaceBefore=6),
         ParagraphStyle(fontName="Helvetica", name="TOCHeading2", fontSize=10, leftIndent=36, firstLineIndent=-10, spaceBefore=2),
     ]
-    elements.append(Paragraph("Table of Contents", styles["Heading1"]))
+    elements.append(P("Table of Contents", styles["Heading1"]))
     elements.append(Spacer(1, 0.08 * inch))
     elements.append(toc)
     elements.append(PageBreak())
 
     # -------------------- 2) EXECUTIVE SUMMARY --------------------
-    elements.append(Paragraph("Executive Summary", styles["Heading1"]))
+    elements.append(P("Executive Summary", styles["Heading1"]))
     elements.append(Spacer(1, 0.06 * inch))
-    elements.append(Paragraph(f"Overall Website Health Score: <b>{score_data['overall_score']}</b>/100", styles["Normal"]))
+    elements.append(P(f"Overall Website Health Score: {score_data['overall_score']}/100", styles["Normal"]))
 
     cat_rows = [["Category", "Score", "Status"]]
     for k in WEIGHTAGE:
@@ -693,7 +722,6 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         status, _ = score_to_status(s)
         cat_rows.append([k.capitalize(), f"{s:.0f}", status])
 
-    # Optional extra categories if caller provided
     if "traffic_score" in audit_data:
         ts = float(audit_data["traffic_score"]) if audit_data["traffic_score"] is not None else 0
         cat_rows.append(["Traffic & Engagement", f"{ts:.0f}", score_to_status(ts)[0]])
@@ -701,7 +729,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         ms = float(audit_data["mobile"]) if audit_data["mobile"] is not None else 0
         cat_rows.append(["Mobile Responsiveness", f"{ms:.0f}", score_to_status(ms)[0]])
 
-    table = Table(cat_rows, colWidths=[3.1 * inch, 1.0 * inch, 1.6 * inch])
+    table = Table(cat_rows, colWidths=[3.1 * inch, 1.0 * inch, 1.6 * inch], repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F2F4F8")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -714,7 +742,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     ]))
     elements.append(table)
 
-    # Live highlights (so Executive Summary is never empty)
+    # Live highlights
     if live.get("ok"):
         elements.append(Spacer(1, 0.10 * inch))
         hi_rows = [
@@ -728,21 +756,21 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         ]
         elements.append(_mini_table(["Highlight", "Value"], hi_rows))
 
-    # Trend summary chart if history_scores provided (last 6–12 months)
+    # Trend summary chart
     if history_scores:
         img = line_chart([(str(i + 1), float(v)) for i, v in enumerate(history_scores)], "Overall Score Trend", "Period", "Score")
         elements.append(Image(img, width=5.8 * inch, height=3.2 * inch))
 
-    # AI recommendations summary
+    # AI recommendations summary (safe bullets)
     elements.append(Spacer(1, 0.12 * inch))
-    elements.append(Paragraph("AI-Generated Recommendations (Summary)", styles["KPIHeader"]))
+    elements.append(P("AI-Generated Recommendations (Summary)", styles["KPIHeader"]))
     for rec in _collect_ai_recommendations(live, score_data["category_scores"]):
-        elements.append(Paragraph(f"- {rec}", styles["Normal"]))
+        elements.append(P(rec, styles["Normal"], bullet="•"))
 
     elements.append(PageBreak())
 
     # -------------------- 4) TRAFFIC & GOOGLE SEARCH METRICS --------------------
-    elements.append(Paragraph("Traffic & Google Search Metrics", styles["Heading1"]))
+    elements.append(P("Traffic & Google Search Metrics", styles["Heading1"]))
     traffic = audit_data.get("traffic") or {}
     gsc = audit_data.get("gsc") or {}
     if traffic:
@@ -777,7 +805,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
         ]: _ga(label, key)
         elements.append(_mini_table(["Metric", "Value"], ga_rows))
     else:
-        elements.append(Paragraph("Google Analytics/GA4 data not available (no credentials/data provided).", styles["Small"]))
+        elements.append(P("Google Analytics/GA4 data not available (no credentials/data provided).", styles["Small"]))
 
     if gsc:
         gsc_rows = []
@@ -793,35 +821,35 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
             except Exception:
                 pass
     else:
-        elements.append(Paragraph("Google Search Console data not available (no credentials/data provided).", styles["Small"]))
+        elements.append(P("Google Search Console data not available (no credentials/data provided).", styles["Small"]))
 
     elements.append(PageBreak())
 
-    # -------------------- 5) SEO KPIs (~40)
-    elements.append(Paragraph("SEO KPIs", styles["Heading1"]))
+    # -------------------- 5) SEO KPIs
+    elements.append(P("SEO KPIs", styles["Heading1"]))
     seo_rows = _build_seo_kpis_table(url, audit_data, live)
     elements.append(_kpi_scorecard_table(seo_rows))
     elements.append(PageBreak())
 
-    # -------------------- 6) PERFORMANCE KPIs (~20)
-    elements.append(Paragraph("Performance KPIs", styles["Heading1"]))
+    # -------------------- 6) PERFORMANCE KPIs
+    elements.append(P("Performance KPIs", styles["Heading1"]))
     perf_rows = _build_performance_kpis_table(audit_data, live)
     elements.append(_kpi_scorecard_table(perf_rows))
     elements.append(PageBreak())
 
-    # -------------------- 7) SECURITY KPIs (15–20)
-    elements.append(Paragraph("Security KPIs", styles["Heading1"]))
+    # -------------------- 7) SECURITY KPIs
+    elements.append(P("Security KPIs", styles["Heading1"]))
     sec_rows = _build_security_kpis_table(url, audit_data, live)
     elements.append(_kpi_scorecard_table(sec_rows))
     findings = run_basic_vulnerability_scan(url)
     if findings:
-        elements.append(Paragraph("Automated Quick Findings", styles["KPIHeader"]))
+        elements.append(P("Automated Quick Findings", styles["KPIHeader"]))
         for f in findings:
-            elements.append(Paragraph(f"- {f}", styles["Normal"]))
+            elements.append(P(f, styles["Normal"], bullet="•"))
     elements.append(PageBreak())
 
-    # -------------------- 8) ACCESSIBILITY KPIs (15–20)
-    elements.append(Paragraph("Accessibility KPIs", styles["Heading1"]))
+    # -------------------- 8) ACCESSIBILITY KPIs
+    elements.append(P("Accessibility KPIs", styles["Heading1"]))
     acc_rows = _build_accessibility_kpis_table(audit_data, live)
     elements.append(_kpi_scorecard_table(acc_rows))
     # Radar (derived)
@@ -835,8 +863,8 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     elements.append(Image(img, width=5.2 * inch, height=4.8 * inch))
     elements.append(PageBreak())
 
-    # -------------------- 9) UX / User Experience KPIs (15–20)
-    elements.append(Paragraph("UX / User Experience KPIs", styles["Heading1"]))
+    # -------------------- 9) UX / User Experience KPIs
+    elements.append(P("UX / User Experience KPIs", styles["Heading1"]))
     ux_rows = _build_ux_kpis_table(audit_data, live)
     elements.append(_kpi_scorecard_table(ux_rows))
     ux_radar = {
@@ -850,7 +878,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     elements.append(PageBreak())
 
     # -------------------- 10) Competitor Comparison
-    elements.append(Paragraph("Competitor Comparison", styles["Heading1"]))
+    elements.append(P("Competitor Comparison", styles["Heading1"]))
     competitors = audit_data.get("competitors") or []
     if competitors:
         series = {}
@@ -866,11 +894,11 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
             img = bar_chart(seo_comp, "SEO Performance (Score)", "Competitor", "Score")
             elements.append(Image(img, width=6.2 * inch, height=3.6 * inch))
     else:
-        elements.append(Paragraph("Not available (no competitor data provided).", styles["Small"]))
+        elements.append(P("Not available (no competitor data provided).", styles["Small"]))
     elements.append(PageBreak())
 
     # -------------------- 11) Historical Comparison / Trend Analysis
-    elements.append(Paragraph("Historical Comparison / Trend Analysis", styles["Heading1"]))
+    elements.append(P("Historical Comparison / Trend Analysis", styles["Heading1"]))
     hist = audit_data.get("history") or {}
     for key, label, ylabel in [
         ("traffic", "Traffic Trend", "Traffic"),
@@ -889,7 +917,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     elements.append(PageBreak())
 
     # -------------------- 13) KPI Scorecards (Consolidated)
-    elements.append(Paragraph("KPI Scorecards (Consolidated)", styles["Heading1"]))
+    elements.append(P("KPI Scorecards (Consolidated)", styles["Heading1"]))
     consolidated = _consolidate_kpis(
         seo_rows,
         perf_rows,
@@ -901,10 +929,10 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
     elements.append(PageBreak())
 
     # -------------------- 14) AI Recommendations (Detailed)
-    elements.append(Paragraph("AI Recommendations (Detailed)", styles["Heading1"]))
+    elements.append(P("AI Recommendations (Detailed)", styles["Heading1"]))
     detailed_recs = _collect_ai_recommendations(live, score_data["category_scores"])
     for r in detailed_recs:
-        elements.append(Paragraph(f"- {r}", styles["Normal"]))
+        elements.append(P(r, styles["Normal"], bullet="•"))
 
     # Build document
     def _first(c, d): _draw_header_footer(c, d, url, branding)
@@ -933,7 +961,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any],
 
 def _mini_table(headers: List[str], rows: List[List[Any]]) -> Table:
     data = [headers] + rows
-    t = Table(data, colWidths=[2.6 * inch, 2.0 * inch])
+    t = Table(data, colWidths=[2.6 * inch, 2.0 * inch], repeatRows=1)
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#F2F4F8")),
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
@@ -1000,7 +1028,6 @@ def _build_seo_kpis_table(url: str, audit_data: Dict[str, Any], live: Dict[str, 
     custom = audit_data.get("seo_kpis") or []
     rows.extend(custom)
 
-    # Live checks
     rows += [
         {"name": "Title Tag Present", "value": "Yes" if live.get("title") else "No", "status": "Good" if live.get("title") else "Critical"},
         {"name": "Meta Description Present", "value": live.get("meta_description_present", "No"), "status": "Good" if live.get("meta_description_present") == "Yes" else "Warning"},
@@ -1034,7 +1061,6 @@ def _build_performance_kpis_table(audit_data: Dict[str, Any], live: Dict[str, An
     add("Stylesheets (count)", live.get("css_count", 0), lambda v: isinstance(v, (int, float)) and v <= 15)
     add("Images (count)", live.get("img_count", 0), lambda v: isinstance(v, (int, float)) and v <= 120)
 
-    # Add any extra provided metrics (without duplication of names)
     for k, v in perf.items():
         label = k.replace("_", " ").title()
         if all(label != r["name"] for r in rows):
