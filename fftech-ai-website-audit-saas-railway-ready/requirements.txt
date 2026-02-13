@@ -51,6 +51,9 @@ fonttools==4.53.1
 # pypdf==5.1.0                              # uncomment for PDF merging/extraction
 # pdfplumber==0.11.4                        # uncomment for table/text extraction
 # PyMuPDF==1.24.10                          # uncomment for fast PDF rendering
+# camelot-py[cv]==0.10.1                     # uncomment for PDF table extraction (requires opencv)
+# tabula-py==2.5.1                           # uncomment for PDF table extraction via Java
+# pdf2image==1.17.1                          # uncomment to convert PDF pages to images
 
 # ───────────────────────────────────────────────
 # Jinja & Templating
