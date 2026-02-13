@@ -1,32 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 app/audit/pdf_report.py
-
 Enterprise PDF generator (ReportLab) for WebsiteAuditRunner results.
 - Consumes dict produced by runner_result_to_audit_data(...) in app/audit/runner.py
 - Returns raw PDF bytes (for runner to write to disk)
 - No network calls; safe for Railway
 - Charts rendered via matplotlib (Agg)
-
-Sections covered:
-  1) Cover Page (logo, URL, date/time, report ID hash, generated-by SaaS, confidentiality)
-  2) Executive Summary (CEO): overall score, category scores, risk level, radar+bar charts,
-     top critical issues (derived), estimated business impact
-  3) Website Overview (domain/ip/cms heuristic/N/A safe, SSL/HSTS/redirect status if present, load time, page size, total requests)
-  4) SEO Audit (on-page + technical; N/A where runner doesn’t provide fields)
-  5) Performance Audit (FCP/LCP/TTI/TBT placeholders; compression/caching if present else N/A)
-  6) Security Audit (SSL/HSTS headers status from runner; headers/CSP/etc -> N/A if absent)
-  7) Accessibility Audit (ALT stats available; others N/A; estimated WCAG level heuristic)
-  8) UX Audit (N/A placeholders)
-  9) Broken Link Analysis (N/A placeholders; runner does not crawl links)
- 10) Analytics & Tracking (N/A placeholders)
- 11) Critical Issues Summary Table (color-coded per priority)
- 12) Recommendations & Fix Roadmap (Immediate / Short-Term / Long-Term)
- 13) Scoring Methodology (weights/formula summary)
- 14) Appendix (technical: headers/DOM/resources—limited by runner data)
- 15) Conclusion (professional statement)
 """
-
 from __future__ import annotations
 import io
 import os
@@ -36,6 +16,7 @@ import hashlib
 import datetime as dt
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+from html import escape  # ← ADDED: to safely escape text for ReportLab Paragraph
 
 # ReportLab
 from reportlab.lib import colors
@@ -147,7 +128,6 @@ def _color_for_priority(priority: str):
 def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
     issues: List[Dict[str, str]] = []
     br = audit.get("breakdown", {})
-
     # Security
     sec = br.get("security", {})
     if isinstance(sec, dict):
@@ -176,7 +156,6 @@ def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
                 "impact": "HTTPS downgrade risk on some clients.",
                 "fix": "Enable Strict-Transport-Security with preload where appropriate."
             })
-
     # Performance
     perf = br.get("performance", {})
     if isinstance(perf, dict):
@@ -199,7 +178,6 @@ def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
                 "impact": "Slower loads on mobile/slow networks; bounce risk.",
                 "fix": "Compress images (WebP/AVIF), minify/split JS/CSS, remove unused libs."
             })
-
     # SEO + Accessibility
     seo = br.get("seo", {})
     if isinstance(seo, dict):
@@ -230,7 +208,6 @@ def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
                 "impact": "Screen readers can’t interpret visuals; compliance risk.",
                 "fix": "Add descriptive alt text to all meaningful images."
             })
-
     priority_weight = {"🔴 Critical": 0, "🟠 High": 1, "🟡 Medium": 2, "🟢 Low": 3}
     issues.sort(key=lambda x: priority_weight.get(x["priority"], 9))
     return issues[:12]
@@ -250,11 +227,9 @@ def _radar_chart(scores: Dict[str, Any]) -> io.BytesIO:
                 values.append(0)
     if not labels:
         labels, values = ["SCORE"], [int(scores.get("overall", 0))]
-
     angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False).tolist()
     values += values[:1]
     angles += angles[:1]
-
     fig, ax = plt.subplots(figsize=(4.8, 4.8), subplot_kw=dict(polar=True))
     ax.fill(angles, values, color='#3498DB', alpha=0.25)
     ax.plot(angles, values, color='#2980B9', linewidth=2)
@@ -298,18 +273,15 @@ class PDFReport:
         self.styles.add(ParagraphStyle('H3', parent=self.styles['Heading3'], textColor=PRIMARY_DARK))
         self.styles.add(ParagraphStyle('Note', fontSize=9, textColor=MUTED_GREY, leading=12))
         self.styles.add(ParagraphStyle('Tiny', fontSize=7, textColor=MUTED_GREY))
-
         # Integrity & IDs
         self.integrity = _hash_integrity(audit)
         self.report_id = _short_id_from_hash(self.integrity)
-
         # Header fields
         self.brand = audit.get("brand_name", PDF_BRAND_NAME) or PDF_BRAND_NAME
         self.client = audit.get("client_name", "N/A")
         self.url = audit.get("audited_url", "N/A")
         self.site_name = audit.get("website_name", self.url)
         self.audit_dt = audit.get("audit_datetime", _now_str())
-
         # Scores
         self.scores = dict(audit.get("scores", {}))
         self.scores.setdefault("overall", _int_or(audit.get("overall_score", 0), 0))
@@ -317,10 +289,8 @@ class PDFReport:
         self.scores.setdefault("ux", _int_or(_safe_get(audit, ["breakdown", "ux", "score"], 0), 0))
         self.overall = _int_or(self.scores.get("overall", 0), 0)
         self.risk = _risk_from_score(self.overall)
-
         # Derived issues
         self.issues = derive_critical_issues(self.data)
-
         # Overview heuristics from runner stats
         host = _hostname(self.url)
         perf_extras = _safe_get(self.data, ["breakdown", "performance", "extras"], {})
@@ -360,7 +330,7 @@ class PDFReport:
         return t
 
     def _section_title(self, text: str) -> Paragraph:
-        return Paragraph(text, self.styles['Heading1'])
+        return Paragraph(escape(text), self.styles['Heading1'])  # ← safe
 
     # ------------- sections -------------
     def cover_page(self, elems: List[Any]):
@@ -389,7 +359,7 @@ class PDFReport:
 
     def toc_page(self, elems: List[Any]):
         elems.append(self._section_title("Contents"))
-        bullets = [
+        bullets_list = [
             "Executive Summary",
             "Website Overview",
             "SEO Audit",
@@ -405,8 +375,8 @@ class PDFReport:
             "Appendix (Technical Details)",
             "Conclusion",
         ]
-        for b in bullets:
-            elems.append(Paragraph(f"• {b}", self.styles['Normal']))
+        for b in bullets_list:
+            elems.append(Paragraph(f"• {escape(b)}", self.styles['Normal']))
         elems.append(Spacer(1, 0.1*inch))
         elems.append(Paragraph("Note: Page numbers are included in the footer.", self.styles['Muted']))
         elems.append(PageBreak())
@@ -633,29 +603,35 @@ class PDFReport:
     def recommendations_section(self, elems: List[Any]):
         elems.append(self._section_title("Recommendations & Fix Roadmap"))
         imm = [
-            "Force HTTPS & enable HSTS (security).",
-            "Add <title> and meta description where missing (SEO).",
+            "Force HTTPS and enable HSTS (security).",
+            "Add title tag and meta description where missing (SEO).",
             "Compress large images; defer non-critical JS (performance).",
         ]
         st = [
-            "Implement caching headers & CDN for static assets.",
+            "Implement caching headers and CDN for static assets.",
             "Add structured data (Schema.org) for key templates.",
             "Improve heading hierarchy (single H1) and ALT completeness.",
         ]
         lt = [
-            "Integrate Lighthouse/PSI for CWV & lab metrics automation.",
+            "Integrate Lighthouse / PageSpeed Insights for Core Web Vitals and lab metrics automation.",
             "Refactor large JS/CSS bundles; adopt code splitting.",
-            "Run accessibility audit (WCAG AA) across key user journeys.",
+            "Run full accessibility audit (WCAG AA) across key user journeys.",
         ]
+
         def bullets(title: str, items: List[str]):
-            elems.append(Paragraph(title, self.styles['H2']))
+            elems.append(Paragraph(f"<b>{escape(title)}</b>", self.styles['H2']))
             for it in items:
-                elems.append(Paragraph(f"• {it}", self.styles['Normal']))
+                elems.append(Paragraph(f"• {escape(it)}", self.styles['Normal']))
             elems.append(Spacer(1, 0.08*inch))
+
         bullets("Immediate Fixes (0–7 Days)", imm)
         bullets("Short Term (1–4 Weeks)", st)
         bullets("Long Term (1–3 Months)", lt)
-        elems.append(Paragraph("Estimated Impact: performance +10–25 points, SEO +10–20 points, risk level ↓1 tier after core fixes.", self.styles['Note']))
+
+        elems.append(Paragraph(
+            "Estimated Impact: performance +10–25 points, SEO +10–20 points, risk level ↓1 tier after core fixes.",
+            self.styles['Note']
+        ))
         elems.append(PageBreak())
 
     def scoring_methodology_section(self, elems: List[Any]):
@@ -664,8 +640,8 @@ class PDFReport:
             "Scores are computed from the runner’s heuristics and weights. "
             "Example weight distribution used by the runner: SEO (35%), Performance (35%), Links (20%), Security (10%). "
             "Overall = Σ(category_score × weight).",
-            self.styles['Normal'])
-        )
+            self.styles['Normal']
+        ))
         elems.append(Spacer(1, 0.08*inch))
         rows = [
             ["Category", "Weight"],
@@ -677,8 +653,8 @@ class PDFReport:
         elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch]))
         elems.append(Paragraph(
             "Transparency: This PDF reflects the exact values the runner provided; fields not available are marked as N/A.",
-            self.styles['Note'])
-        )
+            self.styles['Note']
+        ))
         elems.append(PageBreak())
 
     def appendix_section(self, elems: List[Any]):
@@ -691,7 +667,7 @@ class PDFReport:
             for c in cards:
                 title = str(c.get('title', '') or '')
                 body = str(c.get('body', '') or '')
-                elems.append(Paragraph(f"<b>{title}</b>: {body}", self.styles['Normal']))
+                elems.append(Paragraph(f"<b>{escape(title)}</b>: {escape(body)}", self.styles['Normal']))
         if kv:
             elems.append(Spacer(1, 0.08*inch))
             elems.append(Paragraph("Key-Value Diagnostics", self.styles['H2']))
@@ -703,8 +679,8 @@ class PDFReport:
         elems.append(Paragraph(
             "Raw HTTP headers, DOM tree, script/CSS inventories, and third-party requests are not captured by the runner "
             "and therefore shown as N/A here. Integrate a headless fetcher and inventory step to populate these fields.",
-            self.styles['Note'])
-        )
+            self.styles['Note']
+        ))
         elems.append(PageBreak())
 
     def conclusion_section(self, elems: List[Any]):
@@ -713,13 +689,13 @@ class PDFReport:
             "This audit identifies structural, performance, and security improvements required to align the website with "
             "modern web standards and search engine best practices. Addressing the highlighted critical issues will "
             "significantly improve visibility, performance, and risk posture.",
-            self.styles['Normal'])
-        )
+            self.styles['Normal']
+        ))
         elems.append(Spacer(1, 0.1*inch))
         elems.append(Paragraph(
             f"Timestamp: {self.audit_dt} — Digital Integrity (SHA-256): {self.integrity}",
-            self.styles['Tiny'])
-        )
+            self.styles['Tiny']
+        ))
 
     def build_pdf_bytes(self) -> bytes:
         buf = io.BytesIO()
