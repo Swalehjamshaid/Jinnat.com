@@ -8,7 +8,6 @@ Enterprise PDF generator (ReportLab) for WebsiteAuditRunner results.
 - Charts rendered via matplotlib (Agg)
 """
 from __future__ import annotations
-
 import io
 import os
 import json
@@ -16,16 +15,14 @@ import socket
 import hashlib
 import datetime as dt
 from typing import Any, Dict, List, Optional
-
 from urllib.parse import urlparse
-from html import escape
+from html import escape  # ← ADDED: to safely escape text for ReportLab Paragraph
 
 # ReportLab
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
 )
@@ -35,7 +32,6 @@ import matplotlib
 matplotlib.use("Agg")  # Headless safe
 import matplotlib.pyplot as plt
 import numpy as np
-
 
 # ------------------------------------------------------------
 # BRANDING / COLORS / ENV
@@ -53,20 +49,17 @@ MUTED_GREY = colors.HexColor("#7F8C8D")
 PURPLE = colors.HexColor("#8E44AD")
 YELLOW = colors.Color(0.98, 0.91, 0.4)
 
-
 # ------------------------------------------------------------
 # HELPERS
 # ------------------------------------------------------------
 def _now_str() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-
 def _hostname(url: str) -> str:
     try:
-        return urlparse(url).netloc.lower() or ""
+        return (urlparse(url).netloc or "").lower()
     except Exception:
         return ""
-
 
 def _get_ip(host: str) -> str:
     try:
@@ -74,13 +67,11 @@ def _get_ip(host: str) -> str:
     except Exception:
         return "Unknown"
 
-
-def _kb(n: Any) -> str:
+def _kb(n: int) -> str:
     try:
-        return f"{round(int(n) / 1024.0, 1)} KB"
+        return f"{round(int(n)/1024.0, 1)} KB"
     except Exception:
         return "N/A"
-
 
 def _safe_get(d: dict, path: List[str], default: Any = "N/A") -> Any:
     cur = d
@@ -95,50 +86,48 @@ def _safe_get(d: dict, path: List[str], default: Any = "N/A") -> Any:
     except Exception:
         return default
 
-
 def _int_or(v: Any, default: int = 0) -> int:
     try:
         return int(v)
     except Exception:
         return default
 
-
 def _bool_to_yesno(v: Any) -> str:
     return "Yes" if bool(v) else "No"
 
-
 def _risk_from_score(overall: int) -> str:
-    o = _int_or(overall, 0)
+    try:
+        o = int(overall)
+    except Exception:
+        o = 0
     if o >= 85: return "Low"
     if o >= 70: return "Medium"
     if o >= 50: return "High"
     return "Critical"
 
-
 def _hash_integrity(audit_data: dict) -> str:
     raw = json.dumps(audit_data, sort_keys=True, ensure_ascii=False).encode("utf-8", errors="ignore")
     return hashlib.sha256(raw).hexdigest().upper()
 
-
 def _short_id_from_hash(h: str) -> str:
     return h[:12]
 
-
 def _color_for_priority(priority: str):
     p = (priority or "").lower()
-    if "critical" in p or "🔴" in priority: return CRITICAL_RED
-    if "high" in p or "🟠" in priority:     return WARNING_ORANGE
-    if "medium" in p or "🟡" in priority:   return YELLOW
+    if ("🔴" in (priority or "")) or (p == "critical"):
+        return CRITICAL_RED
+    if ("🟠" in (priority or "")) or (p == "high"):
+        return WARNING_ORANGE
+    if ("🟡" in (priority or "")) or (p == "medium"):
+        return YELLOW
     return SUCCESS_GREEN
 
-
 # ------------------------------------------------------------
-# ISSUE DERIVATION (unchanged)
+# ISSUE DERIVATION (from runner breakdown) — no network calls
 # ------------------------------------------------------------
 def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
     issues: List[Dict[str, str]] = []
     br = audit.get("breakdown", {})
-
     # Security
     sec = br.get("security", {})
     if isinstance(sec, dict):
@@ -167,7 +156,6 @@ def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
                 "impact": "HTTPS downgrade risk on some clients.",
                 "fix": "Enable Strict-Transport-Security with preload where appropriate."
             })
-
     # Performance
     perf = br.get("performance", {})
     if isinstance(perf, dict):
@@ -190,7 +178,6 @@ def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
                 "impact": "Slower loads on mobile/slow networks; bounce risk.",
                 "fix": "Compress images (WebP/AVIF), minify/split JS/CSS, remove unused libs."
             })
-
     # SEO + Accessibility
     seo = br.get("seo", {})
     if isinstance(seo, dict):
@@ -221,14 +208,12 @@ def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
                 "impact": "Screen readers can’t interpret visuals; compliance risk.",
                 "fix": "Add descriptive alt text to all meaningful images."
             })
-
     priority_weight = {"🔴 Critical": 0, "🟠 High": 1, "🟡 Medium": 2, "🟢 Low": 3}
     issues.sort(key=lambda x: priority_weight.get(x["priority"], 9))
     return issues[:12]
 
-
 # ------------------------------------------------------------
-# CHARTS (unchanged)
+# CHARTS
 # ------------------------------------------------------------
 def _radar_chart(scores: Dict[str, Any]) -> io.BytesIO:
     order = ["seo", "performance", "security", "accessibility", "ux", "links"]
@@ -258,7 +243,6 @@ def _radar_chart(scores: Dict[str, Any]) -> io.BytesIO:
     buf.seek(0)
     return buf
 
-
 def _bar_chart(scores: Dict[str, Any]) -> io.BytesIO:
     cats = [k for k in ["seo", "performance", "security", "accessibility", "ux", "links"] if k in scores]
     vals = [int(scores.get(c, 0)) for c in cats] or [int(scores.get("overall", 0))]
@@ -277,42 +261,27 @@ def _bar_chart(scores: Dict[str, Any]) -> io.BytesIO:
     buf.seek(0)
     return buf
 
-
 # ------------------------------------------------------------
-# PDF GENERATOR – FIXED VERSION
+# PDF GENERATOR
 # ------------------------------------------------------------
 class PDFReport:
     def __init__(self, audit: Dict[str, Any]):
         self.data = audit
         self.styles = getSampleStyleSheet()
-
-        # ── FIX: MODIFY existing built-in styles instead of adding duplicates ──
-        # Update 'Title' (already exists in sample stylesheet)
-        self.styles['Title'].fontSize = 42
-        self.styles['Title'].textColor = PRIMARY_DARK
-        self.styles['Title'].alignment = TA_CENTER
-        self.styles['Title'].spaceAfter = 68
-        self.styles['Title'].fontName = 'Helvetica-Bold'
-
-        # Add your custom styles (only if they don't exist)
-        if 'Muted' not in self.styles:
-            self.styles.add(ParagraphStyle('Muted', fontSize=8, textColor=MUTED_GREY))
-        if 'Note' not in self.styles:
-            self.styles.add(ParagraphStyle('Note', fontSize=9, textColor=MUTED_GREY, leading=12))
-        if 'Tiny' not in self.styles:
-            self.styles.add(ParagraphStyle('Tiny', fontSize=7, textColor=MUTED_GREY))
-
+        self.styles.add(ParagraphStyle('Muted', fontSize=8, textColor=MUTED_GREY))
+        self.styles.add(ParagraphStyle('H2', parent=self.styles['Heading2'], textColor=PRIMARY_DARK))
+        self.styles.add(ParagraphStyle('H3', parent=self.styles['Heading3'], textColor=PRIMARY_DARK))
+        self.styles.add(ParagraphStyle('Note', fontSize=9, textColor=MUTED_GREY, leading=12))
+        self.styles.add(ParagraphStyle('Tiny', fontSize=7, textColor=MUTED_GREY))
         # Integrity & IDs
         self.integrity = _hash_integrity(audit)
         self.report_id = _short_id_from_hash(self.integrity)
-
         # Header fields
         self.brand = audit.get("brand_name", PDF_BRAND_NAME) or PDF_BRAND_NAME
         self.client = audit.get("client_name", "N/A")
         self.url = audit.get("audited_url", "N/A")
         self.site_name = audit.get("website_name", self.url)
         self.audit_dt = audit.get("audit_datetime", _now_str())
-
         # Scores
         self.scores = dict(audit.get("scores", {}))
         self.scores.setdefault("overall", _int_or(audit.get("overall_score", 0), 0))
@@ -320,10 +289,8 @@ class PDFReport:
         self.scores.setdefault("ux", _int_or(_safe_get(audit, ["breakdown", "ux", "score"], 0), 0))
         self.overall = _int_or(self.scores.get("overall", 0), 0)
         self.risk = _risk_from_score(self.overall)
-
         # Derived issues
         self.issues = derive_critical_issues(self.data)
-
         # Overview heuristics from runner stats
         host = _hostname(self.url)
         perf_extras = _safe_get(self.data, ["breakdown", "performance", "extras"], {})
@@ -344,7 +311,6 @@ class PDFReport:
             ),
         }
 
-
     def _footer(self, canvas, doc):
         canvas.saveState()
         canvas.setFont('Helvetica', 8)
@@ -352,7 +318,6 @@ class PDFReport:
         canvas.drawString(inch, 0.5*inch, f"{self.brand} | Integrity: {self.integrity[:16]}…")
         canvas.drawRightString(A4[0]-inch, 0.5*inch, f"Page {doc.page}")
         canvas.restoreState()
-
 
     def _table(self, rows: List[List[Any]], colWidths: Optional[List[float]] = None, header_bg=colors.whitesmoke, fontsize=9):
         t = Table(rows, colWidths=colWidths)
@@ -364,20 +329,373 @@ class PDFReport:
         ]))
         return t
 
-
     def _section_title(self, text: str) -> Paragraph:
-        return Paragraph(escape(text), self.styles['Heading1'])
+        return Paragraph(escape(text), self.styles['Heading1'])  # ← safe
 
+    # ------------- sections -------------
+    def cover_page(self, elems: List[Any]):
+        elems.append(Spacer(1, 0.6*inch))
+        if isinstance(PDF_LOGO_PATH, str) and PDF_LOGO_PATH and os.path.exists(PDF_LOGO_PATH):
+            try:
+                elems.append(Image(PDF_LOGO_PATH, width=1.8*inch, height=1.8*inch))
+                elems.append(Spacer(1, 0.2*inch))
+            except Exception:
+                pass
+        elems.append(Paragraph(self.brand.upper(), ParagraphStyle('Brand', fontSize=28, textColor=PRIMARY_DARK, fontName='Helvetica-Bold')))
+        elems.append(Paragraph("Website Performance & Compliance Dossier", self.styles['Title']))
+        elems.append(Spacer(1, 0.25*inch))
+        rows = [
+            ["Website URL Audited", self.url],
+            ["Audit Date & Time", self.audit_dt],
+            ["Report ID", self.report_id],
+            ["Generated By", SAAS_NAME],
+        ]
+        elems.append(self._table(rows, colWidths=[2.3*inch, 3.8*inch]))
+        elems.append(Spacer(1, 0.2*inch))
+        notice = ("This report contains confidential and proprietary information intended solely for the recipient. "
+                  "Unauthorized distribution is prohibited.")
+        elems.append(Paragraph(notice, self.styles['Muted']))
+        elems.append(PageBreak())
 
-    # ------------- sections (your original code - unchanged) -------------
-    # ... paste your cover_page, toc_page, executive_summary, website_overview,
-    # seo_section, performance_section, security_section, accessibility_section,
-    # ux_section, broken_links_section, analytics_tracking_section,
-    # critical_issues_section, recommendations_section, scoring_methodology_section,
-    # appendix_section, conclusion_section methods here ...
+    def toc_page(self, elems: List[Any]):
+        elems.append(self._section_title("Contents"))
+        bullets_list = [
+            "Executive Summary",
+            "Website Overview",
+            "SEO Audit",
+            "Performance Audit",
+            "Security Audit",
+            "Accessibility Audit",
+            "User Experience (UX) Audit",
+            "Broken Link Analysis",
+            "Analytics & Tracking",
+            "Critical Issues Summary",
+            "Recommendations & Fix Roadmap",
+            "Scoring Methodology",
+            "Appendix (Technical Details)",
+            "Conclusion",
+        ]
+        for b in bullets_list:
+            elems.append(Paragraph(f"• {escape(b)}", self.styles['Normal']))
+        elems.append(Spacer(1, 0.1*inch))
+        elems.append(Paragraph("Note: Page numbers are included in the footer.", self.styles['Muted']))
+        elems.append(PageBreak())
 
-    # (I omitted them here to keep the answer shorter – keep them exactly as in your code)
+    def executive_summary(self, elems: List[Any]):
+        elems.append(self._section_title("Executive Health Summary"))
+        radar = Image(_radar_chart(self.scores), width=2.9*inch, height=2.9*inch)
+        bars = Image(_bar_chart(self.scores), width=3.2*inch, height=2.4*inch)
+        chart_tbl = Table([[radar, bars]], colWidths=[3.0*inch, 3.3*inch])
+        chart_tbl.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
+        elems.append(chart_tbl)
+        elems.append(Spacer(1, 0.15*inch))
+        krows = [
+            ["Overall Website Health Score", f"{self.overall}/100"],
+            ["Overall Risk Level", self.risk],
+            ["SEO Score", str(_int_or(self.scores.get("seo", 0), 0))],
+            ["Performance Score", str(_int_or(self.scores.get("performance", 0), 0))],
+            ["Security Score", str(_int_or(self.scores.get("security", 0), 0))],
+            ["Accessibility Score", str(_int_or(self.scores.get("accessibility", 0), 0))],
+            ["UX Score", str(_int_or(self.scores.get("ux", 0), 0))],
+        ]
+        elems.append(self._table(krows, colWidths=[2.9*inch, 3.4*inch]))
+        elems.append(Spacer(1, 0.12*inch))
+        elems.append(Paragraph("Top Critical Issues & Estimated Business Impact", self.styles['H2']))
+        issues = self.issues[:5]
+        if not issues:
+            elems.append(Paragraph("No critical issues derived from available data.", self.styles['Normal']))
+        else:
+            rows = [["Priority", "Issue", "Category", "Impact", "Recommended Fix"]]
+            for i in issues:
+                rows.append([i["priority"], i["issue"], i["category"], i["impact"], i["fix"]])
+            t = self._table(rows, colWidths=[0.95*inch, 2.25*inch, 0.9*inch, 1.5*inch, 1.6*inch], header_bg=ACCENT_BLUE, fontsize=8)
+            t.setStyle(TableStyle([('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]))
+            for r in range(1, len(rows)):
+                pr = rows[r][0]
+                t.setStyle(TableStyle([
+                    ('BACKGROUND', (0, r), (0, r), _color_for_priority(pr)),
+                    ('TEXTCOLOR', (0, r), (0, r), colors.whitesmoke)
+                ]))
+            elems.append(t)
+        elems.append(PageBreak())
 
+    def website_overview(self, elems: List[Any]):
+        elems.append(self._section_title("Website Overview"))
+        o = self.overview
+        rows = [
+            ["Domain Name", o["domain"]],
+            ["IP Address", o["ip"]],
+            ["Hosting Provider", o["hosting_provider"]],
+            ["Server Location", o["server_location"]],
+            ["CMS Detected", o["cms"]],
+            ["SSL Status", o["ssl_status"]],
+            ["HTTP → HTTPS redirect", o["http_to_https"]],
+            ["Page Load Time", f"{o['load_ms']} ms"],
+            ["Page Size", o["page_size"]],
+            ["Total Requests (approx)", str(o["total_requests_approx"])],
+        ]
+        elems.append(self._table(rows, colWidths=[2.7*inch, 3.6*inch]))
+        elems.append(PageBreak())
+
+    def seo_section(self, elems: List[Any]):
+        elems.append(self._section_title("SEO Audit"))
+        seo = _safe_get(self.data, ["breakdown", "seo"], {})
+        ex = seo.get("extras", {}) if isinstance(seo, dict) else {}
+        title = ex.get("title") or ""
+        title_len = len(title)
+        meta_desc_present = ex.get("meta_description_present", False)
+        canonical = ex.get("canonical") or ""
+        h1_count = _int_or(ex.get("h1_count", 0), 0)
+        images_total = _int_or(ex.get("images_total", 0), 0)
+        images_missing = _int_or(ex.get("images_missing_alt", 0), 0)
+        elems.append(Paragraph("On-Page SEO", self.styles['H2']))
+        on_rows = [
+            ["Title tag (length + optimization)", f"{title_len} chars" if title else "Missing"],
+            ["Meta description (length + optimization)", "Present" if meta_desc_present else "Missing"],
+            ["H1, H2 structure", f"H1 count: {h1_count}; H2: N/A"],
+            ["Keyword density", "N/A"],
+            ["Canonical tag presence", "Yes" if canonical else "No"],
+            ["Robots.txt status", "N/A"],
+            ["Sitemap.xml status", "N/A"],
+            ["Open Graph tags", "N/A"],
+            ["Twitter Card tags", "N/A"],
+            ["Image ALT attributes missing", f"{images_missing}/{images_total}"],
+            ["Broken internal links", "N/A"],
+        ]
+        elems.append(self._table(on_rows, colWidths=[3.1*inch, 3.2*inch]))
+        elems.append(Spacer(1, 0.12*inch))
+        elems.append(Paragraph("Technical SEO", self.styles['H2']))
+        tech_rows = [
+            ["Indexability", "N/A"],
+            ["Mobile responsiveness", "N/A"],
+            ["Core Web Vitals (if API integrated)", "N/A"],
+            ["Structured data presence (Schema.org)", "N/A"],
+            ["Redirect chains", "N/A"],
+            ["Duplicate content detection", "N/A"],
+        ]
+        elems.append(self._table(tech_rows, colWidths=[3.1*inch, 3.2*inch]))
+        elems.append(PageBreak())
+
+    def performance_section(self, elems: List[Any]):
+        elems.append(self._section_title("Performance Audit"))
+        pex = _safe_get(self.data, ["breakdown", "performance", "extras"], {})
+        rows = [
+            ["First Contentful Paint (FCP)", "N/A"],
+            ["Largest Contentful Paint (LCP)", "N/A"],
+            ["Time to Interactive (TTI)", "N/A"],
+            ["Total Blocking Time", "N/A"],
+            ["PageSpeed score (if API)", "N/A"],
+            ["Compression enabled (GZIP/Brotli)", "N/A"],
+            ["Caching headers", "N/A"],
+            ["Minified CSS/JS?", "N/A"],
+            ["Image optimization status", "N/A"],
+            ["Lazy loading status", "N/A"],
+            ["Measured Load Time", f"{_int_or(pex.get('load_ms', 0), 0)} ms"],
+            ["Measured Page Size", _kb(_int_or(pex.get('bytes', 0), 0))],
+            ["Script/CSS Count", f"{_int_or(pex.get('scripts', 0), 0)} JS / {_int_or(pex.get('styles', 0), 0)} CSS"],
+        ]
+        elems.append(self._table(rows, colWidths=[3.6*inch, 2.7*inch]))
+        elems.append(PageBreak())
+
+    def security_section(self, elems: List[Any]):
+        elems.append(self._section_title("Security Audit"))
+        sec = _safe_get(self.data, ["breakdown", "security"], {})
+        rows = [
+            ["SSL Certificate Validity", "N/A"],
+            ["HSTS Enabled?", _bool_to_yesno(sec.get("hsts", False)) if isinstance(sec, dict) else "N/A"],
+            ["Content-Security-Policy", "N/A"],
+            ["X-Frame-Options", "N/A"],
+            ["X-XSS-Protection", "N/A"],
+            ["X-Content-Type-Options", "N/A"],
+            ["Mixed content issues", "N/A"],
+            ["Exposed admin panels", "N/A"],
+            ["HTTP methods allowed", "N/A"],
+            ["Cookies secure/HttpOnly", "N/A"],
+            ["Origin Status Code", str(sec.get("status_code", "N/A")) if isinstance(sec, dict) else "N/A"],
+            ["HTTPS Enabled", _bool_to_yesno(sec.get("https", False)) if isinstance(sec, dict) else "N/A"],
+        ]
+        elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch]))
+        elems.append(Spacer(1, 0.06*inch))
+        elems.append(Paragraph("Risk rating per issue is inferred by priority in the Critical Issues section.", self.styles['Note']))
+        elems.append(PageBreak())
+
+    def accessibility_section(self, elems: List[Any]):
+        elems.append(self._section_title("Accessibility Audit"))
+        ex = _safe_get(self.data, ["breakdown", "seo", "extras"], {})
+        missing_alt = _int_or(ex.get("images_missing_alt", 0), 0)
+        imgs_total = _int_or(ex.get("images_total", 0), 0)
+        if missing_alt == 0 and imgs_total > 0:
+            level = "WCAG A (est.)"
+        elif missing_alt <= max(1, imgs_total // 10):
+            level = "WCAG AA (est.)"
+        else:
+            level = "Below AA (est.)"
+        rows = [
+            ["Missing ALT tags", f"{missing_alt}/{imgs_total}"],
+            ["Contrast ratio issues", "N/A"],
+            ["Missing ARIA labels", "N/A"],
+            ["Form label issues", "N/A"],
+            ["Keyboard navigation support", "N/A"],
+            ["Semantic HTML structure", "N/A"],
+            ["Compliance Level (estimated)", level],
+        ]
+        elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch]))
+        elems.append(PageBreak())
+
+    def ux_section(self, elems: List[Any]):
+        elems.append(self._section_title("User Experience (UX) Audit"))
+        rows = [
+            ["Mobile friendliness", "N/A"],
+            ["Viewport configuration", "N/A"],
+            ["Navigation clarity", "N/A"],
+            ["CTA visibility", "N/A"],
+            ["Pop-up intrusiveness", "N/A"],
+            ["Broken buttons", "N/A"],
+            ["Form usability", "N/A"],
+        ]
+        elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch]))
+        elems.append(PageBreak())
+
+    def broken_links_section(self, elems: List[Any]):
+        elems.append(self._section_title("Broken Link Analysis"))
+        rows = [
+            ["URL", "Status Code", "Anchor Text", "Type"],
+            ["N/A", "N/A", "N/A", "N/A"]
+        ]
+        elems.append(self._table(rows, colWidths=[3.0*inch, 0.9*inch, 1.5*inch, 0.9*inch], fontsize=8))
+        elems.append(Paragraph("Note: Deep link crawl is not performed by the runner; integrate a crawler to populate this table.", self.styles['Note']))
+        elems.append(PageBreak())
+
+    def analytics_tracking_section(self, elems: List[Any]):
+        elems.append(self._section_title("Analytics & Tracking"))
+        rows = [
+            ["Google Analytics (GA4)", "N/A"],
+            ["Google Analytics (UA)", "N/A"],
+            ["Google Tag Manager", "N/A"],
+            ["Facebook Pixel", "N/A"],
+            ["Conversion tracking", "N/A"],
+            ["Missing tracking warnings", "If none detected in markup, add GTM/GA4."],
+        ]
+        elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch]))
+        elems.append(PageBreak())
+
+    def critical_issues_section(self, elems: List[Any]):
+        elems.append(self._section_title("Critical Issues Summary"))
+        issues = self.issues
+        if not issues:
+            elems.append(Paragraph("No critical issues derived from available data.", self.styles['Normal']))
+            elems.append(PageBreak())
+            return
+        rows = [["Priority", "Issue", "Category", "Impact", "Recommended Fix"]]
+        for i in issues:
+            rows.append([i["priority"], i["issue"], i["category"], i["impact"], i["fix"]])
+        t = self._table(rows, colWidths=[0.95*inch, 2.25*inch, 0.9*inch, 1.5*inch, 1.6*inch], header_bg=ACCENT_BLUE, fontsize=8)
+        t.setStyle(TableStyle([('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke)]))
+        for r in range(1, len(rows)):
+            pr = rows[r][0]
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, r), (0, r), _color_for_priority(pr)),
+                ('TEXTCOLOR', (0, r), (0, r), colors.whitesmoke)
+            ]))
+        elems.append(t)
+        elems.append(PageBreak())
+
+    def recommendations_section(self, elems: List[Any]):
+        elems.append(self._section_title("Recommendations & Fix Roadmap"))
+        imm = [
+            "Force HTTPS and enable HSTS (security).",
+            "Add title tag and meta description where missing (SEO).",
+            "Compress large images; defer non-critical JS (performance).",
+        ]
+        st = [
+            "Implement caching headers and CDN for static assets.",
+            "Add structured data (Schema.org) for key templates.",
+            "Improve heading hierarchy (single H1) and ALT completeness.",
+        ]
+        lt = [
+            "Integrate Lighthouse / PageSpeed Insights for Core Web Vitals and lab metrics automation.",
+            "Refactor large JS/CSS bundles; adopt code splitting.",
+            "Run full accessibility audit (WCAG AA) across key user journeys.",
+        ]
+
+        def bullets(title: str, items: List[str]):
+            elems.append(Paragraph(f"<b>{escape(title)}</b>", self.styles['H2']))
+            for it in items:
+                elems.append(Paragraph(f"• {escape(it)}", self.styles['Normal']))
+            elems.append(Spacer(1, 0.08*inch))
+
+        bullets("Immediate Fixes (0–7 Days)", imm)
+        bullets("Short Term (1–4 Weeks)", st)
+        bullets("Long Term (1–3 Months)", lt)
+
+        elems.append(Paragraph(
+            "Estimated Impact: performance +10–25 points, SEO +10–20 points, risk level ↓1 tier after core fixes.",
+            self.styles['Note']
+        ))
+        elems.append(PageBreak())
+
+    def scoring_methodology_section(self, elems: List[Any]):
+        elems.append(self._section_title("Scoring Methodology"))
+        elems.append(Paragraph(
+            "Scores are computed from the runner’s heuristics and weights. "
+            "Example weight distribution used by the runner: SEO (35%), Performance (35%), Links (20%), Security (10%). "
+            "Overall = Σ(category_score × weight).",
+            self.styles['Normal']
+        ))
+        elems.append(Spacer(1, 0.08*inch))
+        rows = [
+            ["Category", "Weight"],
+            ["SEO", "35%"],
+            ["Performance", "35%"],
+            ["Links", "20%"],
+            ["Security", "10%"],
+        ]
+        elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch]))
+        elems.append(Paragraph(
+            "Transparency: This PDF reflects the exact values the runner provided; fields not available are marked as N/A.",
+            self.styles['Note']
+        ))
+        elems.append(PageBreak())
+
+    def appendix_section(self, elems: List[Any]):
+        elems.append(self._section_title("Appendix (Technical Details)"))
+        dynamic = self.data.get("dynamic", {})
+        cards = dynamic.get("cards", [])
+        kv = dynamic.get("kv", [])
+        if cards:
+            elems.append(Paragraph("Summary Cards", self.styles['H2']))
+            for c in cards:
+                title = str(c.get('title', '') or '')
+                body = str(c.get('body', '') or '')
+                elems.append(Paragraph(f"<b>{escape(title)}</b>: {escape(body)}", self.styles['Normal']))
+        if kv:
+            elems.append(Spacer(1, 0.08*inch))
+            elems.append(Paragraph("Key-Value Diagnostics", self.styles['H2']))
+            rows = [["Key", "Value"]]
+            for pair in kv[:80]:
+                rows.append([str(pair.get("key", "")), str(pair.get("value", ""))])
+            elems.append(self._table(rows, colWidths=[2.8*inch, 3.5*inch], fontsize=8))
+        elems.append(Spacer(1, 0.08*inch))
+        elems.append(Paragraph(
+            "Raw HTTP headers, DOM tree, script/CSS inventories, and third-party requests are not captured by the runner "
+            "and therefore shown as N/A here. Integrate a headless fetcher and inventory step to populate these fields.",
+            self.styles['Note']
+        ))
+        elems.append(PageBreak())
+
+    def conclusion_section(self, elems: List[Any]):
+        elems.append(self._section_title("Conclusion"))
+        elems.append(Paragraph(
+            "This audit identifies structural, performance, and security improvements required to align the website with "
+            "modern web standards and search engine best practices. Addressing the highlighted critical issues will "
+            "significantly improve visibility, performance, and risk posture.",
+            self.styles['Normal']
+        ))
+        elems.append(Spacer(1, 0.1*inch))
+        elems.append(Paragraph(
+            f"Timestamp: {self.audit_dt} — Digital Integrity (SHA-256): {self.integrity}",
+            self.styles['Tiny']
+        ))
 
     def build_pdf_bytes(self) -> bytes:
         buf = io.BytesIO()
@@ -404,7 +722,6 @@ class PDFReport:
         self.conclusion_section(elems)
         doc.build(elems, onFirstPage=self._footer, onLaterPages=self._footer)
         return buf.getvalue()
-
 
 # ------------------------------------------------------------
 # RUNNER ENTRY POINT (required by runner.py)
