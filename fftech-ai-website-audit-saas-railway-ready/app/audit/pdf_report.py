@@ -9,7 +9,7 @@ Enterprise PDF generator (ReportLab) for WebsiteAuditRunner results.
 
 UPGRADES (backward-compatible; optional-data aware):
   • Phase 1: First-page clarity — larger fonts, stronger contrast, wider paddings, divider, softer watermark
-  • Phase 2: Remove "N/A" — auto-hide missing rows; show muted note "Fields shown only when data is available from the runner."
+  • Phase 2: Remove "N/A" — auto-hide missing rows; show elegant note when data is not provided
   • Phase 3: Real CWV/Lighthouse (if provided), homepage screenshot, axe-core depth, mobile checks, robots/sitemap/schema, security depth
   • Phase 4: ROI-prioritized recommendations (+ Apple-specific hints when domain is apple.com), benchmarking/competitors (if provided)
   • Phase 5: Consistent scoring incl. Accessibility; trend arrows; improved extended-metrics filtering; PDF metadata; captions for charts
@@ -186,8 +186,8 @@ def _zebra_table(
         ('FONTSIZE', (0, 0), (-1, -1), fontsize),
         ('TOPPADDING', (0, 0), (-1, -1), 5),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
         ('REPEATROWS', (0, 0), (-1, 0)),
     ]
     for i in range(1, len(rows)):
@@ -598,9 +598,9 @@ class PDFReport:
         self.styles.add(ParagraphStyle('Note', fontSize=9, textColor=MUTED_GREY, leading=12, fontName=base_font))
         self.styles.add(ParagraphStyle('Tiny', fontSize=8, textColor=MUTED_GREY, fontName=base_font))
         self.styles.add(ParagraphStyle('Brand', fontSize=36, textColor=PRIMARY_DARK, fontName=base_font))
-        self.styles.add(ParagraphStyle('ReportTitle', fontSize=28, leading=32, textColor=PRIMARY_DARK, fontName=base_font))
+        self.styles.add(ParagraphStyle('ReportTitle', fontSize=32, leading=36, textColor=PRIMARY_DARK, fontName=base_font))
         self.styles.add(ParagraphStyle('Caption', fontSize=8, textColor=MUTED_GREY, leading=10, fontName=base_font))
-        self.styles.add(ParagraphStyle('KPI', fontSize=11, textColor=PRIMARY_DARK, leading=13, fontName=base_font))
+        self.styles.add(ParagraphStyle('KPI', fontSize=13, textColor=PRIMARY_DARK, leading=15, fontName=base_font))
 
         # Integrity & IDs
         self.integrity = _hash_integrity(audit)
@@ -685,7 +685,7 @@ class PDFReport:
         """Render only if there is at least one data row kept; otherwise print a muted note."""
         filtered = self._filter_rows(rows)
         if len(filtered) <= 1:
-            return Paragraph("No data detected. Fields shown only when data is available from the runner.", self.styles['Muted'])
+            return Paragraph("No additional data was provided by the audit runner for this section.", self.styles['Muted'])
         return _zebra_table(filtered, colWidths=colWidths, header_bg=header_bg, fontsize=fontsize)
 
     def _section_data_note(self, elems: List[Any]):
@@ -697,7 +697,7 @@ class PDFReport:
         # Phase 1: softer watermark for cover/readability
         try:
             canvas.saveState()
-            canvas.setFillColor(colors.Color(0.1, 0.1, 0.2, alpha=0.025))  # reduced opacity
+            canvas.setFillColor(colors.Color(0.1, 0.1, 0.2, alpha=0.018))  # reduced opacity
             canvas.setFont('Helvetica', 48)
             canvas.translate(A4[0] / 2, A4[1] / 2)
             canvas.rotate(35)
@@ -746,9 +746,9 @@ class PDFReport:
             block.append(_chip(self.brand, ACCENT_INDIGO, pad_x=10, pad_y=4, font_size=11))
             block.append(Spacer(1, 0.18 * inch))
 
-        # Phase 1: Larger, crisp, high-contrast titles
+        # Phase 1: Larger, crisp, high-contrast titles (controlled line break)
         block.append(Paragraph(self.brand.upper(), self.styles['Brand']))
-        block.append(Paragraph("Website Performance & Compliance Dossier", self.styles['ReportTitle']))
+        block.append(Paragraph("Website Performance & Compliance<br/>Dossier", self.styles['ReportTitle']))
         block.append(Spacer(1, 0.28 * inch))
 
         # KPI chips (bigger/higher contrast)
@@ -758,13 +758,13 @@ class PDFReport:
                     _chip(
                         f"Risk: {self.risk}",
                         {'Low': SUCCESS_GREEN, 'Medium': WARNING_ORANGE, 'High': colors.HexColor('#E67E22'), 'Critical': CRITICAL_RED}[self.risk],
-                        pad_x=10, pad_y=5, font_size=11
+                        pad_x=12, pad_y=7, font_size=13
                     )
                 ],
                 [
-                    _chip(f"Overall: {self.overall}/100", ACCENT_BLUE, pad_x=10, pad_y=5, font_size=11)
+                    _chip(f"Overall: {self.overall}/100", ACCENT_BLUE, pad_x=12, pad_y=7, font_size=13)
                 ]
-            ], colWidths=[2.2 * inch], hAlign='LEFT', style=[('VALIGN', (0, 0), (-1, -1), 'MIDDLE')])
+            ], colWidths=[2.4 * inch], hAlign='LEFT', style=[('VALIGN', (0, 0), (-1, -1), 'MIDDLE')])
         )
         block.append(Spacer(1, 0.22 * inch))
 
@@ -780,7 +780,7 @@ class PDFReport:
         rows.append(["Report ID", self.report_id])
         rows.append(["Generated By", SAAS_NAME])
 
-        block.append(self._render_clean_table(rows, colWidths=[2.6 * inch, 3.7 * inch], header_bg=PALE_BLUE, fontsize=10))
+        block.append(self._render_clean_table(rows, colWidths=[2.8 * inch, 3.5 * inch], header_bg=PALE_BLUE, fontsize=10))
         block.append(Spacer(1, 0.16 * inch))
         block.append(Paragraph(
             "This report contains confidential and proprietary information intended solely for the recipient. "
@@ -1040,7 +1040,7 @@ class PDFReport:
             elems.append(self._table(rows, colWidths=[2.1 * inch, 1.0 * inch, 1.0 * inch, 1.0 * inch, 1.4 * inch], header_bg=PALE_BLUE, fontsize=9))
             elems.append(Paragraph("If a column shows ‘—’, it means that value wasn’t provided by the runner.", self.styles['Caption']))
         else:
-            elems.append(Paragraph("Data Not Collected: No Core Web Vitals provided by runner.", self.styles['Muted']))
+            elems.append(Paragraph("No additional data was provided by the audit runner for this section.", self.styles['Muted']))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1073,7 +1073,8 @@ class PDFReport:
             except Exception:
                 elems.append(Paragraph("Screenshot could not be rendered.", self.styles['Muted']))
         else:
-            elems.append(Paragraph("Screenshot not available.", self.styles['Muted']))
+            # Do not render a large empty block; keep the note subtle
+            elems.append(Paragraph("No homepage screenshot provided by the runner.", self.styles['Muted']))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1221,16 +1222,16 @@ class PDFReport:
         if opps:
             rows = [["Opportunity", "Est. Savings"]]
             for o in opps[:8]:
-                title = str(o.get("title", "")).strip()
+                title = str(o.get("title","")).strip()
                 savings = _ms(o.get("estimated_savings_ms"))
                 if title and savings:
                     rows.append([title, savings])
             if len(rows) > 1:
                 elems.append(self._table(rows, colWidths=[4.2 * inch, 2.1 * inch], header_bg=PALE_BLUE))
             else:
-                elems.append(Paragraph("No opportunities detected.", self.styles['Muted']))
+                elems.append(Paragraph("No additional data was provided by the audit runner for this section.", self.styles['Muted']))
         else:
-            elems.append(Paragraph("No opportunities detected.", self.styles['Muted']))
+            elems.append(Paragraph("No additional data was provided by the audit runner for this section.", self.styles['Muted']))
         elems.append(Spacer(1, 0.06 * inch))
 
         # Diagnostics
@@ -1245,9 +1246,9 @@ class PDFReport:
             if len(rows) > 1:
                 elems.append(self._table(rows, colWidths=[2.4 * inch, 3.9 * inch], header_bg=PALE_YELLOW))
             else:
-                elems.append(Paragraph("No diagnostics detected.", self.styles['Muted']))
+                elems.append(Paragraph("No additional data was provided by the audit runner for this section.", self.styles['Muted']))
         else:
-            elems.append(Paragraph("No diagnostics detected.", self.styles['Muted']))
+            elems.append(Paragraph("No additional data was provided by the audit runner for this section.", self.styles['Muted']))
 
         self._section_data_note(elems)
         elems.append(PageBreak())
@@ -1377,7 +1378,7 @@ class PDFReport:
         elems.append(self._section_title("Industry Benchmark Comparison"))
         avg = self.bench.get('avg') if isinstance(self.bench, dict) else None
         if not isinstance(avg, dict) or not avg:
-            elems.append(Paragraph("Data Not Collected: No benchmark block provided by runner.", self.styles['Muted']))
+            elems.append(Paragraph("No additional data was provided by the audit runner for this section.", self.styles['Muted']))
             self._section_data_note(elems)
             elems.append(PageBreak())
             return
@@ -1440,7 +1441,7 @@ class PDFReport:
             if summary:
                 elems.append(Paragraph(escape(summary), self.styles['Normal']))
             else:
-                elems.append(Paragraph("Data Not Collected: No competitor list provided by runner.", self.styles['Muted']))
+                elems.append(Paragraph("No additional data was provided by the audit runner for this section.", self.styles['Muted']))
             self._section_data_note(elems)
             elems.append(PageBreak())
             return
