@@ -1,383 +1,788 @@
-<!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FF Tech — Website Audit Pro</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Website Audit Pro</title>
+
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
   <style>
-    .hero-bg { background: linear-gradient(135deg, #1e40af, #3b82f6); }
-    .score-card:hover { transform: translateY(-6px); }
+    :root {
+      --radius: 18px;
+      --glass: rgba(255,255,255,.07);
+      --glassBorder: rgba(255,255,255,.12);
+      --shadow: 0 18px 45px rgba(0,0,0,.35);
+      --muted: rgba(255,255,255,.72);
+      --muted2: rgba(255,255,255,.62);
+      --bg0: rgba(2,6,23,1);
+      --bg1: rgba(3,7,18,1);
+      --brandA: rgba(14,165,233,.95);
+      --brandB: rgba(99,102,241,.90);
+      --good: #22c55e;
+      --warn: #fbbf24;
+      --bad: #ef4444;
+      --info: #38bdf8;
+    }
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(1200px 600px at 25% 15%, rgba(14,165,233,.22), transparent 55%),
+        radial-gradient(900px 520px at 75% 8%, rgba(34,197,94,.16), transparent 52%),
+        radial-gradient(800px 520px at 65% 85%, rgba(239,68,68,.12), transparent 52%),
+        linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 100%);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .app-shell { max-width: 1200px; margin: 0 auto; padding: 22px 16px 70px; }
+    .glass {
+      background: var(--glass);
+      border: 1px solid var(--glassBorder);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .brand-badge {
+      width: 46px; height: 46px;
+      border-radius: 14px;
+      display: grid; place-items: center;
+      font-weight: 900;
+      letter-spacing: .5px;
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border: 1px solid rgba(255,255,255,.16);
+      box-shadow: 0 18px 40px rgba(14,165,233,.22);
+    }
+    .subtle { color: var(--muted); }
+    .muted-2 { color: var(--muted2); }
+    .pill {
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: rgba(255,255,255,.80);
+      user-select: none;
+      white-space: nowrap;
+    }
+    .btn-glow {
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border: none;
+      box-shadow: 0 18px 45px rgba(14,165,233,.22);
+    }
+    .btn-glow:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .btn-glow:active { transform: translateY(0); }
+    .progress { height: 10px; }
+    .mini-card {
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      padding: 14px;
+      height: 100%;
+    }
+    .mini-card .label { font-size: 12px; opacity: .82; }
+    .mini-card .value { font-size: 34px; font-weight: 900; line-height: 1.1; }
+    .mini-card .hint { font-size: 12px; opacity: .72; margin-top: 8px; }
+    .kv-table td, .kv-table th { border-color: rgba(255,255,255,.10)!important; }
+    .fade-in { animation: fadeIn .30s ease both; }
+    @keyframes fadeIn { from {opacity:0; transform: translateY(8px)} to {opacity:1; transform: translateY(0)} }
+    .score-ring {
+      width: 180px; height: 180px; border-radius: 999px; position: relative; display: grid; place-items: center;
+      background: conic-gradient(from 180deg, rgba(14,165,233,.95) var(--deg), rgba(255,255,255,.08) 0);
+      border: 1px solid rgba(255,255,255,.12); box-shadow: 0 18px 45px rgba(0,0,0,.35);
+    }
+    .score-ring .inside {
+      width: 132px; height: 132px; border-radius: 999px; background: rgba(2,6,23,.75);
+      border: 1px solid rgba(255,255,255,.12); display: grid; place-items: center; text-align: center; padding: 10px;
+    }
+    .score-ring .score { font-size: 40px; font-weight: 950; line-height: 1; }
+    .score-ring .grade { font-weight: 900; margin-top: 4px; opacity: .92; }
+    .status-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); font-size: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: rgba(255,255,255,.35); }
+    .dot.ok { background: var(--good); box-shadow: 0 0 0 6px rgba(34,197,94,.16); }
+    .dot.warn { background: var(--warn); box-shadow: 0 0 0 6px rgba(251,191,36,.16); }
+    .dot.bad { background: var(--bad); box-shadow: 0 0 0 6px rgba(239,68,68,.16); }
+    .dot.info { background: var(--info); box-shadow: 0 0 0 6px rgba(56,189,248,.16); }
+    .kv { display:flex; flex-wrap:wrap; gap:8px; }
+    .kv .kv-item { padding:6px 10px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:12px; font-size:12px;}
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen" x-data="auditApp()">
-
-  <!-- HEADER -->
-  <header class="bg-white border-b shadow-sm sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 bg-blue-700 rounded-xl flex items-center justify-center text-white font-bold text-3xl">F</div>
+<body>
+  <div class="app-shell">
+    <!-- HEADER -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <div class="d-flex align-items-center gap-3">
+        <div class="brand-badge text-white">FF</div>
         <div>
-          <span class="text-2xl font-bold text-gray-900">FF Tech</span>
-          <span class="text-sm text-gray-500 block -mt-1">Website Audit Pro</span>
+          <div class="h4 mb-0 fw-bold">Website Audit Pro</div>
+          <div class="subtle small">Runner.py results • WebSocket progress • PDF export</div>
         </div>
       </div>
-      <button @click="newAudit()" 
-              class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center gap-2 transition">
-        <i class="fas fa-plus"></i> New Audit
-      </button>
+      <div class="d-flex align-items-center gap-2">
+        <span id="wsStatus" class="pill">WS: Disconnected</span>
+        <button class="btn btn-sm btn-outline-secondary" id="themeToggle" type="button" aria-label="Toggle theme">🌙 / ☀️</button>
+      </div>
     </div>
-  </header>
 
-  <!-- HERO INPUT -->
-  <div class="hero-bg text-white py-16 md:py-20">
-    <div class="max-w-4xl mx-auto px-6 text-center">
-      <h1 class="text-4xl md:text-5xl font-bold mb-4 leading-tight">
-        Instant Professional Website Audit
-      </h1>
-      <p class="text-xl text-blue-100 mb-10">
-        Performance • SEO • Security • Accessibility • Mobile • Compliance — Full PDF Report Included
-      </p>
-
-      <div class="max-w-2xl mx-auto">
-        <div class="flex flex-col sm:flex-row gap-3 bg-white/10 backdrop-blur-lg rounded-3xl p-2 border border-white/20">
-          <input id="urlInput" type="text" placeholder="www.haier.com.pk or apple.com" 
-                 class="flex-1 px-6 py-4 bg-white rounded-3xl text-gray-900 text-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
-                 @keyup.enter="startAudit()">
-          <button @click="startAudit()" 
-                  class="px-10 py-4 bg-white text-blue-700 font-semibold rounded-3xl hover:bg-gray-100 transition flex items-center justify-center gap-3">
-            <i class="fas fa-rocket"></i> START AUDIT
-          </button>
+    <!-- INPUT + PROGRESS -->
+    <div class="glass p-4 mb-4">
+      <div class="row g-3 align-items-end">
+        <div class="col-lg-7">
+          <label class="form-label fw-semibold">Website URL / Domain</label>
+          <input id="urlInput" type="text" class="form-control form-control-lg"
+                 placeholder="haier.com.pk or www.haier.com.pk"
+                 value="https://www.apple.com" />
+          <div class="small muted-2 mt-1">Just type the domain — https:// is added automatically.</div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PROGRESS -->
-  <div x-show="progress > 0 && progress < 100" class="max-w-5xl mx-auto px-6 py-12">
-    <div class="bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
-      <div class="flex justify-between mb-5">
-        <span class="font-semibold text-xl text-gray-800" x-text="status || 'Analyzing...'"></span>
-        <span class="font-bold text-2xl text-blue-600" x-text="progress + '%'"></span>
-      </div>
-      <div class="h-3 bg-gray-100 rounded-full overflow-hidden">
-        <div class="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500" :style="{ width: progress + '%' }"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- FULL RESULTS -->
-  <div x-show="result" class="max-w-7xl mx-auto px-6 pb-32 space-y-12">
-
-    <!-- TOP SUMMARY -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-      <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center">
-        <h3 class="text-xl font-bold text-gray-800 mb-4">Overall Health</h3>
-        <div class="text-6xl font-extrabold" :class="result.overall_score >= 80 ? 'text-green-600' : result.overall_score >= 50 ? 'text-orange-500' : 'text-red-600'">
-          <span x-text="result.overall_score"></span>
-        </div>
-        <div class="text-lg mt-2 font-medium" :class="result.summary?.risk_level === 'Low' ? 'text-green-600' : result.summary?.risk_level === 'Medium' ? 'text-orange-500' : 'text-red-600'" x-text="result.summary?.risk_level || '—'"></div>
-      </div>
-
-      <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center">
-        <h3 class="text-xl font-bold text-gray-800 mb-4">Grade</h3>
-        <div class="text-6xl font-extrabold text-indigo-600" x-text="result.grade || '—'"></div>
-      </div>
-
-      <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center">
-        <h3 class="text-xl font-bold text-gray-800 mb-4">Audit Date</h3>
-        <div class="text-3xl font-bold text-gray-700" x-text="result.audit_datetime || '—'"></div>
-      </div>
-
-      <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center">
-        <h3 class="text-xl font-bold text-gray-800 mb-4">URL</h3>
-        <div class="text-xl font-medium break-all" x-text="result.audited_url"></div>
-      </div>
-    </div>
-
-    <!-- SCORE BREAKDOWN CHART -->
-    <div class="bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
-      <h2 class="text-2xl font-bold mb-6 text-gray-800">Score Breakdown Chart</h2>
-      <canvas id="scoreChart" height="140"></canvas>
-    </div>
-
-    <!-- DETAILED BREAKDOWN TABLES -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
-      <!-- SEO Details -->
-      <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
-        <h3 class="text-xl font-bold mb-4 text-gray-800">SEO Details</h3>
-        <table class="w-full text-sm border-collapse">
-          <tbody>
-            <tr class="border-b"><td class="py-3 font-medium">Title</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.title || '—'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">Meta Description Present</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.meta_description_present ? 'Yes' : 'No'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">Canonical URL</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.canonical || '—'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">H1 Count</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.h1_count || '—'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">Total Images</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.images_total || '—'"></td></tr>
-            <tr><td class="py-3 font-medium">Images Missing ALT</td><td class="py-3 text-red-600 font-bold" x-text="result.breakdown?.seo?.extras?.images_missing_alt || '0'"></td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Performance Details -->
-      <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
-        <h3 class="text-xl font-bold mb-4 text-gray-800">Performance Details</h3>
-        <table class="w-full text-sm border-collapse">
-          <tbody>
-            <tr class="border-b"><td class="py-3 font-medium">Load Time</td><td class="py-3 font-bold text-blue-600" x-text="result.breakdown?.performance?.extras?.load_ms + ' ms' || '—'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">Page Size</td><td class="py-3" x-text="result.breakdown?.performance?.extras?.bytes ? Math.round(result.breakdown.performance.extras.bytes / 1024) + ' KB' : '—'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">Scripts Count</td><td class="py-3" x-text="result.breakdown?.performance?.extras?.scripts || '—'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">Styles Count</td><td class="py-3" x-text="result.breakdown?.performance?.extras?.styles || '—'"></td></tr>
-            <tr><td class="py-3 font-medium">Fetcher</td><td class="py-3" x-text="result.breakdown?.performance?.extras?.fetcher || '—'"></td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Links Details -->
-      <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
-        <h3 class="text-xl font-bold mb-4 text-gray-800">Links Overview</h3>
-        <table class="w-full text-sm border-collapse">
-          <tbody>
-            <tr class="border-b"><td class="py-3 font-medium">Internal Links</td><td class="py-3" x-text="result.breakdown?.links?.internal_links_count || '—'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">External Links</td><td class="py-3" x-text="result.breakdown?.links?.external_links_count || '—'"></td></tr>
-            <tr><td class="py-3 font-medium">Total Links</td><td class="py-3 font-bold" x-text="result.breakdown?.links?.total_links_count || '—'"></td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Security Details -->
-      <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
-        <h3 class="text-xl font-bold mb-4 text-gray-800">Security Details</h3>
-        <table class="w-full text-sm border-collapse">
-          <tbody>
-            <tr class="border-b"><td class="py-3 font-medium">HTTPS</td><td class="py-3" :class="result.breakdown?.security?.https ? 'text-green-600 font-bold' : 'text-red-600'" x-text="result.breakdown?.security?.https ? 'Yes' : 'No'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">HSTS Enabled</td><td class="py-3" :class="result.breakdown?.security?.hsts ? 'text-green-600 font-bold' : 'text-orange-600'" x-text="result.breakdown?.security?.hsts ? 'Yes' : 'No'"></td></tr>
-            <tr class="border-b"><td class="py-3 font-medium">Status Code</td><td class="py-3" x-text="result.breakdown?.security?.status_code || '—'"></td></tr>
-            <tr><td class="py-3 font-medium">Server Header</td><td class="py-3" x-text="result.breakdown?.security?.server || '—'"></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- DYNAMIC CARDS & KV -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      <!-- Dynamic Cards -->
-      <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
-        <h3 class="text-xl font-bold mb-4 text-gray-800">Dynamic Cards</h3>
-        <template x-if="result.dynamic?.cards?.length">
-          <div class="space-y-4">
-            <template x-for="card in result.dynamic.cards" :key="card.title">
-              <div class="p-4 bg-gray-50 rounded-xl">
-                <h4 class="font-semibold text-gray-800" x-text="card.title"></h4>
-                <p class="text-gray-700 mt-1" x-text="card.body"></p>
-              </div>
-            </template>
+        <div class="col-lg-5">
+          <div class="d-grid gap-2 d-lg-flex justify-content-lg-end">
+            <button id="startBtn" class="btn btn-lg btn-glow text-white fw-semibold" type="button">▶ Start Audit</button>
+            <button id="pdfBtn" class="btn btn-lg btn-outline-info fw-semibold" type="button" disabled>⬇ Download Professional PDF</button>
           </div>
-        </template>
-        <template x-if="!result.dynamic?.cards?.length">
-          <p class="text-gray-500 italic">No dynamic cards available</p>
-        </template>
+        </div>
       </div>
 
-      <!-- Dynamic KV -->
-      <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
-        <h3 class="text-xl font-bold mb-4 text-gray-800">Key-Value Data</h3>
-        <template x-if="result.dynamic?.kv?.length">
-          <table class="w-full text-sm border-collapse">
-            <tbody>
-              <template x-for="item in result.dynamic.kv" :key="item.key">
-                <tr class="border-b last:border-0">
-                  <td class="py-3 font-medium w-1/3" x-text="item.key"></td>
-                  <td class="py-3" x-text="item.value"></td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </template>
-        <template x-if="!result.dynamic?.kv?.length">
-          <p class="text-gray-500 italic">No key-value data available</p>
-        </template>
+      <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,.12)">
+
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="fw-semibold">Progress</div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-chip"><span class="dot info" id="stageDot"></span><span id="statusText">idle</span></span>
+          <span class="subtle"><span id="progressText">0%</span></span>
+        </div>
+      </div>
+      <div class="progress glass" style="border-radius:999px;">
+        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+
+      <div id="alertArea" class="mt-3"></div>
+
+      <div class="mt-3">
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#debugCollapse">
+          Debug (last message / last result)
+        </button>
+        <div class="collapse mt-2" id="debugCollapse">
+          <div class="glass p-3 mono small" id="debugBox">No messages yet.</div>
+        </div>
       </div>
     </div>
 
-    <!-- PRIORITY ACTIONS -->
-    <div class="bg-white rounded-3xl shadow-lg p-8 border border-gray-100">
-      <h2 class="text-2xl font-bold mb-6 text-gray-800">Priority Recommendations</h2>
-      <template x-if="result.priority_actions && result.priority_actions.length">
-        <ul class="space-y-4">
-          <template x-for="action in result.priority_actions" :key="action">
-            <li class="flex items-start gap-4 p-4 bg-red-50 rounded-xl">
-              <span class="text-red-500 text-2xl mt-1"><i class="fas fa-exclamation-triangle"></i></span>
-              <p class="text-gray-800 text-lg" x-text="action"></p>
-            </li>
-          </template>
-        </ul>
-      </template>
-      <template x-if="!result.priority_actions || !result.priority_actions.length">
-        <p class="text-gray-600 italic text-lg">No priority actions detected.</p>
-      </template>
+    <!-- RESULTS AREA -->
+    <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-lg-4">
+        <div class="glass p-4 h-100 text-center">
+          <div class="score-ring mx-auto" id="scoreRing" style="--deg:0deg;">
+            <div class="inside">
+              <div class="score" id="overallScore">0</div>
+              <div class="grade" id="gradeText">—</div>
+              <div class="subtle small" id="auditedUrl">Audited: —</div>
+            </div>
+          </div>
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <span class="pill" id="lastRunAt">—</span>
+            <span class="pill" id="fetcherPill">fetcher: —</span>
+          </div>
+          <div class="mt-3 subtle small">
+            Overall score is computed from SEO, Performance, Links, and Security.
+          </div>
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <button id="copyJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Copy JSON</button>
+            <button id="openJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Open JSON</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-8">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <div class="h5 mb-0 fw-bold">Score Breakdown</div>
+              <div class="subtle small">Chart comes directly from runner.py <code>chart_data</code></div>
+            </div>
+            <span class="pill" id="verdictPill">verdict: —</span>
+          </div>
+          <canvas id="breakdownChart" height="120"></canvas>
+        </div>
+      </div>
     </div>
 
-    <!-- DOWNLOAD PDF -->
-    <div class="fixed bottom-8 right-8 z-50">
-      <button @click="downloadPDF()" :disabled="!result || loading"
-              class="flex items-center gap-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-10 py-5 rounded-full font-bold shadow-2xl hover:shadow-3xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed">
-        <i class="fas fa-file-pdf text-xl"></i>
-        Download Full PDF Report
-      </button>
+    <!-- CATEGORY CARDS + INLINE EXTRAS -->
+    <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">SEO</div>
+          <div class="value" id="seoScore">—</div>
+          <div class="hint">Title, meta, H1, canonical, image ALT</div>
+          <div class="mt-3 kv" id="seoExtrasKv"></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Performance</div>
+          <div class="value" id="perfScore">—</div>
+          <div class="hint">Load time, size, scripts, styles</div>
+          <div class="mt-3 kv" id="perfExtrasKv"></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Links</div>
+          <div class="value" id="linksScore">—</div>
+          <div class="hint">Internal vs external structure</div>
+          <div class="mt-3 kv" id="linksKv"></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Security</div>
+          <div class="value" id="secScore">—</div>
+          <div class="hint">HTTPS, HSTS, response status</div>
+          <div class="mt-3 kv" id="secKv"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETAILED TABLES (from runner.py extras) -->
+    <div id="detailsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="h6 mb-0 fw-bold">SEO Details</div>
+            <span class="pill">breakdown.seo.extras</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="seoTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="h6 mb-0 fw-bold">Performance Details</div>
+            <span class="pill">breakdown.performance.extras</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="perfTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="h6 mb-0 fw-bold">Links Details</div>
+            <span class="pill">breakdown.links</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="linksTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="h6 mb-0 fw-bold">Security Details</div>
+            <span class="pill">breakdown.security</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="secTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DYNAMIC OUTPUT -->
+    <div id="dynamicArea" class="row g-3" style="display:none;">
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Highlights</div>
+            <span class="pill">runner.dynamic.cards</span>
+          </div>
+          <div id="dynamicCards" class="d-grid gap-2"></div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Details</div>
+            <span class="pill">runner.dynamic.kv</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="kvBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center mt-5 subtle small">
+      © FF Tech • WebSocket <code>/ws</code> • REST <code>/api/audit/run</code> • PDF <code>/api/audit/pdf</code>
     </div>
   </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    function auditApp() {
-      return {
-        progress: 0,
-        status: "",
-        result: null,
-        ws: null,
-        loading: false,
-        scoreChart: null,
+    // ============================== Controller ==============================
+    const REST_FALLBACK_AFTER_MS = 9000;
+    let ws = null, lastResult = null, chart = null, fallbackTimer = null, auditInProgress = false;
 
-        async startAudit() {
-          let url = document.getElementById('urlInput')?.value?.trim();
-          if (!url) {
-            alert("Please enter a website address (e.g. www.apple.com or haier.com.pk)");
-            return;
-          }
+    const el = (id) => document.getElementById(id);
 
-          // Normalize URL in frontend (very forgiving)
-          if (!/^https?:\/\//i.test(url)) {
-            // Add https:// if missing
-            if (url.startsWith('www.')) {
-              url = 'https://' + url;
-            } else if (url.includes('.')) {
-              // Assume domain — add https:// (with or without www)
-              url = 'https://' + url;
-            } else {
-              // Probably just domain name — add www and https
-              url = 'https://www.' + url;
-            }
-          }
+    // Theme toggle
+    const themeKey = "fftech_theme";
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-bs-theme", theme);
+      localStorage.setItem(themeKey, theme);
+    }
+    (function initTheme() {
+      const saved = localStorage.getItem(themeKey);
+      if (saved) setTheme(saved);
+    })();
+    el("themeToggle").addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-bs-theme") || "dark";
+      setTheme(current === "dark" ? "light" : "dark");
+    });
 
-          // Update input field so user sees the final URL
-          document.getElementById('urlInput').value = url;
+    // Helpers
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    }
+    function showAlert(message, type="info", persist=false) {
+      const area = el("alertArea");
+      const div = document.createElement("div");
+      div.className = `alert alert-${type} mb-2 fade-in`;
+      div.innerHTML = `
+        <div class="d-flex align-items-start justify-content-between gap-3">
+          <div>${message}</div>
+          <button type="button" class="btn-close" aria-label="Close"></button>
+        </div>`;
+      div.querySelector(".btn-close").onclick = () => div.remove();
+      area.prepend(div);
+      if (!persist) setTimeout(() => div.remove(), 6500);
+    }
+    function setStage(status, percent) {
+      const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
+      el("progressBar").style.width = `${p}%`;
+      el("progressText").textContent = `${p}%`;
+      el("statusText").textContent = status || "working";
+      const bar = el("progressBar");
+      bar.classList.remove("bg-info","bg-success","bg-warning","bg-danger");
+      if (status === "error" || status === "failed") bar.classList.add("bg-danger");
+      else if (p >= 100) bar.classList.add("bg-success");
+      else bar.classList.add("bg-info");
+      const dot = el("stageDot");
+      dot.classList.remove("ok","warn","bad","info");
+      if (status === "error" || status === "failed") dot.classList.add("bad");
+      else if (p >= 100) dot.classList.add("ok");
+      else dot.classList.add("info");
+    }
+    function setWsStatus(connected) {
+      el("wsStatus").textContent = connected ? "WS: Connected" : "WS: Disconnected";
+      el("wsStatus").style.opacity = connected ? "1" : "0.75";
+    }
+    function wsUrl() {
+      const loc = window.location;
+      const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${loc.host}/ws`;
+    }
+    function debugSet(obj) {
+      el("debugBox").textContent = JSON.stringify(obj, null, 2);
+    }
+    function extractRunnerResult(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      if (obj.audited_url && typeof obj.overall_score !== "undefined") return obj;
+      if (obj.result && obj.result.audited_url) return obj.result;
+      if (obj.payload && obj.payload.audited_url) return obj.payload;
+      if (obj.data && obj.data.audited_url) return obj.data;
+      return null;
+    }
+    function extractError(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      return obj.error || (obj.payload && obj.payload.error) || null;
+    }
+    function normalizeUrl(input) {
+      let url = (input || "").trim();
+      if (!url) return "";
+      if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+      return url;
+    }
+    function addKvPill(container, label, value) {
+      if (value === null || value === undefined || String(value).trim() === "") return;
+      const span = document.createElement("span");
+      span.className = "kv-item";
+      span.textContent = `${label}: ${value}`;
+      container.appendChild(span);
+    }
+    function addKvRow(tbody, key, value) {
+      if (value === null || value === undefined || String(value).trim() === "") return;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<th class="text-nowrap" style="width:40%">${escapeHtml(key)}</th>
+                      <td>${escapeHtml(String(value))}</td>`;
+      tbody.appendChild(tr);
+    }
 
-          this.loading = true;
-          this.progress = 5;
-          this.status = "Connecting to audit engine...";
-          this.result = null;
+    // WebSocket with graceful fallback
+    function ensureWs() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      ws = new WebSocket(wsUrl());
 
-          if (this.ws) this.ws.close();
+      const retryMs = 6000;
+      let opened = false;
 
-          const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-          this.ws = new WebSocket(`${wsProtocol}//${location.host}/ws`);
+      ws.onopen = () => {
+        opened = true;
+        setWsStatus(true);
+      };
 
-          this.ws.onopen = () => {
-            this.ws.send(JSON.stringify({ url }));
-            this.status = "Starting audit...";
-          };
+      ws.onmessage = (event) => {
+        let msg = null;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        debugSet(msg);
+        const status = msg.status ?? msg.message ?? msg.type ?? "working";
+        const progress = msg.progress ?? msg.percent ?? 0;
+        setStage(status, progress);
 
-          this.ws.onmessage = (e) => {
-            const msg = JSON.parse(e.data);
-            this.status = msg.status || "Processing";
-            this.progress = msg.progress || this.progress;
-
-            if (msg.status === "completed") {
-              this.result = msg.result;
-              this.progress = 100;
-              this.loading = false;
-              this.status = "Audit Complete!";
-              this.ws.close();
-              this.renderScoreChart();
-            }
-
-            if (msg.status === "error") {
-              alert("Audit failed: " + (msg.payload?.error || "Unknown error"));
-              this.progress = 0;
-              this.loading = false;
-              this.ws.close();
-            }
-          };
-
-          this.ws.onerror = () => {
-            alert("Connection issue. Please try again.");
-            this.loading = false;
-          };
-        },
-
-        renderScoreChart() {
-          if (!this.result?.scores) return;
-
-          const ctx = document.getElementById('scoreChart')?.getContext('2d');
-          if (!ctx) return;
-
-          if (this.scoreChart) this.scoreChart.destroy();
-
-          this.scoreChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-              labels: ['SEO', 'Performance', 'Security', 'Links'],
-              datasets: [{
-                label: 'Score',
-                data: [
-                  this.result.scores.seo || 0,
-                  this.result.scores.performance || 0,
-                  this.result.scores.security || 0,
-                  this.result.scores.links || 0
-                ],
-                backgroundColor: ['#6366f1', '#3b82f6', '#ef4444', '#10b981'],
-                borderWidth: 0,
-                borderRadius: 8,
-                barPercentage: 0.7,
-              }]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              scales: {
-                y: { beginAtZero: true, max: 100, grid: { color: '#e5e7eb' } },
-                x: { grid: { display: false } }
-              },
-              plugins: { legend: { display: false } }
-            }
-          });
-        },
-
-        async downloadPDF() {
-          if (!this.result?.audited_url) return alert("No audit result available yet");
-
-          try {
-            const res = await fetch('/api/audit/pdf', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url: this.result.audited_url })
-            });
-
-            if (!res.ok) throw new Error(await res.text());
-
-            const blob = await res.blob();
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `FF-Tech-Audit-${new Date().toISOString().split('T')[0]}.pdf`;
-            link.click();
-          } catch (err) {
-            alert("Failed to download PDF: " + err.message);
-          }
-        },
-
-        newAudit() {
-          this.result = null;
-          this.progress = 0;
-          this.status = "";
-          this.loading = false;
-          document.getElementById('urlInput').value = '';
-          if (this.ws) this.ws.close();
+        const err = extractError(msg);
+        if (err) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          showAlert(buildHumanError(err), "danger", true);
+          return;
         }
+        const r = extractRunnerResult(msg);
+        if (r) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          renderResult(r);
+        }
+      };
+
+      ws.onclose = () => {
+        setWsStatus(false);
+        if (!opened) showAlert("WebSocket could not connect (REST fallback will be used).", "warning");
+        // Try to keep WS alive for future runs
+        setTimeout(() => { if (!auditInProgress) ensureWs(); }, retryMs);
+      };
+      ws.onerror = () => setWsStatus(false);
+    }
+
+    async function runAuditRest(url) {
+      try {
+        setStage("rest_fallback", 20);
+        const res = await fetch("/api/audit/run", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ url })
+        });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          const msg = ct.includes("application/json") ? JSON.stringify(await res.json()) : await res.text();
+          throw new Error(msg || `HTTP ${res.status}`);
+        }
+        const j = await res.json();
+        debugSet(j);
+        const err = extractError(j);
+        if (err) throw new Error(err);
+        const r = extractRunnerResult(j);
+        if (!r) throw new Error("REST response did not include runner_result.");
+        renderResult(r);
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+        setStage("error", 100);
       }
     }
+
+    async function startAudit() {
+      const input = el("urlInput").value.trim();
+      if (!input) return showAlert("Please enter a domain or URL.", "warning");
+      const url = normalizeUrl(input);
+
+      lastResult = null;
+      auditInProgress = true;
+      el("pdfBtn").disabled = true;
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      el("detailsArea").style.display = "none";
+      setStage("starting", 1);
+      showAlert(`Auditing ${url}...`, "info");
+
+      // Start WS and set fallback
+      ensureWs();
+      clearTimeout(fallbackTimer);
+      fallbackTimer = setTimeout(() => {
+        if (auditInProgress && !lastResult) {
+          showAlert("WebSocket unavailable. Running REST fallback…", "warning");
+          runAuditRest(url);
+        }
+      }, REST_FALLBACK_AFTER_MS);
+
+      // Try to send URL over WS; ignore if not ready
+      try { ws && ws.send(JSON.stringify({ url })); } catch (e) {}
+    }
+
+    async function downloadPdf() {
+      const input = el("urlInput").value.trim();
+      if (!input) return showAlert("Please enter a URL.", "warning");
+      const url = normalizeUrl(input);
+
+      el("pdfBtn").disabled = true; el("pdfBtn").innerText = "Generating PDF…";
+      try {
+        // The server only uses url, report_title and logo_path here; others are harmless
+        const payload = { url, client_name:"", brand_name:"", report_title:"", website_name:"", logo_path:"" };
+        const res = await fetch("/api/audit/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          if (ct.includes("application/json")) { const j = await res.json(); detail = j.detail || JSON.stringify(j); }
+          else { detail = await res.text(); }
+          throw new Error(detail);
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get("content-disposition") || "";
+        let filename = "audit_report.pdf";
+        const match = cd.match(/filename="?([^"]+)"?/i);
+        if (match && match[1]) filename = match[1];
+        const link = document.createElement("a");
+        const objectUrl = URL.createObjectURL(blob);
+        link.href = objectUrl; link.download = filename;
+        document.body.appendChild(link); link.click(); link.remove();
+        URL.revokeObjectURL(objectUrl);
+        showAlert("PDF generated and downloaded ✅", "success");
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+      } finally {
+        el("pdfBtn").disabled = !lastResult;
+        el("pdfBtn").innerText = "⬇ Download Professional PDF";
+      }
+    }
+
+    function buildHumanError(raw) {
+      const msg = String(raw || "Unknown error");
+      if (msg.includes("CERTIFICATE_VERIFY_FAILED") || msg.includes("unable to get local issuer certificate")) {
+        return `<b>SSL certificate validation failed</b><br>Could not verify HTTPS certificate.<br>Raw: <span class="mono">${escapeHtml(msg)}</span>`;
+      }
+      if (msg.includes("Name or service not known") || msg.includes("Temporary failure in name resolution")) {
+        return `<b>DNS resolution failed</b><br>The domain could not be resolved.<br>Raw: ${escapeHtml(msg)}`;
+      }
+      if (msg.toLowerCase().includes("timeout")) {
+        return `<b>Request timed out</b><br>The site did not respond in time.<br>Raw: ${escapeHtml(msg)}`;
+      }
+      return `<b>Audit failed</b><br><span class="mono">${escapeHtml(msg)}</span>`;
+    }
+
+    function renderResult(r) {
+      lastResult = r;
+      auditInProgress = false;
+      clearTimeout(fallbackTimer);
+
+      // reset
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      el("detailsArea").style.display = "none";
+      el("pdfBtn").disabled = true;
+
+      const error = extractError(r);
+      if (error) {
+        showAlert(buildHumanError(error), "danger", true);
+        setStage("failed", 100);
+        return;
+      }
+
+      // show main sections
+      el("resultsArea").style.display = "";
+      el("cardsArea").style.display = "";
+      el("dynamicArea").style.display = "";
+      el("detailsArea").style.display = "";
+      el("lastRunAt").textContent = new Date().toLocaleString();
+
+      const breakdown = r.breakdown || {};
+      const perfExtras = (breakdown.performance || {}).extras || {};
+      const seoExtras  = (breakdown.seo || {}).extras || {};
+      const linksData  = breakdown.links || {};
+      const secData    = breakdown.security || {};
+
+      // top KPIs
+      const score = parseInt(r.overall_score || 0);
+      const seo   = breakdown.seo?.score ?? 0;
+      const perf  = breakdown.performance?.score ?? 0;
+      const links = breakdown.links?.score ?? 0;
+      const sec   = breakdown.security?.score ?? 0;
+
+      const deg = Math.max(0, Math.min(360, (score / 100) * 360));
+      el("scoreRing").style.setProperty("--deg", `${deg}deg`);
+      el("overallScore").textContent = score;
+      el("gradeText").textContent = r.grade || "—";
+      el("auditedUrl").textContent = `Audited: ${r.audited_url || "—"}`;
+
+      el("seoScore").textContent = seo;
+      el("perfScore").textContent = perf;
+      el("linksScore").textContent = links;
+      el("secScore").textContent = sec;
+
+      const fetcher = perfExtras.fetcher ?? "—";
+      el("fetcherPill").textContent = `fetcher: ${fetcher}`;
+      el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
+
+      // chart
+      let labels = ["SEO", "Performance", "Links", "Security"];
+      let dataPoints = [seo, perf, links, sec];
+      let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
+
+      const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
+      if (chartSpec?.data?.labels && chartSpec?.data?.datasets?.[0]?.data) {
+        labels = chartSpec.data.labels;
+        dataPoints = chartSpec.data.datasets[0].data;
+        colors = chartSpec.data.datasets[0].backgroundColor || colors;
+      }
+      const ctx = el("breakdownChart").getContext("2d");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [{ label: "Score", data: dataPoints, backgroundColor: colors, borderRadius: 12, borderSkipped: false }] },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,.10)" } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+
+      // inline extras (pills)
+      const seoKv = el("seoExtrasKv"); seoKv.innerHTML = "";
+      const titleText = seoExtras.title ? `${seoExtras.title}` : "";
+      if (titleText) addKvPill(seoKv, "title_len", String(titleText).length);
+      if (typeof seoExtras.meta_description_present === "boolean") addKvPill(seoKv, "meta_desc", seoExtras.meta_description_present ? "present" : "missing");
+      if (seoExtras.canonical) addKvPill(seoKv, "canonical", "yes");
+      if (typeof seoExtras.h1_count !== "undefined") addKvPill(seoKv, "h1_count", seoExtras.h1_count);
+      if (typeof seoExtras.images_total !== "undefined" && typeof seoExtras.images_missing_alt !== "undefined")
+        addKvPill(seoKv, "image_alt_missing", `${seoExtras.images_missing_alt}/${seoExtras.images_total}`);
+
+      const perfKv = el("perfExtrasKv"); perfKv.innerHTML = "";
+      if (typeof perfExtras.load_ms !== "undefined") addKvPill(perfKv, "load_ms", perfExtras.load_ms);
+      if (typeof perfExtras.bytes !== "undefined") {
+        const kb = Math.max(0, parseInt(perfExtras.bytes, 10) || 0) / 1024;
+        addKvPill(perfKv, "bytes", `${kb.toFixed(1)} KB`);
+      }
+      if (typeof perfExtras.scripts !== "undefined") addKvPill(perfKv, "scripts", perfExtras.scripts);
+      if (typeof perfExtras.styles !== "undefined") addKvPill(perfKv, "styles", perfExtras.styles);
+
+      const linksKv = el("linksKv"); linksKv.innerHTML = "";
+      if (typeof linksData.internal_links_count !== "undefined") addKvPill(linksKv, "internal", linksData.internal_links_count);
+      if (typeof linksData.external_links_count !== "undefined") addKvPill(linksKv, "external", linksData.external_links_count);
+      if (typeof linksData.total_links_count !== "undefined") addKvPill(linksKv, "total", linksData.total_links_count);
+
+      const secKv = el("secKv"); secKv.innerHTML = "";
+      if (typeof secData.https === "boolean") addKvPill(secKv, "https", secData.https ? "yes" : "no");
+      if (typeof secData.hsts === "boolean") addKvPill(secKv, "hsts", secData.hsts ? "yes" : "no");
+      if (typeof secData.status_code !== "undefined") addKvPill(secKv, "status", secData.status_code);
+      if (secData.server) addKvPill(secKv, "server", secData.server);
+
+      // detailed tables
+      const seoBody = el("seoTableBody"); seoBody.innerHTML = "";
+      addKvRow(seoBody, "Title (length)", titleText ? `${String(titleText).length} chars` : "");
+      addKvRow(seoBody, "Meta description", typeof seoExtras.meta_description_present === "boolean" ? (seoExtras.meta_description_present ? "Present" : "Missing") : "");
+      addKvRow(seoBody, "Canonical", seoExtras.canonical ? "Yes" : "");
+      addKvRow(seoBody, "H1 count", typeof seoExtras.h1_count !== "undefined" ? String(seoExtras.h1_count) : "");
+      if (typeof seoExtras.images_total !== "undefined" && typeof seoExtras.images_missing_alt !== "undefined")
+        addKvRow(seoBody, "Images alt missing", `${seoExtras.images_missing_alt}/${seoExtras.images_total}`);
+
+      const perfBody = el("perfTableBody"); perfBody.innerHTML = "";
+      addKvRow(perfBody, "Load time (ms)", typeof perfExtras.load_ms !== "undefined" ? String(perfExtras.load_ms) : "");
+      addKvRow(perfBody, "Page size", typeof perfExtras.bytes !== "undefined" ? `${(Math.max(0, parseInt(perfExtras.bytes, 10) || 0)/1024).toFixed(1)} KB` : "");
+      addKvRow(perfBody, "Scripts", typeof perfExtras.scripts !== "undefined" ? String(perfExtras.scripts) : "");
+      addKvRow(perfBody, "Stylesheets", typeof perfExtras.styles !== "undefined" ? String(perfExtras.styles) : "");
+      addKvRow(perfBody, "Fetcher", fetcher);
+
+      const linksBody = el("linksTableBody"); linksBody.innerHTML = "";
+      addKvRow(linksBody, "Internal links", typeof linksData.internal_links_count !== "undefined" ? String(linksData.internal_links_count) : "");
+      addKvRow(linksBody, "External links", typeof linksData.external_links_count !== "undefined" ? String(linksData.external_links_count) : "");
+      addKvRow(linksBody, "Total links", typeof linksData.total_links_count !== "undefined" ? String(linksData.total_links_count) : "");
+
+      const secBody = el("secTableBody"); secBody.innerHTML = "";
+      addKvRow(secBody, "HTTPS", typeof secData.https === "boolean" ? (secData.https ? "Yes" : "No") : "");
+      addKvRow(secBody, "HSTS", typeof secData.hsts === "boolean" ? (secData.hsts ? "Yes" : "No") : "");
+      addKvRow(secBody, "Status code", typeof secData.status_code !== "undefined" ? String(secData.status_code) : "");
+      addKvRow(secBody, "Server header", secData.server || "");
+
+      // dynamic cards + kv
+      const dyn = r.dynamic || {};
+      const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
+      const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
+
+      const cardsWrap = el("dynamicCards");
+      cardsWrap.innerHTML = "";
+      for (const c of cards) {
+        const div = document.createElement("div");
+        div.className = "mini-card fade-in";
+        div.innerHTML = `<div class="fw-semibold mb-1">${escapeHtml(c.title || "")}</div>
+                         <div class="subtle">${escapeHtml(c.body || "")}</div>`;
+        cardsWrap.appendChild(div);
+      }
+
+      const kvBody = el("kvBody"); kvBody.innerHTML = "";
+      for (const item of kv) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<th class="text-nowrap" style="width:40%">${escapeHtml(item.key || "")}</th>
+                        <td>${escapeHtml(String(item.value ?? ""))}</td>`;
+        kvBody.appendChild(tr);
+      }
+
+      el("pdfBtn").disabled = false;
+      setStage("completed", 100);
+      setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+      if (score === 0) showAlert("Audit completed but no content was extracted.", "warning", true);
+    }
+
+    // Wire events
+    el("startBtn").addEventListener("click", startAudit);
+    el("pdfBtn").addEventListener("click", downloadPdf);
+    el("copyJsonBtn").addEventListener("click", async () => {
+      if (!lastResult) return showAlert("No result to copy yet.", "warning");
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2));
+        showAlert("Result JSON copied ✅", "success");
+      } catch {
+        showAlert("Clipboard not available.", "warning");
+      }
+    });
+    el("openJsonBtn").addEventListener("click", () => {
+      if (!lastResult) return showAlert("No result to open yet.", "warning");
+      const w = window.open("", "_blank");
+      if (!w) return showAlert("Popup blocked.", "warning");
+      w.document.write(`<pre>${escapeHtml(JSON.stringify(lastResult, null, 2))}</pre>`);
+      w.document.title = "Audit Result JSON"; w.document.close();
+    });
+
+    // Init
+    function setWsStatus(connected) { /* already defined above */ }
+    setWsStatus(false);
+    ensureWs();
+    setStage("idle", 0);
   </script>
 </body>
 </html>
