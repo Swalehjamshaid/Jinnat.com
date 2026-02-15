@@ -7,23 +7,26 @@ Enterprise PDF generator (ReportLab) for WebsiteAuditRunner results.
 - No network calls; safe for Railway
 - Charts rendered via matplotlib (Agg)
 
-UPGRADES (backward-compatible, optional-data aware):
-  • Cover-page layout fix (no overlap), improved typography/spacing, KeepTogether blocks
-  • Subtle diagonal watermark on every page
-  • PDF metadata (title/author/subject/keywords)
-  • Score consistency: recompute Overall with explicit weights incl. Accessibility; show formula & runner vs computed
-  • Lighthouse/PageSpeed (if provided): LCP, INP, CLS, FCP, TTFB, Speed Index, Perf score badge (0–100), Opportunities, Diagnostics
-  • “What We Audited” page: prominent homepage screenshot + context
-  • Accessibility depth (axe-core summary: WCAG levels, buckets, examples)
-  • Mobile-first checks (viewport, tap targets, font sizes, layout shift risk)
-  • Robots.txt & sitemap & structured data rendering (if provided)
-  • Security depth (CSP, headers, cookies, mixed content, security.txt)
-  • Executive One-Pager (gauges, trend arrows, quick wins)
-  • Tables: repeating headers, tighter padding; color chips for emphasis
+IMPROVEMENTS (backward-compatible; optional data-aware):
+  • Real CWV/Lighthouse rendering (if provided by runner)
+  • Homepage screenshot (What We Audited page)
+  • Accessibility depth (axe-core summary)
+  • Mobile-first checks
+  • Robots.txt & sitemap & schema display
+  • Security depth with CSP analysis, cookies, mixed content, security.txt
+  • ROI-prioritized recommendations (Impact/Effort)
+  • Executive one-pager (gauges, trend arrows)
+  • Crawl summary (if provided)
+  • Visual proof of issues (optional screenshots)
+  • Extended metrics noise filtering improved
+  • Scoring consistency (weights include Accessibility) with formula transparency
+  • Cover-page overlap fix, KeepTogether groups, repeating table headers
+  • Watermark + PDF metadata
 """
 from __future__ import annotations
 import io
 import os
+import re
 import json
 import socket
 import hashlib
@@ -219,22 +222,48 @@ def _recalc_overall_score(scores: Dict[str, Any], weights: Optional[Dict[str, fl
         total += _int_or(scores.get(k, 0), 0) * weight
     return int(round(total))
 
-# ---- NEW: assets loader for homepage screenshot ----
-def _load_image_from_assets(assets: Dict[str, Any]) -> Optional[io.BytesIO]:
+# ---- NEW: assets loader for homepage + issue screenshots ----
+def _load_image_from_assets_path_or_b64(path: Optional[str], b64: Optional[str]) -> Optional[io.BytesIO]:
+    if b64:
+        try:
+            import base64
+            raw = base64.b64decode(b64)
+            return io.BytesIO(raw)
+        except Exception:
+            return None
+    if path and os.path.exists(path):
+        try:
+            with open(path, "rb") as f:
+                return io.BytesIO(f.read())
+        except Exception:
+            return None
+    return None
+
+def _load_homepage_screenshot(assets: Dict[str, Any]) -> Optional[io.BytesIO]:
     if not isinstance(assets, dict):
         return None
-    try:
-        if assets.get("homepage_screenshot_b64"):
-            import base64
-            raw = base64.b64decode(assets["homepage_screenshot_b64"])
-            return io.BytesIO(raw)
-        p = assets.get("homepage_screenshot_path")
-        if p and os.path.exists(p):
-            with open(p, "rb") as f:
-                return io.BytesIO(f.read())
-    except Exception:
-        return None
-    return None
+    return _load_image_from_assets_path_or_b64(
+        assets.get("homepage_screenshot_path"),
+        assets.get("homepage_screenshot_b64")
+    )
+
+def _load_issue_screenshots(assets: Dict[str, Any]) -> List[Tuple[str, io.BytesIO]]:
+    out: List[Tuple[str, io.BytesIO]] = []
+    if not isinstance(assets, dict):
+        return out
+    items = assets.get("issue_screenshots", []) or []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        title = str(it.get("title","")) or "Issue"
+        buf = _load_image_from_assets_path_or_b64(it.get("path"), it.get("b64"))
+        if buf:
+            out.append((title, buf))
+    # Backward-compatible single alt-issues screenshot
+    single = _load_image_from_assets_path_or_b64(assets.get("alt_issues_screenshot_path"), assets.get("alt_issues_screenshot_b64"))
+    if single:
+        out.append(("Alt Text Issues (examples)", single))
+    return out
 
 # ---- NEW: formatters for metrics ----
 def _ms(v: Any) -> str:
@@ -255,6 +284,20 @@ def _perf_color(score: Optional[float]):
     if s >= 90: return SUCCESS_GREEN
     if s >= 50: return WARNING_ORANGE
     return CRITICAL_RED
+
+# ---- NEW: CSP analyzer ----
+def _analyze_csp(csp: str) -> Dict[str, Any]:
+    if not isinstance(csp, str) or not csp:
+        return {"present": False}
+    lower = csp.lower()
+    return {
+        "present": True,
+        "unsafe_inline": "'unsafe-inline'" in lower,
+        "unsafe_eval": "'unsafe-eval'" in lower,
+        "allows_data": "data:" in lower,
+        "allows_http": "http:" in lower and "upgrade-insecure-requests" not in lower,
+        "has_default_src": "default-src" in lower,
+    }
 
 # ------------------------------------------------------------
 # ISSUE DERIVATION — no network calls
@@ -302,7 +345,7 @@ def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
                 "issue": f"High load time ({load_ms} ms).",
                 "category": "Performance",
                 "impact": "Conversion loss; poor UX & Core Web Vitals risk.",
-                "fix": "Optimize TTFB, compress assets, lazy load images, defer non-critical JS."
+                "fix": "Optimize TTFB, compress assets, lazy-load images, defer non-critical JS."
             })
         if size_b > 1_500_000:
             issues.append({
@@ -453,9 +496,9 @@ def _collect_extended_metrics(audit: Dict[str, Any]) -> List[Tuple[str, str]]:
         for k, v in sc.items():
             pairs.append((f"scores.{k}", str(v)))
 
-    # Optional integrations
+    # Optional integrations (lighthouse/accessibility/robots/sitemap/schema/security/mobile/benchmarks/assets/crawl/competitors)
     for key in ["lighthouse", "accessibility", "robots", "sitemap", "structured_data",
-                "security_deep", "mobile", "benchmarks", "assets"]:
+                "security_deep", "mobile", "benchmarks", "assets", "crawl", "competitors"]:
         block = audit.get(key, {})
         if isinstance(block, dict) and block:
             pairs += _flatten_pairs_from_dict(block, key)
@@ -482,6 +525,7 @@ def _collect_extended_metrics(audit: Dict[str, Any]) -> List[Tuple[str, str]]:
                 if k:
                     pairs.append((f"dynamic.kv.{k}", v))
 
+    # Deduplicate by key
     seen = set()
     deduped: List[Tuple[str, str]] = []
     for k,v in pairs:
@@ -489,8 +533,12 @@ def _collect_extended_metrics(audit: Dict[str, Any]) -> List[Tuple[str, str]]:
             seen.add(k)
             deduped.append((k,v))
 
+    # Stronger noise filtering
     filtered = []
-    noisy_substrings = [".html", "<html", "script", "base64,", "function(", "{", "}", "[object"]
+    noisy_substrings = [
+        "<!doctype", "<html", "script", "base64,", "data:image/", "function(", "{", "}", "[object",
+        "charset=", " style=", " class=", "<svg", "</svg"
+    ]
     for k, v in deduped:
         v_low = str(v).lower()
         if any(s in v_low for s in noisy_substrings):
@@ -505,7 +553,7 @@ class PDFReport:
     def __init__(self, audit: Dict[str, Any]):
         self.data = audit
 
-        # Try to register a clean sans font if available (optional/failsafe to Helvetica)
+        # Optional custom font (fallback to Helvetica)
         font_path = os.getenv("PDF_FONT_PATH", "")
         try:
             if font_path and os.path.exists(font_path):
@@ -517,14 +565,14 @@ class PDFReport:
             base_font = "Helvetica"
 
         self.styles = getSampleStyleSheet()
-        # Typography (careful spacing to avoid overlap)
         self.styles.add(ParagraphStyle('Muted', fontSize=8, textColor=MUTED_GREY, leading=11, fontName=base_font))
         self.styles.add(ParagraphStyle('H2', parent=self.styles['Heading2'], textColor=PRIMARY_DARK, fontName=base_font))
         self.styles.add(ParagraphStyle('H3', parent=self.styles['Heading3'], textColor=PRIMARY_DARK, fontName=base_font))
         self.styles.add(ParagraphStyle('Note', fontSize=9, textColor=MUTED_GREY, leading=12, fontName=base_font))
         self.styles.add(ParagraphStyle('Tiny', fontSize=7, textColor=MUTED_GREY, fontName=base_font))
-        self.styles.add(ParagraphStyle('Brand', fontSize=24, textColor=PRIMARY_DARK, fontName=base_font))  # reduced to avoid overlap
+        self.styles.add(ParagraphStyle('Brand', fontSize=24, textColor=PRIMARY_DARK, fontName=base_font))
         self.styles.add(ParagraphStyle('ReportTitle', fontSize=18, leading=22, textColor=PRIMARY_DARK, fontName=base_font))
+        self.styles.add(ParagraphStyle('Caption', fontSize=8, textColor=MUTED_GREY, leading=10, fontName=base_font))
         self.styles.add(ParagraphStyle('KPI', fontSize=10, textColor=PRIMARY, leading=12, fontName=base_font))
 
         # Integrity & IDs
@@ -555,7 +603,7 @@ class PDFReport:
         # Derived issues
         self.issues = derive_critical_issues(self.data)
 
-        # Overview heuristics
+        # Overview
         host = _hostname(self.url)
         perf_extras = _safe_get(self.data, ["breakdown", "performance", "extras"], {})
         self.overview = {
@@ -586,10 +634,11 @@ class PDFReport:
         self.assets = audit.get("assets", {}) if isinstance(audit.get("assets", {}), dict) else {}
         self.bench = audit.get("benchmarks", {}) if isinstance(audit.get("benchmarks", {}), dict) else {}
         self.history = audit.get("history", []) if isinstance(audit.get("history", []), list) else []
+        self.crawl = audit.get("crawl", {}) if isinstance(audit.get("crawl", {}), dict) else {}
+        self.competitors = audit.get("competitors", {}) if isinstance(audit.get("competitors", {}), dict) else {}
 
     # --------------------- page decorators ---------------------
     def _watermark(self, canvas: Canvas):
-        # subtle diagonal watermark (brand)
         try:
             canvas.saveState()
             canvas.setFillColor(colors.Color(0.1, 0.1, 0.2, alpha=0.04))
@@ -601,7 +650,6 @@ class PDFReport:
             canvas.restoreState()
 
     def _footer(self, canvas: Canvas, doc):
-        # Footer strip + page number + watermark + metadata (first page only)
         self._watermark(canvas)
         canvas.saveState()
         canvas.setFillColor(ACCENT_INDIGO)
@@ -610,7 +658,6 @@ class PDFReport:
         canvas.setFillColor(PRIMARY_DARK)
         canvas.drawString(inch, 0.28*inch, f"{self.brand} | Integrity: {self.integrity[:16]}…")
         canvas.drawRightString(A4[0]-inch, 0.28*inch, f"Page {doc.page}")
-        # Metadata on first page
         if doc.page == 1:
             try:
                 canvas.setTitle(f"{self.site_name} – Website Audit Report")
@@ -630,11 +677,9 @@ class PDFReport:
 
     # --------------------- sections ---------------------
     def cover_page(self, elems: List[Any]):
-        # KeepTogether prevents odd page breaks and overlap in some readers
         block: List[Any] = []
         block.append(Spacer(1, 0.55*inch))
 
-        # Logo or brand chip
         if isinstance(PDF_LOGO_PATH, str) and PDF_LOGO_PATH and os.path.exists(PDF_LOGO_PATH):
             try:
                 block.append(Image(PDF_LOGO_PATH, width=1.6*inch, height=1.6*inch))
@@ -645,12 +690,10 @@ class PDFReport:
             block.append(_chip(self.brand, ACCENT_INDIGO))
             block.append(Spacer(1, 0.15*inch))
 
-        # Brand + Title (reduced sizes to avoid "mingled" overlap)
         block.append(Paragraph(self.brand.upper(), self.styles['Brand']))
         block.append(Paragraph("Website Performance & Compliance Dossier", self.styles['ReportTitle']))
         block.append(Spacer(1, 0.25*inch))
 
-        # KPI row
         kpi_row = [
             [_chip(f"Risk: {self.risk}", {'Low': SUCCESS_GREEN, 'Medium': WARNING_ORANGE, 'High': colors.HexColor('#E67E22'), 'Critical': CRITICAL_RED}[self.risk])],
             [_chip(f"Overall: {self.overall}/100", ACCENT_BLUE)]
@@ -687,6 +730,8 @@ class PDFReport:
             "Security Audit",
             "Accessibility Audit",
             "User Experience (UX) & Mobile",
+            "Crawl Summary (if available)",
+            "Visual Proof of Issues (if available)",
             "Broken Link Analysis",
             "Analytics & Tracking",
             "Critical Issues Summary",
@@ -713,7 +758,13 @@ class PDFReport:
                      colWidths=[3.0*inch, 3.1*inch])
         grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
         elems.append(grid)
-        elems.append(Spacer(1, 0.15*inch))
+        # Alt-like captions (assistive context)
+        elems.append(Paragraph(
+            "Chart captions: Radar shows category distribution; Bar shows individual category scores; "
+            "Donut shows computed overall score based on weighted categories.",
+            self.styles['Caption'])
+        )
+        elems.append(Spacer(1, 0.12*inch))
 
         krows = [["Overall Website Health (computed)", f"{self.overall}/100"]]
         if self.runner_overall != self.overall:
@@ -735,8 +786,8 @@ class PDFReport:
             "Runner-supplied weights, if any, override defaults.",
             self.styles['Note']
         ))
-
         elems.append(Spacer(1, 0.12*inch))
+
         elems.append(Paragraph("Top Critical Issues & Estimated Business Impact", self.styles['H2']))
         issues = self.issues[:5]
         if not issues:
@@ -769,15 +820,17 @@ class PDFReport:
                      colWidths=[2.5*inch, 3.6*inch])
         grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
         elems.append(grid)
+        elems.append(Paragraph("Gauges summarize overall and category health at a glance.", self.styles['Caption']))
         elems.append(Spacer(1, 0.08*inch))
 
-        # Trends (arrow from last two history points)
+        # Trends with arrows (if history)
         if self.history and len(self.history) >= 2:
             try:
                 a, b = self.history[-2], self.history[-1]
-                def arrow(curr, prev): 
+                def arrow(curr, prev):
                     try:
-                        return "↑" if float(curr) > float(prev) else ("↓" if float(curr) < float(prev) else "→")
+                        c, p = float(curr), float(prev)
+                        return "↑" if c > p else ("↓" if c < p else "→")
                     except Exception:
                         return "→"
                 overall_arrow = arrow(b.get("overall"), a.get("overall"))
@@ -790,38 +843,25 @@ class PDFReport:
                 elems.append(self._table(rows, colWidths=[1.5*inch, 1.2*inch, 0.4*inch, 1.4*inch, 0.4*inch], header_bg=PALE_GREEN))
             except Exception:
                 pass
-
-        opps = (self.lh.get("opportunities") or [])[:3] if isinstance(self.lh, dict) else []
-        if opps:
-            elems.append(Spacer(1, 0.06*inch))
-            elems.append(Paragraph("Top Quick Wins", self.styles['H2']))
-            rows2 = [["Action", "Est. Benefit"]]
-            for o in opps:
-                rows2.append([str(o.get("title","")), _ms(o.get("estimated_savings_ms"))])
-            elems.append(self._table(rows2, colWidths=[4.4*inch, 1.7*inch], header_bg=PALE_BLUE))
         elems.append(PageBreak())
 
     def what_we_audited(self, elems: List[Any]):
         elems.append(self._section_title("What We Audited (Homepage Snapshot)"))
-        ctx_rows = [
-            ["Final URL", str(self.lh.get("final_url", self.url)) if isinstance(self.lh, dict) else self.url],
-        ]
+        ctx_rows = [["Final URL", str(self.lh.get("final_url", self.url)) if isinstance(self.lh, dict) else self.url]]
         cfg = self.lh.get("config", {}) if isinstance(self.lh, dict) else {}
         if cfg:
             ctx_rows.append(["Device / Form Factor", f"{cfg.get('device','N/A')} / {cfg.get('form_factor','N/A')}"])
         elems.append(self._table(ctx_rows, colWidths=[2.6*inch, 3.7*inch], header_bg=LIGHT_GRAY_BG))
         elems.append(Spacer(1, 0.08*inch))
 
-        # Performance chip (color-coded)
+        # Perf chip (color-coded)
         cats = self.lh.get("categories", {}) if isinstance(self.lh, dict) else {}
         perf_val = cats.get("performance", None)
         perf_chip_bg = _perf_color(perf_val) if perf_val is not None else MUTED_GREY
-        perf_chip = _chip(f"Lighthouse Performance: {(_pct(perf_val) + '/100') if perf_val is not None else 'N/A'}", perf_chip_bg)
-        elems.append(perf_chip)
+        elems.append(_chip(f"Lighthouse Performance: {(_pct(perf_val) + '/100') if perf_val is not None else 'N/A'}", perf_chip_bg))
         elems.append(Spacer(1, 0.12*inch))
 
-        # Screenshot
-        img_buf = _load_image_from_assets(self.assets)
+        img_buf = _load_homepage_screenshot(self.assets)
         if img_buf:
             try:
                 elems.append(Image(img_buf, width=5.8*inch, height=3.35*inch))
@@ -846,12 +886,20 @@ class PDFReport:
             ["Page Size", o["page_size"]],
             ["Total Requests (approx)", str(o["total_requests_approx"])],
         ]
+        # Benchmarks & competitors (optional)
         if isinstance(self.bench, dict) and self.bench:
             try:
                 industry = self.bench.get("industry", "Industry")
                 avg = self.bench.get("avg", {})
                 bench_line = f"{industry} avg: LCP {_ms(avg.get('LCP_ms'))}, INP {_ms(avg.get('INP_ms', avg.get('INP', None)))}, CLS {str(avg.get('CLS', 'N/A'))}, Perf {str(avg.get('Performance','N/A'))}"
                 rows.append(["Benchmark (context)", bench_line])
+            except Exception:
+                pass
+        if isinstance(self.competitors, dict) and self.competitors:
+            try:
+                comp = self.competitors.get("summary","")
+                if comp:
+                    rows.append(["Competitor Comparison", str(comp)[:180] + ("…" if len(str(comp))>180 else "")])
             except Exception:
                 pass
         elems.append(self._table(rows, colWidths=[2.7*inch, 3.6*inch], header_bg=PALE_BLUE))
@@ -897,7 +945,6 @@ class PDFReport:
 
     def performance_section(self, elems: List[Any]):
         elems.append(self._section_title("Performance Audit"))
-
         lh = self.lh if isinstance(self.lh, dict) else {}
         cats = lh.get("categories", {}) if isinstance(lh.get("categories", {}), dict) else {}
         m = lh.get("metrics", {}) if isinstance(lh.get("metrics", {}), dict) else {}
@@ -907,9 +954,8 @@ class PDFReport:
 
         perf_val = cats.get("performance", None)
         perf_chip_bg = _perf_color(perf_val) if perf_val is not None else MUTED_GREY
-        perf_row = [ _chip(f"Lighthouse Performance: {(_pct(perf_val) + '/100') if perf_val is not None else 'N/A'}", perf_chip_bg) ]
-
-        elems.append(Table([perf_row], colWidths=[6.3*inch], style=[('ALIGN',(0,0),(-1,-1),'LEFT')]))
+        elems.append(Table([[_chip(f"Lighthouse Performance: {(_pct(perf_val) + '/100') if perf_val is not None else 'N/A'}", perf_chip_bg)]],
+                           colWidths=[6.3*inch], style=[('ALIGN',(0,0),(-1,-1),'LEFT')]))
         elems.append(Spacer(1, 0.08*inch))
 
         top_rows = [
@@ -923,6 +969,10 @@ class PDFReport:
             ["Total Blocking Time (TBT)", _ms(m.get("TBT_ms"))],
         ]
         elems.append(self._table(top_rows, colWidths=[3.6*inch, 2.7*inch], header_bg=PALE_GREEN))
+        elems.append(Paragraph(
+            "Interpretation: LCP < 2.5s (good), INP < 200ms (good), CLS < 0.1 (good). Values shown are lab metrics.",
+            self.styles['Caption']
+        ))
         elems.append(Spacer(1, 0.08*inch))
 
         elems.append(Paragraph("Opportunities (estimated savings)", self.styles['H2']))
@@ -950,26 +1000,33 @@ class PDFReport:
         sec = _safe_get(self.data, ["breakdown", "security"], {})
         deep = self.secdeep if isinstance(self.secdeep, dict) else {}
         hdrs = deep.get("headers", {}) if isinstance(deep.get("headers", {}), dict) else {}
+        csp_info = _analyze_csp(hdrs.get("content-security-policy", "")) if hdrs else {"present": False}
+
+        # Cookie analysis
+        cookies = deep.get("cookies", []) if isinstance(deep.get("cookies", []), list) else []
+        insecure = sum(1 for c in cookies if not c.get("secure"))
+        no_http_only = sum(1 for c in cookies if not c.get("httpOnly"))
+        unknown_same_site = sum(1 for c in cookies if str(c.get("sameSite","Unknown")) == "Unknown")
 
         rows = [
             ["HTTPS Enabled", _bool_to_yesno(sec.get("https", False)) if isinstance(sec, dict) else "N/A"],
             ["Origin Status Code", str(sec.get("status_code", "N/A")) if isinstance(sec, dict) else "N/A"],
             ["HSTS Enabled?", _bool_to_yesno(sec.get("hsts", False)) if isinstance(sec, dict) else "N/A"],
-            ["Content-Security-Policy", "Present" if "content-security-policy" in hdrs else "Missing"],
-            ["X-Frame-Options", hdrs.get("x-frame-options", "N/A")],
-            ["X-Content-Type-Options", hdrs.get("x-content-type-options","N/A")],
+            ["Content-Security-Policy", "Present" if csp_info.get("present") else "Missing"],
+            ["CSP risks", f"unsafe-inline={csp_info.get('unsafe_inline', False)}, unsafe-eval={csp_info.get('unsafe_eval', False)}" if csp_info.get("present") else "N/A"],
             ["Mixed content issues", str(deep.get("mixed_content","N/A"))],
             ["security.txt", "Present" if deep.get("security_txt",{}).get("exists") else "Missing"],
-            ["Cookies (sample)", f"{len(deep.get('cookies',[]))} found"],
+            ["Cookies (sample)", f"{len(cookies)} found; insecure={insecure}, no HttpOnly={no_http_only}, SameSite unknown={unknown_same_site}"],
+            ["X-Frame-Options", hdrs.get("x-frame-options", "N/A")],
+            ["X-Content-Type-Options", hdrs.get("x-content-type-options","N/A")],
         ]
         elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch], header_bg=PALE_RED))
         elems.append(Spacer(1, 0.06*inch))
-        elems.append(Paragraph("Review CSP for unsafe-inline/unsafe-eval; ensure cookies use Secure/HttpOnly/SameSite where applicable.", self.styles['Note']))
+        elems.append(Paragraph("Tip: Prefer strong CSP without 'unsafe-inline'/'unsafe-eval'. Ensure cookies set Secure/HttpOnly/SameSite.", self.styles['Note']))
         elems.append(PageBreak())
 
     def accessibility_section(self, elems: List[Any]):
         elems.append(self._section_title("Accessibility Audit"))
-
         ex = _safe_get(self.data, ["breakdown", "seo", "extras"], {})
         missing_alt = _int_or(ex.get("images_missing_alt", 0), 0)
         imgs_total = _int_or(ex.get("images_total", 0), 0)
@@ -991,6 +1048,7 @@ class PDFReport:
             ["Forms/Labels issues", str(buckets.get("forms","N/A"))],
         ]
         elems.append(self._table(rows1, colWidths=[3.2*inch, 3.1*inch], header_bg=PALE_YELLOW))
+        elems.append(Paragraph("WCAG target: 2.2 AA (contrast ≥ 4.5:1, keyboard operability, meaningful order).", self.styles['Caption']))
         elems.append(Spacer(1, 0.06*inch))
 
         if top_issues:
@@ -1013,6 +1071,38 @@ class PDFReport:
             ["Form usability", "N/A"],
         ]
         elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch], header_bg=PALE_BLUE))
+        elems.append(PageBreak())
+
+    def crawl_summary_section(self, elems: List[Any]):
+        elems.append(self._section_title("Crawl Summary (If Available)"))
+        if not self.crawl:
+            elems.append(Paragraph("No crawl data provided by runner.", self.styles['Note']))
+            elems.append(PageBreak())
+            return
+        rows = [
+            ["Internal URLs", str(self.crawl.get("internal_urls","N/A"))],
+            ["External URLs", str(self.crawl.get("external_urls","N/A"))],
+            ["Broken internal links", str(self.crawl.get("broken_internal","N/A"))],
+            ["Broken external links", str(self.crawl.get("broken_external","N/A"))],
+            ["Max depth crawled", str(self.crawl.get("max_depth","N/A"))],
+        ]
+        elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch], header_bg=LIGHT_GRAY_BG))
+        elems.append(PageBreak())
+
+    def visual_proof_section(self, elems: List[Any]):
+        elems.append(self._section_title("Visual Proof of Issues"))
+        shots = _load_issue_screenshots(self.assets)
+        if not shots:
+            elems.append(Paragraph("No issue screenshots provided by runner.", self.styles['Note']))
+            elems.append(PageBreak())
+            return
+        for title, buf in shots[:6]:
+            elems.append(Paragraph(escape(title), self.styles['H2']))
+            try:
+                elems.append(Image(buf, width=5.8*inch, height=3.3*inch))
+            except Exception:
+                elems.append(Paragraph("Screenshot could not be rendered.", self.styles['Note']))
+            elems.append(Spacer(1, 0.08*inch))
         elems.append(PageBreak())
 
     def broken_links_section(self, elems: List[Any]):
@@ -1061,6 +1151,8 @@ class PDFReport:
     def recommendations_section(self, elems: List[Any]):
         elems.append(self._section_title("Recommendations & Fix Roadmap"))
         recs = []
+
+        # PSI quick wins
         for o in (self.lh.get("opportunities") or [])[:6] if isinstance(self.lh, dict) else []:
             recs.append({
                 "item": f"{o.get('title','')}",
@@ -1068,20 +1160,29 @@ class PDFReport:
                 "effort": "Medium",
                 "notes": f"Est. savings: {_ms(o.get('estimated_savings_ms'))}"
             })
+
+        # Accessibility
         axe = self.a11y.get("axe", {}) if isinstance(self.a11y, dict) else {}
         if _int_or(axe.get("counts",{}).get("violations",0),0) > 0:
             recs.append({"item":"Resolve contrast & ARIA violations", "impact":"High", "effort":"Medium", "notes":"WCAG 2.2 AA compliance"})
+
+        # Robots/Sitemap
         if not self.robots.get("exists"):
             recs.append({"item":"Add robots.txt", "impact":"Medium", "effort":"Low", "notes":"Basic technical SEO"})
         if not self.sitemap.get("exists"):
             recs.append({"item":"Publish sitemap.xml", "impact":"Medium", "effort":"Low", "notes":"Enable faster discovery"})
+
+        # Security
         if self.secdeep and "content-security-policy" not in (self.secdeep.get("headers") or {}):
             recs.append({"item":"Add CSP header", "impact":"High", "effort":"Medium", "notes":"Mitigate XSS/Injection risk"})
         if self.secdeep and self.secdeep.get("mixed_content",0) > 0:
             recs.append({"item":"Fix mixed content", "impact":"High", "effort":"Low", "notes":"Serve assets via HTTPS only"})
+
+        # Sort by (impact desc, effort asc)
         impact_rank = {"High": 0, "Medium": 1, "Low": 2}
         effort_rank = {"Low": 0, "Medium": 1, "High": 2}
         recs.sort(key=lambda r: (impact_rank.get(r["impact"], 9), effort_rank.get(r["effort"], 9)))
+
         rows = [["Recommendation", "Impact", "Effort", "Details / Notes"]]
         for r in recs[:12]:
             rows.append([r["item"], r["impact"], r["effort"], r["notes"]])
@@ -1138,7 +1239,7 @@ class PDFReport:
         elems.append(Spacer(1, 0.08*inch))
         elems.append(Paragraph(
             "Note: Keys are flattened from nested structures (breakdown.*, scores.*, dynamic.*, lighthouse.*, "
-            "accessibility.*, robots/sitemap/schema/security_deep/mobile).", self.styles['Note']))
+            "accessibility.*, robots/sitemap/schema/security_deep/mobile, crawl, competitors).", self.styles['Note']))
         elems.append(PageBreak())
 
     def appendix_section(self, elems: List[Any]):
@@ -1192,13 +1293,15 @@ class PDFReport:
         self.toc_page(elems)
         self.executive_summary(elems)
         self.executive_one_pager(elems)
-        self.what_we_audited(elems)     # NEW: prominent screenshot
+        self.what_we_audited(elems)
         self.website_overview(elems)
         self.seo_section(elems)
         self.performance_section(elems)
         self.security_section(elems)
         self.accessibility_section(elems)
         self.ux_section(elems)
+        self.crawl_summary_section(elems)          # new optional
+        self.visual_proof_section(elems)           # new optional
         self.broken_links_section(elems)
         self.analytics_tracking_section(elems)
         self.critical_issues_section(elems)
@@ -1220,8 +1323,9 @@ def generate_audit_pdf(audit_data: Dict[str, Any]) -> bytes:
 
     Backward-compatible: no network calls; supports optional enrichment keys:
       audit_data['lighthouse'], audit_data['assets'], audit_data['accessibility']['axe'],
-      audit_data['mobile'], audit_data['robots'], audit_data['sitemap'],
-      audit_data['structured_data'], audit_data['security_deep'], audit_data['benchmarks'], audit_data['history']
+      audit_data['mobile'], audit_data['robots'], audit_data['sitemap'], audit_data['crawl'],
+      audit_data['structured_data'], audit_data['security_deep'], audit_data['benchmarks'],
+      audit_data['history'], audit_data['competitors']
     """
     report = PDFReport(audit_data)
     return report.build_pdf_bytes()
