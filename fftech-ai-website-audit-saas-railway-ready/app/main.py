@@ -1,278 +1,820 @@
-# -*- coding: utf-8 -*-
-"""
-app/main.py
-Fully integrated FastAPI app for Website Audit Pro
-- Serves index.html
-- WebSocket /ws for live progress & results
-- REST fallback /api/audit/run
-- PDF generation /api/audit/pdf (fixed & improved)
-"""
-from __future__ import annotations
-import json
-import os
-import re
-import tempfile
-import time
-import logging
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
-import requests
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Website Audit Pro</title>
 
-# Import runner + PDF helper
-from app.audit.runner import WebsiteAuditRunner, generate_pdf_from_runner_result
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+          integrity="sha384-3G7a7j8d7XbSx8C1rG9V8n8o7z+Mky9cfx8f7y7n9Yb0S1eO86q8oQ2QkI3T2m1X"
+          crossorigin="anonymous"></script>
 
-# Setup logging (visible in Railway logs)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(title="Website Audit Pro", version="2.2.0")
-
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-BASE_DIR = Path(__file__).resolve().parent
-INDEX_HTML_PATH = BASE_DIR / "templates" / "index.html"
-
-# In-memory cache
-CACHE_TTL_SECONDS = int(os.getenv("AUDIT_CACHE_TTL_SECONDS", "900"))
-_audit_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
-
-def _cache_get(key: str) -> Optional[Dict[str, Any]]:
-    item = _audit_cache.get(key)
-    if not item:
-        return None
-    ts, val = item
-    if (time.time() - ts) > CACHE_TTL_SECONDS:
-        _audit_cache.pop(key, None)
-        return None
-    return val
-
-def _cache_set(key: str, value: Dict[str, Any]) -> None:
-    _audit_cache[key] = (time.time(), value)
-
-def _safe_filename(name: str, default: str = "audit_report") -> str:
-    name = (name or "").strip() or default
-    name = re.sub(r"[^a-zA-Z0-9_.-]+", "_", name).strip("._-") or default
-    return name[:90]
-
-def _runner_error_message(result: Dict[str, Any]) -> Optional[str]:
-    return str(result.get("error")) if result.get("error") else None
-
-async def _ws_send(ws: WebSocket, message: Dict[str, Any]) -> None:
-    try:
-        await ws.send_text(json.dumps(message, ensure_ascii=False))
-    except Exception:
-        pass
-
-# Pre-fetch HTML (strict SSL first, insecure fallback)
-def _fetch_html(url: str) -> Tuple[bool, str, str]:
-    headers = {
-        "User-Agent": "FFTechAuditBot/2.0",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  <style>
+    :root {
+      --radius: 18px;
+      --glass: rgba(255,255,255,.07);
+      --glassBorder: rgba(255,255,255,.12);
+      --shadow: 0 18px 45px rgba(0,0,0,.35);
+      --muted: rgba(255,255,255,.72);
+      --muted2: rgba(255,255,255,.62);
+      --bg0: rgba(2,6,23,1);
+      --bg1: rgba(3,7,18,1);
+      --brandA: rgba(14,165,233,.95);
+      --brandB: rgba(99,102,241,.90);
+      --good: #22c55e;
+      --warn: #fbbf24;
+      --bad: #ef4444;
+      --info: #38bdf8;
     }
-    try:
-        r = requests.get(url, timeout=15, headers=headers, allow_redirects=True, verify=True)
-        r.raise_for_status()
-        return True, r.text, "strict"
-    except requests.exceptions.SSLError:
-        try:
-            r = requests.get(url, timeout=15, headers=headers, allow_redirects=True, verify=False)
-            r.raise_for_status()
-            return True, r.text, "insecure"
-        except Exception as e:
-            return False, "", f"Fetch failed (insecure): {str(e)}"
-    except Exception as e:
-        return False, "", f"Fetch failed: {str(e)}"
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(1200px 600px at 25% 15%, rgba(14,165,233,.22), transparent 55%),
+        radial-gradient(900px 520px at 75% 8%, rgba(34,197,94,.16), transparent 52%),
+        radial-gradient(800px 520px at 65% 85%, rgba(239,68,68,.12), transparent 52%),
+        linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 100%);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .app-shell { max-width: 1200px; margin: 0 auto; padding: 22px 16px 70px; }
+    .glass {
+      background: var(--glass);
+      border: 1px solid var(--glassBorder);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .brand-badge {
+      width: 46px; height: 46px;
+      border-radius: 14px;
+      display: grid; place-items: center;
+      font-weight: 900;
+      letter-spacing: .5px;
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border: 1px solid rgba(255,255,255,.16);
+      box-shadow: 0 18px 40px rgba(14,165,233,.22);
+    }
+    .subtle { color: var(--muted); }
+    .muted-2 { color: var(--muted2); }
+    .pill {
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: rgba(255,255,255,.80);
+      user-select: none;
+      white-space: nowrap;
+    }
+    .btn-glow {
+      background: linear-gradient(135deg, var(--brandA), var(--brandB));
+      border: none;
+      box-shadow: 0 18px 45px rgba(14,165,233,.22);
+    }
+    .btn-glow:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .btn-glow:active { transform: translateY(0); }
+    .progress { height: 10px; }
+    .progress-bar { transition: width .20s ease; }
+    .mini-card {
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      padding: 14px;
+      height: 100%;
+    }
+    .mini-card .label { font-size: 12px; opacity: .82; }
+    .mini-card .value { font-size: 34px; font-weight: 900; line-height: 1.1; }
+    .mini-card .hint { font-size: 12px; opacity: .72; margin-top: 8px; }
+    .kv-table td, .kv-table th { border-color: rgba(255,255,255,.10)!important; }
+    .fade-in { animation: fadeIn .30s ease both; }
+    @keyframes fadeIn { from {opacity:0; transform: translateY(8px)} to {opacity:1; transform: translateY(0)} }
+    .score-ring {
+      width: 180px; height: 180px;
+      border-radius: 999px;
+      position: relative;
+      display: grid; place-items: center;
+      background: conic-gradient(from 180deg, rgba(14,165,233,.95) var(--deg), rgba(255,255,255,.08) 0);
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 18px 45px rgba(0,0,0,.35);
+    }
+    .score-ring .inside {
+      width: 132px; height: 132px;
+      border-radius: 999px;
+      background: rgba(2,6,23,.75);
+      border: 1px solid rgba(255,255,255,.12);
+      display: grid; place-items: center;
+      text-align: center;
+      padding: 10px;
+    }
+    .score-ring .score { font-size: 40px; font-weight: 950; line-height: 1; }
+    .score-ring .grade { font-weight: 900; margin-top: 4px; opacity: .92; }
+    .score-ring .tiny { font-size: 12px; opacity: .78; margin-top: 6px; }
+    .status-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      font-size: 12px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: rgba(255,255,255,.35); }
+    .dot.ok { background: var(--good); box-shadow: 0 0 0 6px rgba(34,197,94,.16); }
+    .dot.warn { background: var(--warn); box-shadow: 0 0 0 6px rgba(251,191,36,.16); }
+    .dot.bad { background: var(--bad); box-shadow: 0 0 0 6px rgba(239,68,68,.16); }
+    .dot.info { background: var(--info); box-shadow: 0 0 0 6px rgba(56,189,248,.16); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .sect-head { display255,255,.12); border-radius:12px; font-size:12px;}
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- HEADER -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <div class="d-flex align-items-center gap-3">
+        <div class="brand-badge text-white">FF</div>
+        <div>
+          <div class="h4 mb-0 fw-bold">Website Audit Pro</div>
+          <div class="subtle small">Runner.py results • WebSocket progress • PDF export</div>
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span id="wsStatus" class="pill">WS: Disconnected</span>
+        <button class="btn btn-sm btn-outline-secondary" id="themeToggle" type="button" aria-label="Toggle theme">🌙 / ☀️</button>
+      </div>
+    </div>
 
-# Models
-class AuditRunRequest(BaseModel):
-    url: str = Field(..., description="Website URL")
+    <!-- INPUT + PROGRESS -->
+    <div class="glass p-4 mb-4">
+      <div class="row g-3 align-items-end">
+        <div class="col-lg-7">
+          <label class="form-label fw-semibold">Website URL / Domain</label>
+          <input id="urlInput" type="text" class="form-control form-control-lg"
+                 placeholder="haier.com.pk or www.haier.com.pk"
+                 value="https://www.apple.com" />
+          <div class="small muted-2 mt-1">Just type the domain — https:// is added automatically.</div>
+        </div>
+        <div class="col-lg-5">
+          <div class="d-grid gap-2 d-lg-flex justify-content-lg-end">
+            <button id="startBtn" class="btn btn-lg btn-glow text-white fw-semibold" type="button">
+              ▶ Start Audit
+            </button>
+            <button id="pdfBtn" class="btn btn-lg btn-outline-info fw-semibold" type="button" disabled>
+              ⬇ Download Professional PDF
+            </button>
+          </div>
+        </div>
+      </div>
+      <hr class="my-4 border-0" style="border-top:1px solid rgba(255,255,255,.12)">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="fw-semibold">Progress</div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-chip" id="stageChip"><span class="dot info" id="stageDot"></span><span id="statusText">idle</span></span>
+          <span class="subtle"><span id="progressText">0%</span></span>
+        </div>
+      </div>
+      <div class="progress glass" style="border-radius:999px;">
+        <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+      <div id="alertArea" class="mt-3"></div>
+      <div class="mt-3">
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#debugCollapse">
+          Debug (last message / last result)
+        </button>
+        <div class="collapse mt-2" id="debugCollapse">
+          <div class="glass p-3 mono small" id="debugBox">No messages yet.</div>
+        </div>
+      </div>
+    </div>
 
-class PdfRequest(BaseModel):
-    url: str = Field(..., description="Website URL to audit")
-    client_name: Optional[str] = ""
-    brand_name: Optional[str] = ""
-    report_title: Optional[str] = ""
-    website_name: Optional[str] = ""
-    logo_path: Optional[str] = ""
+    <!-- RESULTS AREA -->
+    <div id="resultsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-lg-4">
+        <div class="glass p-4 h-100 text-center">
+          <div class="score-ring mx-auto" id="scoreRing" style="--deg:0deg;">
+            <div class="inside">
+              <div class="score" id="overallScore">0</div>
+              <div class="grade" id="gradeText">—</div>
+              <div class="tiny" id="auditedUrl">Audited: —</div>
+            </div>
+          </div>
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <span class="pill" id="lastRunAt">—</span>
+            <span class="pill" id="fetcherPill">fetcher: —</span>
+          </div>
+          <div class="mt-3 subtle small">
+            Overall score is computed from SEO, Performance, Links, and Security.
+          </div>
+          <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+            <button id="copyJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Copy JSON</button>
+            <button id="openJsonBtn" class="btn btn-sm btn-outline-secondary" type="button">Open JSON</button>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-8">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <div class="h5 mb-0 fw-bold">Score Breakdown</div>
+              <div class="subtle small">Chart comes directly from runner.py chart_data</div>
+            </div>
+            <span class="pill" id="verdictPill">verdict: —</span>
+          </div>
+          <canvas id="breakdownChart" height="120"></canvas>
+        </div>
+      </div>
+    </div>
 
-# Routes
-@app.get("/health")
-async def health() -> Dict[str, Any]:
-    return {"ok": True}
+    <!-- CATEGORY CARDS + INLINE “EXTRAS” PILLS -->
+    <div id="cardsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">SEO</div>
+          <div class="value" id="seoScore">—</div>
+          <div class="hint">Title, meta, H1, canonical, image ALT</div>
+          <div class="mt-3 kv" id="seoExtrasKv"></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Performance</div>
+          <div class="value" id="perfScore">—</div>
+          <div class="hint">Load time, size, scripts, styles</div>
+          <div class="mt-3 kv" id="perfExtrasKv"></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Links</div>
+          <div class="value" id="linksScore">—</div>
+          <div class="hint">Internal vs external structure</div>
+          <div class="mt-3 kv" id="linksKv"></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="mini-card">
+          <div class="label">Security</div>
+          <div class="value" id="secScore">—</div>
+          <div class="hint">HTTPS, HSTS, response status</div>
+          <div class="mt-3 kv" id="secKv"></div>
+        </div>
+      </div>
+    </div>
 
-@app.get("/", response_class=HTMLResponse)
-async def index(_: Request) -> HTMLResponse:
-    if not INDEX_HTML_PATH.exists():
-        return HTMLResponse(
-            f"<h3>index.html not found</h3><p>Expected: {INDEX_HTML_PATH}</p>",
-            status_code=500,
-        )
-    return HTMLResponse(INDEX_HTML_PATH.read_text(encoding="utf-8"))
+    <!-- DETAILED TABLES (from runner.py extras) -->
+    <div id="detailsArea" class="row g-3 mb-4" style="display:none;">
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="sect-head">
+            <div class="title">SEO Details</div>
+            <span class="pill">breakdown.seo.extras</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="seoTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="sect-head">
+            <div class="title">Performance Details</div>
+            <span class="pill">breakdown.performance.extras</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="perfTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="sect-head">
+            <div class="title">Links Details</div>
+            <span class="pill">breakdown.links</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="linksTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="sect-head">
+            <div class="title">Security Details</div>
+            <span class="pill">breakdown.security</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="secTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
 
-@app.websocket("/ws")
-async def ws_audit(ws: WebSocket):
-    await ws.accept()
-    runner = WebsiteAuditRunner()
-    try:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except Exception:
-                await _ws_send(ws, {"status": "error", "progress": 100, "payload": {"error": "Invalid JSON"}})
-                continue
+    <!-- DYNAMIC OUTPUT -->
+    <div id="dynamicArea" class="row g-3" style="display:none;">
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Highlights</div>
+            <span class="pill">runner.dynamic.cards</span>
+          </div>
+          <div id="dynamicCards" class="d-grid gap-2"></div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="glass p-4 h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="h5 fw-bold mb-0">Details</div>
+            <span class="pill">runner.dynamic.kv</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm kv-table align-middle mb-0">
+              <tbody id="kvBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
 
-            url = (msg.get("url") or "").strip()
-            if not url:
-                await _ws_send(ws, {"status": "error", "progress": 100, "payload": {"error": "URL is required"}})
-                continue
+    <!-- FOOTER -->
+    <div class="text-center mt-5 subtle small">
+      © FF Tech • WebSocket <code>/ws</code> • REST <code>/api/audit/run</code> • PDF <code>/api/audit/pdf</code>
+    </div>
+  </div>
 
-            cached = _cache_get(url)
-            if cached and not _runner_error_message(cached):
-                await _ws_send(ws, {"status": "completed", "progress": 100, "result": cached})
-                continue
+  <!-- Bootstrap JS -->
+  https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js</script>
 
-            async def progress_cb(status: str, percent: int, payload: Optional[dict] = None):
-                await _ws_send(ws, {"status": status, "progress": int(percent), "payload": payload})
+  <script>
+    // =========================================================
+    // CONTROLLER – FULL RENDERING OF RUNNER.PY RESULT
+    // (keeps same inputs/outputs/links)
+    // =========================================================
+    const REST_FALLBACK_AFTER_MS = 9000;
+    const AUTO_SCROLL_ON_RESULT = true;
+    let ws = null;
+    let lastResult = null;
+    let chart = null;
+    let fallbackTimer = null;
+    let auditInProgress = false;
 
-            try:
-                success, html_content, fetch_mode = _fetch_html(url)
-                if not success:
-                    await _ws_send(ws, {
-                        "status": "error",
-                        "progress": 100,
-                        "payload": {"error": f"Could not fetch page: {fetch_mode}"}
-                    })
-                    continue
+    const el = (id) => document.getElementById(id);
 
-                await progress_cb("fetched", 20, {"message": f"HTML fetched ({fetch_mode}), length: {len(html_content)}"})
+    // Theme toggle
+    const themeKey = "fftech_theme";
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-bs-theme", theme);
+      localStorage.setItem(themeKey, theme);
+    }
+    (function initTheme() {
+      const saved = localStorage.getItem(themeKey);
+      if (saved) setTheme(saved);
+    })();
+    el("themeToggle").addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-bs-theme") || "dark";
+      setTheme(current === "dark" ? "light" : "dark");
+    });
 
-                result = await runner.run(url, html=html_content, progress_cb=progress_cb)
-                _cache_set(url, result)
+    // Helpers
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    }
+    function showAlert(message, type="info", persist=false) {
+      const area = el("alertArea");
+      const div = document.createElement("div");
+      div.className = `alert alert-${type} mb-2 fade-in`;
+      div.innerHTML = `
+        <div class="d-flex align-items-start justify-content-between gap-3">
+          <div>${message}</div>
+          <button type="button" class="btn-close" aria-label="Close"></button>
+        </div>`;
+      div.querySelector(".btn-close").onclick = () => div.remove();
+      area.prepend(div);
+      if (!persist) setTimeout(() => div.remove(), 6500);
+    }
+    function setStage(status, percent) {
+      const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
+      el("progressBar").style.width = `${p}%`;
+      el("progressText").textContent = `${p}%`;
+      el("statusText").textContent = status || "working";
+      const bar = el("progressBar");
+      bar.classList.remove("bg-info","bg-success","bg-warning","bg-danger");
+      if (status === "error" || status === "failed") bar.classList.add("bg-danger");
+      else if (p >= 100) bar.classList.add("bg-success");
+      else bar.classList.add("bg-info");
+      const dot = el("stageDot");
+      dot.classList.remove("ok","warn","bad","info");
+      if (status === "error" || status === "failed") dot.classList.add("bad");
+      else if (p >= 100) dot.classList.add("ok");
+      else dot.classList.add("info");
+    }
+    function setWsStatus(connected) {
+      el("wsStatus").textContent = connected ? "WS: Connected" : "WS: Disconnected";
+      el("wsStatus").style.opacity = connected ? "1" : "0.75";
+    }
+    function wsUrl() {
+      const loc = window.location;
+      const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${loc.host}/ws`;
+    }
+    function debugSet(obj) {
+      el("debugBox").textContent = JSON.stringify(obj, null, 2);
+    }
+    function extractRunnerResult(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      if (obj.audited_url && typeof obj.overall_score !== "undefined") return obj;
+      if (obj.result && obj.result.audited_url) return obj.result;
+      if (obj.payload && obj.payload.audited_url) return obj.payload;
+      if (obj.data && obj.data.audited_url) return obj.data;
+      return null;
+    }
+    function extractError(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      return obj.error || (obj.payload && obj.payload.error) || null;
+    }
+    function normalizeUrl(input) {
+      let url = (input || "").trim();
+      if (!url) return "";
+      if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+      return url;
+    }
+    function addKvPill(container, label, value) {
+      if (value === null || value === undefined || String(value).trim() === "") return;
+      const span = document.createElement("span");
+      span.className = "kv-item";
+      span.textContent = `${label}: ${value}`;
+      container.appendChild(span);
+    }
+    function addKvRow(tbody, key, value) {
+      if (value === null || value === undefined || String(value).trim() === "") return;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<th class="text-nowrap" style="width:40%">${escapeHtml(key)}</th>
+                      <td>${escapeHtml(String(value))}</td>`;
+      tbody.appendChild(tr);
+    }
 
-                err = _runner_error_message(result)
-                if err:
-                    await _ws_send(ws, {"status": "error", "progress": 100, "payload": {"error": err}})
-                    continue
+    // Robust WS + REST fallback
+    function ensureWs() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      ws = new WebSocket(wsUrl());
 
-                await _ws_send(ws, {"status": "completed", "progress": 100, "result": result})
-            except Exception as e:
-                logger.exception("WebSocket audit error")
-                await _ws_send(ws, {"status": "error", "progress": 100, "payload": {"error": str(e)}})
-    except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
+      const retryMs = 6000;
+      let opened = false;
 
-@app.post("/api/audit/run")
-async def api_audit_run(req: AuditRunRequest) -> JSONResponse:
-    url = (req.url or "").strip()
-    if not url:
-        return JSONResponse({"error": "Empty URL"}, status_code=400)
+      ws.onopen = () => {
+        opened = true;
+        setWsStatus(true);
+      };
 
-    cached = _cache_get(url)
-    if cached:
-        return JSONResponse(cached)
+      ws.onmessage = (event) => {
+        let msg = null;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        debugSet(msg);
+        const status = msg.status ?? msg.message ?? msg.type ?? "working";
+        const progress = msg.progress ?? msg.percent ?? 0;
+        setStage(status, progress);
+        const err = extractError(msg);
+        if (err) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          showAlert(buildHumanError(err), "danger", true);
+          return;
+        }
+        const r = extractRunnerResult(msg);
+        if (r) {
+          auditInProgress = false;
+          clearTimeout(fallbackTimer);
+          renderResult(r);
+        }
+      };
 
-    runner = WebsiteAuditRunner()
-    success, html_content, fetch_mode = _fetch_html(url)
-    if not success:
-        return JSONResponse({"error": f"Could not fetch page: {fetch_mode}"}, status_code=400)
+      ws.onclose = () => {
+        setWsStatus(false);
+        if (!opened) showAlert("WebSocket could not connect (REST fallback will be used).", "warning");
+        setTimeout(() => { if (!auditInProgress) ensureWs(); }, retryMs);
+      };
+      ws.onerror = () => setWsStatus(false);
+    }
 
-    try:
-        result = await runner.run(url, html=html_content, progress_cb=None)
-        _cache_set(url, result)
-        return JSONResponse(result)
-    except Exception as e:
-        logger.exception("REST audit error")
-        return JSONResponse({"error": str(e)}, status_code=500)
+    async function runAuditRest(url) {
+      try {
+        setStage("rest_fallback", 20);
+        const res = await fetch("/api/audit/run", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ url })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const j = await res.json();
+        debugSet(j);
+        const err = extractError(j);
+        if (err) throw new Error(err);
+        const r = extractRunnerResult(j);
+        if (!r) throw new Error("REST response did not include runner_result.");
+        renderResult(r);
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+        setStage("error", 100);
+      }
+    }
 
-@app.post("/api/audit/pdf")
-async def api_audit_pdf(req: PdfRequest):
-    url = (req.url or "").strip()
-    if not url:
-        raise HTTPException(status_code=400, detail="url is required")
+    async function startAudit() {
+      const input = el("urlInput").value.trim();
+      if (!input) return showAlert("Please enter a domain or URL.", "warning");
+      const url = normalizeUrl(input);
 
-    logger.info(f"PDF request received for URL: {url}")
+      lastResult = null;
+      auditInProgress = true;
+      el("pdfBtn").disabled = true;
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      el("detailsArea").style.display = "none";
+      setStage("starting", 1);
+      showAlert(`Auditing ${url}...`, "info");
 
-    runner_result = _cache_get(url)
-    if runner_result is None:
-        logger.info(f"No cache hit for {url} → running fresh audit")
-        runner = WebsiteAuditRunner()
-        success, html_content, fetch_mode = _fetch_html(url)
-        if not success:
-            logger.error(f"Fetch failed for PDF: {fetch_mode}")
-            raise HTTPException(status_code=400, detail=f"Could not fetch page: {fetch_mode}")
-        try:
-            runner_result = await runner.run(url, html=html_content, progress_cb=None)
-            _cache_set(url, runner_result)
-            logger.info(f"Audit completed for PDF: {url}")
-        except Exception as e:
-            logger.exception("Audit failed during PDF generation")
-            raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
+      // Start WS + safety fallback timer
+      ensureWs();
+      clearTimeout(fallbackTimer);
+      fallbackTimer = setTimeout(() => {
+        if (auditInProgress && !lastResult) {
+          showAlert("WebSocket unavailable. Running REST fallback…", "warning");
+          runAuditRest(url);
+        }
+      }, REST_FALLBACK_AFTER_MS);
 
-    err = _runner_error_message(runner_result)
-    if err:
-        logger.warning(f"Audit error for PDF: {err}")
-        raise HTTPException(status_code=400, detail=f"Audit error: {err}")
+      // Try to send over WS (if available)
+      try { ws && ws.send(JSON.stringify({ url })); } catch (e) {}
+    }
 
-    # Validate runner_result structure
-    if not isinstance(runner_result, dict) or "overall_score" not in runner_result:
-        logger.error("Invalid runner_result structure for PDF")
-        raise HTTPException(status_code=500, detail="Invalid audit result structure")
+    // PDF Download
+    async function downloadPdf() {
+      const input = el("urlInput").value.trim();
+      if (!input) return showAlert("Please enter a URL.", "warning");
+      const url = normalizeUrl(input);
 
-    report_title = (req.report_title or "").strip() or "Website Audit Report"
-    logo_path = (req.logo_path or "").strip() or None
+      el("pdfBtn").disabled = true; el("pdfBtn").innerText = "Generating PDF…";
+      try {
+        const payload = { url, client_name:"", brand_name:"", report_title:"", website_name:"", logo_path:"" };
+        const res = await fetch("/api/audit/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          if (ct.includes("application/json")) { const j = await res.json(); detail = j.detail || JSON.stringify(j); }
+          else { detail = await res.text(); }
+          throw new Error(detail);
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get("content-disposition") || "";
+        let filename = "audit_report.pdf";
+        const match = cd.match(/filename="?([^"]+)"?/i);
+        if (match && match[1]) filename = match[1];
+        const link = document.createElement("a");
+        const objectUrl = URL.createObjectURL(blob);
+        link.href = objectUrl; link.download = filename;
+        document.body.appendChild(link); link.click(); link.remove();
+        URL.revokeObjectURL(objectUrl);
+        showAlert("PDF generated and downloaded ✅", "success");
+      } catch (e) {
+        showAlert(buildHumanError(e.message || String(e)), "danger", true);
+      } finally {
+        el("pdfBtn").disabled = !lastResult;
+        el("pdfBtn").innerText = "⬇ Download Professional PDF";
+      }
+    }
 
-    tmp_dir = Path(tempfile.mkdtemp(prefix="audit_pdf_"))
-    fname = _safe_filename(url or "audit_report")
-    pdf_path = tmp_dir / f"{fname}.pdf"
+    // Error messages (humanized)
+    function buildHumanError(raw) {
+      const msg = String(raw || "Unknown error");
+      if (msg.includes("CERTIFICATE_VERIFY_FAILED") || msg.includes("unable to get local issuer certificate")) {
+        return `
+          <b>SSL certificate validation failed</b><br>
+          The target website's HTTPS certificate could not be verified.<br>
+          Raw: <span class="mono">${escapeHtml(msg)}</span>`;
+      }
+      if (msg.includes("Name or service not known") || msg.includes("Temporary failure in name resolution")) {
+        return `<b>DNS resolution failed</b><br>The domain could not be resolved.<br>Raw: ${escapeHtml(msg)}`;
+      }
+      if (msg.toLowerCase().includes("timeout")) {
+        return `<b>Request timed out</b><br>The site did not respond in time.<br>Raw: ${escapeHtml(msg)}`;
+      }
+      return `<b>Audit failed</b><br><span class="mono">${escapeHtml(msg)}</span>`;
+    }
 
-    logger.info(f"Generating PDF at: {pdf_path}")
+    // Rendering
+    function renderResult(r) {
+      lastResult = r;
+      auditInProgress = false;
+      clearTimeout(fallbackTimer);
 
-    try:
-        # FIXED: Only use accepted parameters – no client_name, brand_name, etc.
-        pdf_generated_path = generate_pdf_from_runner_result(
-            runner_result,
-            output_path=str(pdf_path),
-            logo_path=logo_path,
-            report_title=report_title,
-        )
-        logger.info(f"PDF successfully generated: {pdf_generated_path}")
-    except ImportError as e:
-        logger.error("PDF generation failed: reportlab not installed")
-        raise HTTPException(status_code=500, detail="PDF library (reportlab) is missing. Add 'reportlab' to requirements.txt and redeploy.")
-    except RuntimeError as e:
-        logger.error(f"PDF runtime error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"PDF generation runtime error: {str(e)}")
-    except Exception as e:
-        logger.exception("PDF generation failed")
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+      el("resultsArea").style.display = "none";
+      el("cardsArea").style.display = "none";
+      el("dynamicArea").style.display = "none";
+      el("detailsArea").style.display = "none";
+      el("pdfBtn").disabled = true;
 
-    if not pdf_path.exists():
-        logger.error("PDF file was not created")
-        raise HTTPException(status_code=500, detail="PDF file was not created")
+      const error = extractError(r);
+      if (error) {
+        showAlert(buildHumanError(error), "danger", true);
+        setStage("failed", 100);
+        return;
+      }
 
-    logger.info(f"Serving PDF file: {pdf_path}")
-    return FileResponse(
-        path=str(pdf_path),
-        media_type="application/pdf",
-        filename=pdf_path.name,
-        headers={"Content-Disposition": f'attachment; filename="{pdf_path.name}"'},
-    )
+      el("resultsArea").style.display = "";
+      el("cardsArea").style.display = "";
+      el("dynamicArea").style.display = "";
+      el("detailsArea").style.display = "";
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", "8000"))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port, log_level="info")
+      el("lastRunAt").textContent = new Date().toLocaleString();
+
+      const breakdown = r.breakdown || {};
+      const perfExtras = (breakdown.performance || {}).extras || {};
+      const seoExtras = (breakdown.seo || {}).extras || {};
+      const linksData = breakdown.links || {};
+      const secData = breakdown.security || {};
+
+      const score = parseInt(r.overall_score || 0);
+      const seo = breakdown.seo?.score ?? 0;
+      const perf = breakdown.performance?.score ?? 0;
+      const links = breakdown.links?.score ?? 0;
+      const sec = breakdown.security?.score ?? 0;
+
+      const deg = Math.max(0, Math.min(360, (score / 100) * 360));
+      el("scoreRing").style.setProperty("--deg", `${deg}deg`);
+      el("overallScore").textContent = score;
+      el("gradeText").textContent = r.grade || "—";
+      el("auditedUrl").textContent = `Audited: ${r.audited_url || "—"}`;
+
+      el("seoScore").textContent = seo;
+      el("perfScore").textContent = perf;
+      el("linksScore").textContent = links;
+      el("secScore").textContent = sec;
+
+      const fetcher = perfExtras.fetcher ?? "—";
+      el("fetcherPill").textContent = `fetcher: ${fetcher}`;
+
+      el("verdictPill").textContent = `verdict: ${score >= 80 ? "Healthy" : "Needs Improvement"}`;
+
+      // Chart
+      let labels = ["SEO", "Performance", "Links", "Security"];
+      let dataPoints = [seo, perf, links, sec];
+      let colors = ["#fbbf24", "#38bdf8", "#22c55e", "#ef4444"];
+
+      const chartSpec = Array.isArray(r.chart_data) && r.chart_data.length ? r.chart_data[0] : null;
+      if (chartSpec?.data?.labels && chartSpec?.data?.datasets?.[0]?.data) {
+        labels = chartSpec.data.labels;
+        dataPoints = chartSpec.data.datasets[0].data;
+        colors = chartSpec.data.datasets[0].backgroundColor || colors;
+      }
+      const ctx = el("breakdownChart").getContext("2d");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [{ label: "Score", data: dataPoints, backgroundColor: colors, borderRadius: 12, borderSkipped: false }] },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: "rgba(255,255,255,.10)" } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+
+      // Inline pills
+      const seoKv = el("seoExtrasKv"); seoKv.innerHTML = "";
+      const titleText = seoExtras.title ? `${seoExtras.title}` : "";
+      if (titleText) addKvPill(seoKv, "title_len", String(titleText).length);
+      if (typeof seoExtras.meta_description_present === "boolean") addKvPill(seoKv, "meta_desc", seoExtras.meta_description_present ? "present" : "missing");
+      if (seoExtras.canonical) addKvPill(seoKv, "canonical", "yes");
+      if (typeof seoExtras.h1_count !== "undefined") addKvPill(seoKv, "h1_count", seoExtras.h1_count);
+      if (typeof seoExtras.images_total !== "undefined" && typeof seoExtras.images_missing_alt !== "undefined")
+        addKvPill(seoKv, "image_alt_missing", `${seoExtras.images_missing_alt}/${seoExtras.images_total}`);
+
+      const perfKv = el("perfExtrasKv"); perfKv.innerHTML = "";
+      if (typeof perfExtras.load_ms !== "undefined") addKvPill(perfKv, "load_ms", perfExtras.load_ms);
+      if (typeof perfExtras.bytes !== "undefined") {
+        const kb = Math.max(0, parseInt(perfExtras.bytes, 10) || 0) / 1024;
+        addKvPill(perfKv, "bytes", `${kb.toFixed(1)} KB`);
+      }
+      if (typeof perfExtras.scripts !== "undefined") addKvPill(perfKv, "scripts", perfExtras.scripts);
+      if (typeof perfExtras.styles !== "undefined") addKvPill(perfKv, "styles", perfExtras.styles);
+
+      const linksKv = el("linksKv"); linksKv.innerHTML = "";
+      if (typeof linksData.internal_links_count !== "undefined") addKvPill(linksKv, "internal", linksData.internal_links_count);
+      if (typeof linksData.external_links_count !== "undefined") addKvPill(linksKv, "external", linksData.external_links_count);
+      if (typeof linksData.total_links_count !== "undefined") addKvPill(linksKv, "total", linksData.total_links_count);
+
+      const secKv = el("secKv"); secKv.innerHTML = "";
+      if (typeof secData.https === "boolean") addKvPill(secKv, "https", secData.https ? "yes" : "no");
+      if (typeof secData.hsts === "boolean") addKvPill(secKv, "hsts", secData.hsts ? "yes" : "no");
+      if (typeof secData.status_code !== "undefined") addKvPill(secKv, "status", secData.status_code);
+      if (secData.server) addKvPill(secKv, "server", secData.server);
+
+      // Detailed tables
+      const seoBody = el("seoTableBody"); seoBody.innerHTML = "";
+      addKvRow(seoBody, "Title (length)", titleText ? `${String(titleText).length} chars` : "");
+      addKvRow(seoBody, "Meta description", typeof seoExtras.meta_description_present === "boolean" ? (seoExtras.meta_description_present ? "Present" : "Missing") : "");
+      addKvRow(seoBody, "Canonical", seoExtras.canonical ? "Yes" : "");
+      addKvRow(seoBody, "H1 count", typeof seoExtras.h1_count !== "undefined" ? String(seoExtras.h1_count) : "");
+      if (typeof seoExtras.images_total !== "undefined" && typeof seoExtras.images_missing_alt !== "undefined")
+        addKvRow(seoBody, "Images alt missing", `${seoExtras.images_missing_alt}/${seoExtras.images_total}`);
+
+      const perfBody = el("perfTableBody"); perfBody.innerHTML = "";
+      addKvRow(perfBody, "Load time (ms)", typeof perfExtras.load_ms !== "undefined" ? String(perfExtras.load_ms) : "");
+      addKvRow(perfBody, "Page size", typeof perfExtras.bytes !== "undefined" ? `${(Math.max(0, parseInt(perfExtras.bytes, 10) || 0)/1024).toFixed(1)} KB` : "");
+      addKvRow(perfBody, "Scripts", typeof perfExtras.scripts !== "undefined" ? String(perfExtras.scripts) : "");
+      addKvRow(perfBody, "Stylesheets", typeof perfExtras.styles !== "undefined" ? String(perfExtras.styles) : "");
+      addKvRow(perfBody, "Fetcher", fetcher);
+
+      const linksBody = el("linksTableBody"); linksBody.innerHTML = "";
+      addKvRow(linksBody, "Internal links", typeof linksData.internal_links_count !== "undefined" ? String(linksData.internal_links_count) : "");
+      addKvRow(linksBody, "External links", typeof linksData.external_links_count !== "undefined" ? String(linksData.external_links_count) : "");
+      addKvRow(linksBody, "Total links", typeof linksData.total_links_count !== "undefined" ? String(linksData.total_links_count) : "");
+
+      const secBody = el("secTableBody"); secBody.innerHTML = "";
+      addKvRow(secBody, "HTTPS", typeof secData.https === "boolean" ? (secData.https ? "Yes" : "No") : "");
+      addKvRow(secBody, "HSTS", typeof secData.hsts === "boolean" ? (secData.hsts ? "Yes" : "No") : "");
+      addKvRow(secBody, "Status code", typeof secData.status_code !== "undefined" ? String(secData.status_code) : "");
+      addKvRow(secBody, "Server header", secData.server || "");
+
+      // Dynamic cards & KV
+      const dyn = r.dynamic || {};
+      const cards = Array.isArray(dyn.cards) ? dyn.cards : [];
+      const kv = Array.isArray(dyn.kv) ? dyn.kv : [];
+
+      const cardsWrap = el("dynamicCards");
+      cardsWrap.innerHTML = "";
+      for (const c of cards) {
+        const div = document.createElement("div");
+        div.className = "mini-card fade-in";
+        div.innerHTML = `<div class="fw-semibold mb-1">${escapeHtml(c.title || "")}</div>
+                         <div class="subtle">${escapeHtml(c.body || "")}</div>`;
+        cardsWrap.appendChild(div);
+      }
+
+      const kvBody = el("kvBody");
+      kvBody.innerHTML = "";
+      for (const item of kv) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<th class="text-nowrap" style="width:40%">${escapeHtml(item.key || "")}</th>
+                        <td>${escapeHtml(String(item.value ?? ""))}</td>`;
+        kvBody.appendChild(tr);
+      }
+
+      el("pdfBtn").disabled = false;
+      setStage("completed", 100);
+
+      if (AUTO_SCROLL_ON_RESULT) {
+        setTimeout(() => el("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+      }
+
+      if (score === 0) {
+        showAlert("Audit completed but no content was extracted.", "warning", true);
+      }
+    }
+
+    // Wire events
+    el("startBtn").addEventListener("click", startAudit);
+    el("pdfBtn").addEventListener("click", downloadPdf);
+
+    el("copyJsonBtn").addEventListener("click", async () => {
+      if (!lastResult) return showAlert("No result to copy yet.", "warning");
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2));
+        showAlert("Result JSON copied ✅", "success");
+      } catch {
+        showAlert("Clipboard not available.", "warning");
+      }
+    });
+
+    el("openJsonBtn").addEventListener("click", () => {
+      if (!lastResult) return showAlert("No result to open yet.", "warning");
+      const w = window.open("", "_blank");
+      if (!w) return showAlert("Popup blocked.", "warning");
+      w.document.write(`<pre>${escapeHtml(JSON.stringify(lastResult, null, 2))}</pre>`);
+      w.document.title = "Audit Result JSON"; w.document.close();
+    });
+
+    // Init
+    setWsStatus(false);
+    ensureWs();
+    setStage("idle", 0);
+  </script>
+</body>
+</html>
