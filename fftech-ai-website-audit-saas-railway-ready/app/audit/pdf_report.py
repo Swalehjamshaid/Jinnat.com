@@ -13,11 +13,12 @@ UPGRADES (backward-compatible; optional-data aware):
   • Phase 3: Real CWV/Lighthouse (if provided), homepage screenshot, axe-core depth, mobile checks, robots/sitemap/schema, security depth
   • Phase 4: ROI-prioritized recommendations (+ Apple-specific hints when domain is apple.com), benchmarking/competitors (if provided)
   • Phase 5: Consistent scoring incl. Accessibility; trend arrows; improved extended-metrics filtering; PDF metadata; captions for charts
+  • 2026-02 Improvements: Credibility guards, Core Web Vitals section, industry benchmarks, business impact + ROI, maturity index,
+    risk matrix visualization, 30-60-90 roadmap, competitive analysis, optional extended-metrics annex.
 """
 from __future__ import annotations
 import io
 import os
-import re
 import json
 import socket
 import hashlib
@@ -72,10 +73,11 @@ DIVIDER_GRAY   = colors.HexColor("#DCE3EA")
 PALETTE = ['#2E86C1', '#1ABC9C', '#C0392B', '#8E44AD', '#F39C12', '#16A085', '#9B59B6', '#2ECC71']
 
 # ------------------------------------------------------------
-# HELPERS (no "N/A" anywhere)
+# HELPERS (no "N/A" anywhere, avoid impossible values)
 # ------------------------------------------------------------
 def _now_str() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+
 
 def _hostname(url: str) -> str:
     try:
@@ -83,17 +85,23 @@ def _hostname(url: str) -> str:
     except Exception:
         return ""
 
+
 def _get_ip(host: str) -> Optional[str]:
     try:
         return socket.gethostbyname(host)
     except Exception:
         return None
 
+
 def _kb(n: Any) -> Optional[str]:
     try:
-        return f"{round(int(n)/1024.0, 1)} KB"
+        val = int(n)
+        if val <= 0:
+            return None
+        return f"{round(val/1024.0, 1)} KB"
     except Exception:
         return None
+
 
 def _safe_get(d: dict, path: List[str], default: Any = None) -> Any:
     cur = d
@@ -108,11 +116,13 @@ def _safe_get(d: dict, path: List[str], default: Any = None) -> Any:
     except Exception:
         return default
 
+
 def _int_or(v: Any, default: int = 0) -> int:
     try:
         return int(v)
     except Exception:
         return default
+
 
 def _float_or(v: Any, default: float = 0.0) -> float:
     try:
@@ -120,36 +130,44 @@ def _float_or(v: Any, default: float = 0.0) -> float:
     except Exception:
         return default
 
+
 def _risk_from_score(overall: int) -> str:
     try:
         o = int(overall)
     except Exception:
         o = 0
-    if o >= 85: return "Low"
-    if o >= 70: return "Medium"
-    if o >= 50: return "High"
+    if o >= 85:
+        return "Low"
+    if o >= 70:
+        return "Medium"
+    if o >= 50:
+        return "High"
     return "Critical"
+
 
 def _hash_integrity(audit_data: dict) -> str:
     raw = json.dumps(audit_data, sort_keys=True, ensure_ascii=False).encode("utf-8", errors="ignore")
     return hashlib.sha256(raw).hexdigest().upper()
 
+
 def _short_id_from_hash(h: str) -> str:
     return h[:12]
+
 
 def _chip(text: str, bg, fg=colors.whitesmoke, pad_x=8, pad_y=4, font_size=10) -> Table:
     t = Table([[Paragraph(escape(text), ParagraphStyle('chip', fontSize=font_size, textColor=fg))]],
               style=[
-                  ('BACKGROUND', (0,0), (-1,-1), bg),
-                  ('LEFTPADDING', (0,0), (-1,-1), pad_x),
-                  ('RIGHTPADDING', (0,0), (-1,-1), pad_x),
-                  ('TOPPADDING', (0,0), (-1,-1), pad_y),
-                  ('BOTTOMPADDING', (0,0), (-1,-1), pad_y),
-                  ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                  ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                  ('BOX', (0,0), (-1,-1), 0, bg),
+                  ('BACKGROUND', (0, 0), (-1, -1), bg),
+                  ('LEFTPADDING', (0, 0), (-1, -1), pad_x),
+                  ('RIGHTPADDING', (0, 0), (-1, -1), pad_x),
+                  ('TOPPADDING', (0, 0), (-1, -1), pad_y),
+                  ('BOTTOMPADDING', (0, 0), (-1, -1), pad_y),
+                  ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                  ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                  ('BOX', (0, 0), (-1, -1), 0, bg),
               ])
     return t
+
 
 def _zebra_table(
     rows: List[List[Any]],
@@ -161,16 +179,16 @@ def _zebra_table(
 ) -> Table:
     t = Table(rows, colWidths=colWidths, hAlign='LEFT', repeatRows=1)
     style = [
-        ('GRID', (0,0), (-1,-1), 0.25, colors.lightgrey),
-        ('BACKGROUND', (0,0), (-1,0), header_bg),
-        ('TEXTCOLOR', (0,0), (-1,0), header_fg),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('FONTSIZE', (0,0), (-1,-1), fontsize),
-        ('TOPPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-        ('LEFTPADDING', (0,0), (-1,-1), 6),
-        ('RIGHTPADDING', (0,0), (-1,-1), 6),
-        ('REPEATROWS', (0,0), (-1,0)),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.lightgrey),
+        ('BACKGROUND', (0, 0), (-1, 0), header_bg),
+        ('TEXTCOLOR', (0, 0), (-1, 0), header_fg),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE', (0, 0), (-1, -1), fontsize),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('REPEATROWS', (0, 0), (-1, 0)),
     ]
     for i in range(1, len(rows)):
         bg = row_stripe[i % 2]
@@ -178,9 +196,11 @@ def _zebra_table(
     t.setStyle(TableStyle(style))
     return t
 
+
 def _chunk(seq: List[Any], size: int) -> Iterable[List[Any]]:
     for i in range(0, len(seq), size):
-        yield seq[i:i+size]
+        yield seq[i:i + size]
+
 
 # ---- Scoring (includes Accessibility so overall is consistent)
 DEFAULT_WEIGHTS = {
@@ -192,6 +212,7 @@ DEFAULT_WEIGHTS = {
     "links": 0.05
 }
 
+
 def _recalc_overall_score(scores: Dict[str, Any], weights: Optional[Dict[str, float]] = None) -> int:
     w = dict(DEFAULT_WEIGHTS)
     if isinstance(weights, dict):
@@ -200,6 +221,7 @@ def _recalc_overall_score(scores: Dict[str, Any], weights: Optional[Dict[str, fl
     for k, weight in w.items():
         total += _int_or(scores.get(k, 0), 0) * weight
     return int(round(total))
+
 
 # ---- Assets (homepage + issue screenshots)
 def _load_image_from_assets_path_or_b64(path: Optional[str], b64: Optional[str]) -> Optional[io.BytesIO]:
@@ -218,6 +240,7 @@ def _load_image_from_assets_path_or_b64(path: Optional[str], b64: Optional[str])
             return None
     return None
 
+
 def _load_homepage_screenshot(assets: Dict[str, Any]) -> Optional[io.BytesIO]:
     if not isinstance(assets, dict):
         return None
@@ -225,6 +248,7 @@ def _load_homepage_screenshot(assets: Dict[str, Any]) -> Optional[io.BytesIO]:
         assets.get("homepage_screenshot_path"),
         assets.get("homepage_screenshot_b64")
     )
+
 
 def _load_issue_screenshots(assets: Dict[str, Any]) -> List[Tuple[str, io.BytesIO]]:
     out: List[Tuple[str, io.BytesIO]] = []
@@ -234,7 +258,7 @@ def _load_issue_screenshots(assets: Dict[str, Any]) -> List[Tuple[str, io.BytesI
     for it in items:
         if not isinstance(it, dict):
             continue
-        title = str(it.get("title","")) or "Issue"
+        title = str(it.get("title", "")) or "Issue"
         buf = _load_image_from_assets_path_or_b64(it.get("path"), it.get("b64"))
         if buf:
             out.append((title, buf))
@@ -243,15 +267,17 @@ def _load_issue_screenshots(assets: Dict[str, Any]) -> List[Tuple[str, io.BytesI
         out.append(("Alt Text Issues (examples)", single))
     return out
 
+
 # ---- Metric formatters (return None if missing — so rows get hidden)
 def _ms(v: Any) -> Optional[str]:
     try:
         x = int(float(v))
-        if x < 0:
-            return None
+        if x <= 0:
+            return None  # credibility guard: treat 0 or negative as missing
         return f"{x} ms"
     except Exception:
         return None
+
 
 def _pct(v: Any) -> Optional[str]:
     try:
@@ -259,14 +285,18 @@ def _pct(v: Any) -> Optional[str]:
     except Exception:
         return None
 
+
 def _perf_color(score: Optional[float]):
     try:
         s = float(score)
     except Exception:
         return MUTED_GREY
-    if s >= 90: return SUCCESS_GREEN
-    if s >= 50: return WARNING_ORANGE
+    if s >= 90:
+        return SUCCESS_GREEN
+    if s >= 50:
+        return WARNING_ORANGE
     return CRITICAL_RED
+
 
 # ---- CSP analyzer
 def _analyze_csp(csp: str) -> Dict[str, Any]:
@@ -281,6 +311,7 @@ def _analyze_csp(csp: str) -> Dict[str, Any]:
         "allows_http": "http:" in lower and "upgrade-insecure-requests" not in lower,
         "has_default_src": "default-src" in lower,
     }
+
 
 # ------------------------------------------------------------
 # ISSUE DERIVATION — no network calls
@@ -376,6 +407,7 @@ def derive_critical_issues(audit: Dict[str, Any]) -> List[Dict[str, str]]:
     issues.sort(key=lambda x: priority_weight.get(x["priority"], 9))
     return issues[:12]
 
+
 # ------------------------------------------------------------
 # CHARTS
 # ------------------------------------------------------------
@@ -391,7 +423,7 @@ def _radar_chart(scores: Dict[str, Any]) -> io.BytesIO:
                 values.append(0)
     if not labels:
         labels, values = ["SCORE"], [int(scores.get("overall", 0))]
-    angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False).tolist()
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     values += values[:1]
     angles += angles[:1]
     fig, ax = plt.subplots(figsize=(4.8, 4.8), subplot_kw=dict(polar=True))
@@ -407,6 +439,7 @@ def _radar_chart(scores: Dict[str, Any]) -> io.BytesIO:
     buf.seek(0)
     return buf
 
+
 def _bar_chart(scores: Dict[str, Any]) -> io.BytesIO:
     cats = [k for k in ["seo", "performance", "security", "accessibility", "ux", "links"] if k in scores]
     vals = [int(scores.get(c, 0)) for c in cats] or [int(scores.get("overall", 0))]
@@ -418,8 +451,8 @@ def _bar_chart(scores: Dict[str, Any]) -> io.BytesIO:
     ax.set_ylabel('Score', color='#2C3E50')
     ax.set_title('Category Scores', color='#2C3E50', fontsize=10, pad=6)
     for b, v in zip(bars, vals):
-        ax.text(b.get_x()+b.get_width()/2, v + 1, f"{v}", ha='center', fontsize=8, color='#2C3E50')
-    ax.spines[['top','right']].set_visible(False)
+        ax.text(b.get_x() + b.get_width() / 2, v + 1, f"{v}", ha='center', fontsize=8, color='#2C3E50')
+    ax.spines[['top', 'right']].set_visible(False)
     fig.tight_layout()
     buf = io.BytesIO()
     plt.savefig(buf, format='png', transparent=True, dpi=160)
@@ -427,21 +460,24 @@ def _bar_chart(scores: Dict[str, Any]) -> io.BytesIO:
     buf.seek(0)
     return buf
 
-def _donut_overall(overall: int) -> io.BytesIO:
+
+def _donut_overall(overall: int, title: str = 'Overall Health') -> io.BytesIO:
     risk = _risk_from_score(overall)
     color = {'Low': '#27AE60', 'Medium': '#F39C12', 'High': '#E67E22', 'Critical': '#C0392B'}[risk]
     fig, ax = plt.subplots(figsize=(3.2, 3.2))
     val = max(min(int(overall), 100), 0)
     vals = [val, 100 - val]
-    ax.pie(vals, colors=[color, '#ECF0F1'], startangle=90, counterclock=False, wedgeprops={'width':0.42, 'edgecolor':'white'})
+    ax.pie(vals, colors=[color, '#ECF0F1'], startangle=90, counterclock=False,
+           wedgeprops={'width': 0.42, 'edgecolor': 'white'})
     ax.text(0, 0, f"{val}\n/100", ha='center', va='center', fontsize=12, color='#2C3E50')
-    ax.set_title('Overall Health', color='#2C3E50', fontsize=10, pad=6)
+    ax.set_title(title, color='#2C3E50', fontsize=10, pad=6)
     plt.axis('equal')
     buf = io.BytesIO()
     plt.savefig(buf, format='png', transparent=True, dpi=160)
     plt.close(fig)
     buf.seek(0)
     return buf
+
 
 # ------------------------------------------------------------
 # METRICS FLATTENING (stronger noise filtering)
@@ -468,8 +504,10 @@ def _flatten_pairs_from_dict(d: Dict[str, Any], prefix: str = "") -> List[Tuple[
             if len(s) > 300:
                 s = s[:297] + "…"
             out.append((key, s))
+
     _walk(d, [prefix] if prefix else [])
     return [(k.lstrip("."), v) for k, v in out]
+
 
 def _collect_extended_metrics(audit: Dict[str, Any]) -> List[Tuple[str, str]]:
     pairs: List[Tuple[str, str]] = []
@@ -500,25 +538,25 @@ def _collect_extended_metrics(audit: Dict[str, Any]) -> List[Tuple[str, str]]:
         kv = dy.get("kv", [])
         if isinstance(cards, list):
             for i, c in enumerate(cards):
-                title = str(c.get('title',''))
-                body = str(c.get('body',''))
+                title = str(c.get('title', ''))
+                body = str(c.get('body', ''))
                 if title or body:
                     pairs.append((f"dynamic.cards[{i}].title", title))
                     pairs.append((f"dynamic.cards[{i}].body", body))
         if isinstance(kv, list):
             for p in kv:
-                k = str(p.get("key",""))
-                v = str(p.get("value",""))
+                k = str(p.get("key", ""))
+                v = str(p.get("value", ""))
                 if k:
                     pairs.append((f"dynamic.kv.{k}", v))
 
     # Dedupe
     seen = set()
     deduped: List[Tuple[str, str]] = []
-    for k,v in pairs:
+    for k, v in pairs:
         if k not in seen:
             seen.add(k)
-            deduped.append((k,v))
+            deduped.append((k, v))
 
     # Stronger noise filter
     filtered = []
@@ -532,6 +570,7 @@ def _collect_extended_metrics(audit: Dict[str, Any]) -> List[Tuple[str, str]]:
             continue
         filtered.append((k, v))
     return filtered
+
 
 # ------------------------------------------------------------
 # PDF GENERATOR
@@ -576,7 +615,7 @@ class PDFReport:
 
         # Scores
         self.scores = dict(audit.get("scores", {}))
-        # Maintain backward compatibility; we will not display missing values
+        # Maintain backward compatibility; do not display missing values
         self.scores.setdefault("overall", _int_or(audit.get("overall_score", 0), 0))
         self.scores.setdefault("accessibility", _int_or(_safe_get(audit, ["breakdown", "accessibility", "score"], 0), 0))
         self.scores.setdefault("ux", _int_or(_safe_get(audit, ["breakdown", "ux", "score"], 0), 0))
@@ -650,7 +689,7 @@ class PDFReport:
         return _zebra_table(filtered, colWidths=colWidths, header_bg=header_bg, fontsize=fontsize)
 
     def _section_data_note(self, elems: List[Any]):
-        elems.append(Spacer(1, 0.06*inch))
+        elems.append(Spacer(1, 0.06 * inch))
         elems.append(Paragraph("Fields shown only when data is available from the runner.", self.styles['Muted']))
 
     # --------------------- page decorators ---------------------
@@ -660,7 +699,7 @@ class PDFReport:
             canvas.saveState()
             canvas.setFillColor(colors.Color(0.1, 0.1, 0.2, alpha=0.025))  # reduced opacity
             canvas.setFont('Helvetica', 48)
-            canvas.translate(A4[0]/2, A4[1]/2)
+            canvas.translate(A4[0] / 2, A4[1] / 2)
             canvas.rotate(35)
             canvas.drawCentredString(0, 0, f"{self.brand} • Confidential")
         finally:
@@ -670,11 +709,11 @@ class PDFReport:
         self._watermark(canvas)
         canvas.saveState()
         canvas.setFillColor(ACCENT_INDIGO)
-        canvas.rect(0, 0.45*inch, A4[0], 0.02*inch, fill=1, stroke=0)
+        canvas.rect(0, 0.45 * inch, A4[0], 0.02 * inch, fill=1, stroke=0)
         canvas.setFont('Helvetica', 8)
         canvas.setFillColor(PRIMARY_DARK)
-        canvas.drawString(inch, 0.28*inch, f"{self.brand} | Integrity: {self.integrity[:16]}…")
-        canvas.drawRightString(A4[0]-inch, 0.28*inch, f"Page {doc.page}")
+        canvas.drawString(inch, 0.28 * inch, f"{self.brand} | Integrity: {self.integrity[:16]}…")
+        canvas.drawRightString(A4[0] - inch, 0.28 * inch, f"Page {doc.page}")
         if doc.page == 1:
             try:
                 canvas.setTitle(f"{self.site_name or 'Website'} – Website Audit Report")
@@ -695,47 +734,54 @@ class PDFReport:
     # --------------------- sections ---------------------
     def cover_page(self, elems: List[Any]):
         block: List[Any] = []
-        block.append(Spacer(1, 0.55*inch))
+        block.append(Spacer(1, 0.55 * inch))
 
         if isinstance(PDF_LOGO_PATH, str) and PDF_LOGO_PATH and os.path.exists(PDF_LOGO_PATH):
             try:
-                block.append(Image(PDF_LOGO_PATH, width=1.8*inch, height=1.8*inch))
-                block.append(Spacer(1, 0.25*inch))
+                block.append(Image(PDF_LOGO_PATH, width=1.8 * inch, height=1.8 * inch))
+                block.append(Spacer(1, 0.25 * inch))
             except Exception:
                 pass
         else:
             block.append(_chip(self.brand, ACCENT_INDIGO, pad_x=10, pad_y=4, font_size=11))
-            block.append(Spacer(1, 0.18*inch))
+            block.append(Spacer(1, 0.18 * inch))
 
         # Phase 1: Larger, crisp, high-contrast titles
         block.append(Paragraph(self.brand.upper(), self.styles['Brand']))
         block.append(Paragraph("Website Performance & Compliance Dossier", self.styles['ReportTitle']))
-        block.append(Spacer(1, 0.28*inch))
+        block.append(Spacer(1, 0.28 * inch))
 
         # KPI chips (bigger/higher contrast)
-        kpi_row = [
-            [_chip(f"Risk: {self.risk}", {'Low': SUCCESS_GREEN, 'Medium': WARNING_ORANGE,
-                                          'High': colors.HexColor('#E67E22'), 'Critical': CRITICAL_RED}[self.risk],
-                   pad_x=10, pad_y=5, font_size=11)],
-            [_chip(f"Overall: {self.overall}/100", ACCENT_BLUE, pad_x=10, pad_y=5, font_size=11)]
-        ]
-        kpi_tbl = Table(kpi_row, colWidths=[2.2*inch], hAlign='LEFT')
-        kpi_tbl.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
-        block.append(kpi_tbl)
-        block.append(Spacer(1, 0.22*inch))
+        block.append(
+            Table([
+                [
+                    _chip(
+                        f"Risk: {self.risk}",
+                        {'Low': SUCCESS_GREEN, 'Medium': WARNING_ORANGE, 'High': colors.HexColor('#E67E22'), 'Critical': CRITICAL_RED}[self.risk],
+                        pad_x=10, pad_y=5, font_size=11
+                    )
+                ],
+                [
+                    _chip(f"Overall: {self.overall}/100", ACCENT_BLUE, pad_x=10, pad_y=5, font_size=11)
+                ]
+            ], colWidths=[2.2 * inch], hAlign='LEFT', style=[('VALIGN', (0, 0), (-1, -1), 'MIDDLE')])
+        )
+        block.append(Spacer(1, 0.22 * inch))
 
-        # Divider + light background feeling for details table
+        # Divider + details table
         block.append(HRFlowable(width="100%", thickness=0.6, color=DIVIDER_GRAY))
-        block.append(Spacer(1, 0.10*inch))
+        block.append(Spacer(1, 0.10 * inch))
 
         rows = [["Field", "Value"]]
-        if self.url: rows.append(["Website URL Audited", self.url])
-        if self.audit_dt: rows.append(["Audit Date & Time", self.audit_dt])
+        if self.url:
+            rows.append(["Website URL Audited", self.url])
+        if self.audit_dt:
+            rows.append(["Audit Date & Time", self.audit_dt])
         rows.append(["Report ID", self.report_id])
         rows.append(["Generated By", SAAS_NAME])
 
-        block.append(self._render_clean_table(rows, colWidths=[2.6*inch, 3.7*inch], header_bg=PALE_BLUE, fontsize=10))
-        block.append(Spacer(1, 0.16*inch))
+        block.append(self._render_clean_table(rows, colWidths=[2.6 * inch, 3.7 * inch], header_bg=PALE_BLUE, fontsize=10))
+        block.append(Spacer(1, 0.16 * inch))
         block.append(Paragraph(
             "This report contains confidential and proprietary information intended solely for the recipient. "
             "Unauthorized distribution is prohibited.", self.styles['Muted']))
@@ -748,6 +794,7 @@ class PDFReport:
         bullets_list = [
             "Executive Summary",
             "Executive Highlights",
+            "Core Web Vitals (Field/Lab)",
             "What We Audited (Homepage Snapshot)",
             "Website Overview",
             "SEO Audit",
@@ -755,60 +802,88 @@ class PDFReport:
             "Security Audit",
             "Accessibility Audit",
             "User Experience (UX) & Mobile",
+            "Industry Benchmark Comparison",
+            "Business & Revenue Impact (Modeled)",
+            "Competitive Analysis (if available)",
             "Crawl Summary (if available)",
             "Visual Proof of Issues (if available)",
             "Broken Link Analysis",
             "Analytics & Tracking",
             "Critical Issues Summary",
             "Recommendations & Fix Roadmap",
+            "30-60-90 Day Plan",
             "Scoring Methodology",
-            "Extended Metrics (Auto-Expanded)",
+            "Website Maturity Index",
+            "Risk Matrix",
             "Appendix (Technical Details)",
-            "Conclusion",
         ]
         for b in bullets_list:
             elems.append(Paragraph(f"• {escape(b)}", self.styles['Normal']))
-        elems.append(Spacer(1, 0.10*inch))
+        elems.append(Spacer(1, 0.10 * inch))
         elems.append(Paragraph("Note: Page numbers are included in the footer.", self.styles['Muted']))
         elems.append(PageBreak())
+
+    def _score_discrepancy_note(self) -> Optional[Paragraph]:
+        try:
+            delta = abs(int(self.runner_overall) - int(self.overall))
+            if delta >= 10:
+                return Paragraph(
+                    f"<b>Score Consistency:</b> Runner {self.runner_overall}/100 vs computed {self.overall}/100. "
+                    f"Computed score is used for all charts for consistency (weights applied).",
+                    self.styles['Note']
+                )
+        except Exception:
+            pass
+        return None
 
     def executive_summary(self, elems: List[Any]):
         elems.append(self._section_title("Executive Health Summary"))
 
-        radar = Image(_radar_chart(self.scores), width=2.8*inch, height=2.8*inch)
-        bars  = Image(_bar_chart(self.scores),   width=3.0*inch, height=2.2*inch)
-        donut = Image(_donut_overall(self.overall), width=2.0*inch, height=2.0*inch)
-        grid = Table([[radar, Table([[bars],[donut]], style=[('ALIGN',(0,0),(-1,-1),'CENTER')])]],
-                     colWidths=[3.0*inch, 3.1*inch])
-        grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+        radar = Image(_radar_chart(self.scores), width=2.8 * inch, height=2.8 * inch)
+        bars = Image(_bar_chart(self.scores), width=3.0 * inch, height=2.2 * inch)
+        donut = Image(_donut_overall(self.overall), width=2.0 * inch, height=2.0 * inch)
+        grid = Table([[radar, Table([[bars], [donut]], style=[('ALIGN', (0, 0), (-1, -1), 'CENTER')])]],
+                     colWidths=[3.0 * inch, 3.1 * inch])
+        grid.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
         elems.append(grid)
         elems.append(Paragraph(
             "Chart captions: Radar shows category distribution; Bar shows category scores; Donut shows computed overall (weighted).",
             self.styles['Caption']
         ))
-        elems.append(Spacer(1, 0.12*inch))
+        elems.append(Spacer(1, 0.12 * inch))
 
         krows = [["Field", "Value"]]
         krows.append(["Overall Website Health (computed)", f"{self.overall}/100"])
         if self.runner_overall != self.overall:
             krows.append(["Overall (runner provided)", f"{self.runner_overall}/100"])
         krows.append(["Overall Risk Level", self.risk])
-        if "seo" in self.scores: krows.append(["SEO Score", str(int(self.scores.get("seo", 0)))])
-        if "performance" in self.scores: krows.append(["Performance Score", str(int(self.scores.get("performance", 0)))])
-        if "security" in self.scores: krows.append(["Security Score", str(int(self.scores.get("security", 0)))])
-        if "accessibility" in self.scores: krows.append(["Accessibility Score", str(int(self.scores.get("accessibility", 0)))])
-        if "ux" in self.scores: krows.append(["UX Score", str(int(self.scores.get("ux", 0)))])
-        if "links" in self.scores: krows.append(["Links Score", str(int(self.scores.get("links", 0)))])
-        elems.append(self._render_clean_table(krows, colWidths=[2.9*inch, 3.4*inch], header_bg=PALE_GREEN, fontsize=10))
-        elems.append(Spacer(1, 0.05*inch))
+        if "seo" in self.scores:
+            krows.append(["SEO Score", str(int(self.scores.get("seo", 0)))])
+        if "performance" in self.scores:
+            krows.append(["Performance Score", str(int(self.scores.get("performance", 0)))])
+        if "security" in self.scores:
+            krows.append(["Security Score", str(int(self.scores.get("security", 0)))])
+        if "accessibility" in self.scores:
+            krows.append(["Accessibility Score", str(int(self.scores.get("accessibility", 0)))])
+        if "ux" in self.scores:
+            krows.append(["UX Score", str(int(self.scores.get("ux", 0)))])
+        if "links" in self.scores:
+            krows.append(["Links Score", str(int(self.scores.get("links", 0)))])
+        elems.append(self._render_clean_table(krows, colWidths=[2.9 * inch, 3.4 * inch], header_bg=PALE_GREEN, fontsize=10))
+        elems.append(Spacer(1, 0.05 * inch))
 
-        weights_disp = ", ".join([f"{k.upper()} {int(v*100)}%" for k, v in DEFAULT_WEIGHTS.items()])
+        discrepancy = self._score_discrepancy_note()
+        if discrepancy:
+            elems.append(discrepancy)
+
+        elems.append(Spacer(1, 0.10 * inch))
+        # Strategic executive takeaways (non-numeric if data missing)
         elems.append(Paragraph(
-            f"Scoring formula: Overall = Σ(category × weight). Defaults → {escape(weights_disp)}. "
-            "Runner-supplied weights, if any, override defaults.", self.styles['Note']
+            "<b>Executive View:</b> Address the top issues to reduce business risk, protect brand trust, and improve conversions. ",
+            self.styles['Note']
         ))
 
-        elems.append(Spacer(1, 0.12*inch))
+        elems.append(Spacer(1, 0.12 * inch))
         elems.append(Paragraph("Top Critical Issues & Estimated Business Impact", self.styles['H2']))
         issues = self.issues[:5]
         if not issues:
@@ -817,7 +892,7 @@ class PDFReport:
             rows = [["Priority", "Issue", "Category", "Impact", "Recommended Fix"]]
             for i in issues:
                 rows.append([i["priority"], i["issue"], i["category"], i["impact"], i["fix"]])
-            t = self._table(rows, colWidths=[0.95*inch, 2.25*inch, 0.9*inch, 1.5*inch, 1.6*inch], header_bg=ACCENT_BLUE, fontsize=8)
+            t = self._table(rows, colWidths=[0.95 * inch, 2.25 * inch, 0.9 * inch, 1.5 * inch, 1.6 * inch], header_bg=ACCENT_BLUE, fontsize=8)
             for r in range(1, len(rows)):
                 pr = rows[r][0]
                 t.setStyle(TableStyle([
@@ -830,42 +905,142 @@ class PDFReport:
 
     def executive_one_pager(self, elems: List[Any]):
         elems.append(self._section_title("Executive Highlights"))
-        donut_overall = Image(_donut_overall(self.overall), width=2.0*inch, height=2.0*inch)
+        donut_overall = Image(_donut_overall(self.overall), width=2.0 * inch, height=2.0 * inch)
         cats = ["performance", "seo", "security", "accessibility"]
         smalls = []
         for c in cats:
             if c in self.scores:
                 val = int(self.scores.get(c, 0))
-                img = Image(_donut_overall(val), width=1.5*inch, height=1.5*inch)
+                img = Image(_donut_overall(val, title=c.upper()), width=1.5 * inch, height=1.5 * inch)
                 smalls.append(Table([[Paragraph(c.upper(), self.styles['Tiny'])], [img]],
-                                    style=[('ALIGN',(0,0),(-1,-1),'CENTER')]))
-        grid = Table([[donut_overall, Table([smalls[:2], smalls[2:]], style=[('ALIGN',(0,0),(-1,-1),'CENTER')])]],
-                     colWidths=[2.5*inch, 3.6*inch])
-        grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+                                    style=[('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
+        grid = Table([[donut_overall, Table([smalls[:2], smalls[2:]], style=[('ALIGN', (0, 0), (-1, -1), 'CENTER')])]],
+                     colWidths=[2.5 * inch, 3.6 * inch])
+        grid.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
         elems.append(grid)
         elems.append(Paragraph("Gauges summarize overall and category health at a glance.", self.styles['Caption']))
-        elems.append(Spacer(1, 0.08*inch))
+        elems.append(Spacer(1, 0.08 * inch))
 
         # Trend arrows (if history present)
         if self.history and len(self.history) >= 2:
             try:
                 a, b = self.history[-2], self.history[-1]
+
                 def arrow(curr, prev):
                     try:
                         c, p = float(curr), float(prev)
                         return "↑" if c > p else ("↓" if c < p else "→")
                     except Exception:
                         return "→"
+
                 overall_arrow = arrow(b.get("overall"), a.get("overall"))
                 perf_arrow = arrow(b.get("performance"), a.get("performance"))
                 rows = [["Date", "Overall", "Δ", "Performance", "Δ"]]
                 for h in self.history[-5:]:
-                    rows.append([str(h.get("dt","")), str(h.get("overall","")), "", str(h.get("performance","")), ""])
-                rows.append(["Latest change", str(b.get("overall","")), overall_arrow, str(b.get("performance","")), perf_arrow])
+                    rows.append([str(h.get("dt", "")), str(h.get("overall", "")), "", str(h.get("performance", "")), ""])
+                rows.append(["Latest change", str(b.get("overall", "")), overall_arrow, str(b.get("performance", "")), perf_arrow])
                 elems.append(Paragraph("Recent Trend (Overall / Performance)", self.styles['H2']))
-                elems.append(self._table(rows, colWidths=[1.5*inch, 1.2*inch, 0.4*inch, 1.4*inch, 0.4*inch], header_bg=PALE_GREEN))
+                elems.append(self._table(rows, colWidths=[1.5 * inch, 1.2 * inch, 0.4 * inch, 1.4 * inch, 0.4 * inch], header_bg=PALE_GREEN))
             except Exception:
                 pass
+        self._section_data_note(elems)
+        elems.append(PageBreak())
+
+    # --------------------- NEW: Core Web Vitals Section ---------------------
+    def core_web_vitals_section(self, elems: List[Any]):
+        elems.append(self._section_title("Core Web Vitals (Field/Lab)"))
+        lh_metrics = self.lh.get('metrics', {}) if isinstance(self.lh, dict) else {}
+        field = self.data.get('field_cwv', {}) if isinstance(self.data.get('field_cwv', {}), dict) else {}
+        mobile_lab = self.mobile.get('lab_metrics', {}) if isinstance(self.mobile.get('lab_metrics', {}), dict) else {}
+
+        # Build comparative table
+        rows = [["Metric", "Desktop", "Mobile", "Benchmark", "Status"]]
+
+        def status_for(metric_key: str, val: Optional[float]) -> str:
+            if val is None:
+                return "Data Not Collected"
+            # Simple thresholds; can be refined
+            if metric_key == 'CLS':
+                try:
+                    v = float(val)
+                    if v <= 0.1:
+                        return "Good"
+                    elif v <= 0.25:
+                        return "Needs Improvement"
+                    return "Poor"
+                except Exception:
+                    return "Data Not Collected"
+            else:
+                # ms-based metrics
+                try:
+                    v = float(val)
+                    if metric_key in ('LCP_ms', 'FCP_ms', 'INP_ms', 'TTFB_ms', 'SpeedIndex_ms'):
+                        if metric_key == 'INP_ms':
+                            if v <= 200:
+                                return "Good"
+                            elif v <= 500:
+                                return "Needs Improvement"
+                            return "Poor"
+                        if metric_key == 'LCP_ms':
+                            if v <= 2500:
+                                return "Good"
+                            elif v <= 4000:
+                                return "Needs Improvement"
+                            return "Poor"
+                        if metric_key == 'TTFB_ms':
+                            if v <= 800:
+                                return "Good"
+                            elif v <= 1800:
+                                return "Needs Improvement"
+                            return "Poor"
+                        # Fallback for others
+                        return "OK"
+                except Exception:
+                    return "Data Not Collected"
+            return "OK"
+
+        def fmt_ms_or_blank(v: Any) -> Optional[str]:
+            s = _ms(v)
+            return s if s else None
+
+        metrics_order = [
+            ("Largest Contentful Paint", 'LCP_ms'),
+            ("Interaction to Next Paint", 'INP_ms'),
+            ("Cumulative Layout Shift", 'CLS'),
+            ("Time to First Byte", 'TTFB_ms'),
+            ("First Contentful Paint", 'FCP_ms')
+        ]
+
+        any_row = False
+        for label, key in metrics_order:
+            desktop_val = lh_metrics.get(key) if lh_metrics else None
+            mobile_val = mobile_lab.get(key) if mobile_lab else None
+            bench = self.bench.get('avg', {}).get(key) if isinstance(self.bench.get('avg', {}), dict) else None
+
+            # Prefer field data if present
+            if key in ('LCP_ms', 'INP_ms', 'TTFB_ms'):
+                desktop_field = field.get('desktop', {}).get(key) if isinstance(field.get('desktop', {}), dict) else None
+                mobile_field = field.get('mobile', {}).get(key) if isinstance(field.get('mobile', {}), dict) else None
+                if desktop_field is not None:
+                    desktop_val = desktop_field
+                if mobile_field is not None:
+                    mobile_val = mobile_field
+
+            d = fmt_ms_or_blank(desktop_val) if key != 'CLS' else (str(desktop_val) if desktop_val is not None else None)
+            m = fmt_ms_or_blank(mobile_val) if key != 'CLS' else (str(mobile_val) if mobile_val is not None else None)
+            b = fmt_ms_or_blank(bench) if key != 'CLS' else (str(bench) if bench is not None else None)
+            st = status_for(key, mobile_val if mobile_val is not None else desktop_val)
+
+            # Only add if any value present; otherwise leave table but show note later
+            if any([d, m, b]):
+                any_row = True
+                rows.append([label, d or "—", m or "—", b or "—", st])
+
+        if any_row:
+            elems.append(self._table(rows, colWidths=[2.1 * inch, 1.0 * inch, 1.0 * inch, 1.0 * inch, 1.4 * inch], header_bg=PALE_BLUE, fontsize=9))
+            elems.append(Paragraph("If a column shows ‘—’, it means that value wasn’t provided by the runner.", self.styles['Caption']))
+        else:
+            elems.append(Paragraph("Data Not Collected: No Core Web Vitals provided by runner.", self.styles['Muted']))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -873,27 +1048,28 @@ class PDFReport:
         elems.append(self._section_title("What We Audited (Homepage Snapshot)"))
         ctx_rows = [["Field", "Value"]]
         final_url = str(self.lh.get("final_url", self.url)) if isinstance(self.lh, dict) else (self.url or "")
-        if final_url: ctx_rows.append(["Final URL", final_url])
+        if final_url:
+            ctx_rows.append(["Final URL", final_url])
         cfg = self.lh.get("config", {}) if isinstance(self.lh, dict) else {}
         if cfg:
             device = cfg.get("device"); form = cfg.get("form_factor")
             label_val = " / ".join([x for x in [device, form] if x])
             if label_val:
                 ctx_rows.append(["Device / Form Factor", label_val])
-        elems.append(self._render_clean_table(ctx_rows, colWidths=[2.6*inch, 3.7*inch], header_bg=LIGHT_GRAY_BG))
-        elems.append(Spacer(1, 0.10*inch))
+        elems.append(self._render_clean_table(ctx_rows, colWidths=[2.6 * inch, 3.7 * inch], header_bg=LIGHT_GRAY_BG))
+        elems.append(Spacer(1, 0.10 * inch))
 
         cats = self.lh.get("categories", {}) if isinstance(self.lh, dict) else {}
         perf_val = cats.get("performance", None)
         if perf_val is not None:
             perf_chip_bg = _perf_color(perf_val)
             elems.append(_chip(f"Lighthouse Performance: {_pct(perf_val)}/100", perf_chip_bg, pad_x=10, pad_y=5, font_size=11))
-            elems.append(Spacer(1, 0.12*inch))
+            elems.append(Spacer(1, 0.12 * inch))
 
         img_buf = _load_homepage_screenshot(self.assets)
         if img_buf:
             try:
-                elems.append(Image(img_buf, width=5.8*inch, height=3.35*inch))
+                elems.append(Image(img_buf, width=5.8 * inch, height=3.35 * inch))
             except Exception:
                 elems.append(Paragraph("Screenshot could not be rendered.", self.styles['Muted']))
         else:
@@ -912,16 +1088,21 @@ class PDFReport:
             ("Page Size", self.overview.get("page_size")),
             ("Total Requests (approx)", str(self.overview.get("total_requests_approx")) if self.overview.get("total_requests_approx") else None),
         ]:
-            if val: rows.append([label, val])
+            if val:
+                rows.append([label, val])
 
-        # Benchmarks & competitors (optional)
+        # Benchmarks & competitors (optional line-level context)
         if isinstance(self.bench, dict) and self.bench.get("avg"):
             avg = self.bench["avg"]
             bench_line = []
-            if avg.get("LCP_ms") is not None: bench_line.append(f"LCP {_ms(avg.get('LCP_ms'))}")
-            if avg.get("INP_ms") is not None: bench_line.append(f"INP {_ms(avg.get('INP_ms', avg.get('INP')))}")
-            if avg.get("CLS") is not None: bench_line.append(f"CLS {avg.get('CLS')}")
-            if avg.get("Performance") is not None: bench_line.append(f"Perf {avg.get('Performance')}")
+            if avg.get("LCP_ms") is not None:
+                bench_line.append(f"LCP {_ms(avg.get('LCP_ms'))}")
+            if avg.get("INP_ms") is not None:
+                bench_line.append(f"INP {_ms(avg.get('INP_ms', avg.get('INP')))}")
+            if avg.get("CLS") is not None:
+                bench_line.append(f"CLS {avg.get('CLS')}")
+            if avg.get("Performance") is not None:
+                bench_line.append(f"Perf {avg.get('Performance')}")
             if bench_line:
                 rows.append(["Benchmark (context)", " | ".join([x for x in bench_line if x])])
 
@@ -929,7 +1110,7 @@ class PDFReport:
             comp = str(self.competitors["summary"])
             rows.append(["Competitor Comparison", comp[:220] + ("…" if len(comp) > 220 else "")])
 
-        elems.append(self._render_clean_table(rows, colWidths=[2.7*inch, 3.6*inch], header_bg=PALE_BLUE))
+        elems.append(self._render_clean_table(rows, colWidths=[2.7 * inch, 3.6 * inch], header_bg=PALE_BLUE))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -941,19 +1122,22 @@ class PDFReport:
         # On-page
         on_rows = [["Field", "Value"]]
         title = ex.get("title") or None
-        if title: on_rows.append(["Title tag (length + optimization)", f"{len(title)} chars"])
+        if title:
+            on_rows.append(["Title tag (length + optimization)", f"{len(title)} chars"])
         if isinstance(ex.get("meta_description_present"), bool):
             on_rows.append(["Meta description (length + optimization)", "Present" if ex.get("meta_description_present") else "Missing"])
         h1_count = _int_or(ex.get("h1_count", 0), 0)
-        if h1_count: on_rows.append(["H1, H2 structure", f"H1 count: {h1_count}; H2: (runner not supplied)"])
+        if h1_count:
+            on_rows.append(["H1, H2 structure", f"H1 count: {h1_count}; H2: (runner not supplied)"])
         canonical = ex.get("canonical")
-        if canonical: on_rows.append(["Canonical tag presence", "Yes"])
+        if canonical:
+            on_rows.append(["Canonical tag presence", "Yes"])
         imgs_total = _int_or(ex.get("images_total", 0), 0) or None
         imgs_missing = _int_or(ex.get("images_missing_alt", 0), 0) or None
         if imgs_total is not None:
             on_rows.append(["Image ALT attributes missing", f"{imgs_missing or 0}/{imgs_total}"])
-        elems.append(self._render_clean_table(on_rows, colWidths=[3.1*inch, 3.2*inch], header_bg=PALE_YELLOW))
-        elems.append(Spacer(1, 0.08*inch))
+        elems.append(self._render_clean_table(on_rows, colWidths=[3.1 * inch, 3.2 * inch], header_bg=PALE_YELLOW))
+        elems.append(Spacer(1, 0.08 * inch))
 
         # Technical
         tech_rows = [["Field", "Value"]]
@@ -977,15 +1161,18 @@ class PDFReport:
         # CWV (lab)
         metrics = self.lh.get('metrics', {}) if isinstance(self.lh, dict) else {}
         cwv_line = []
-        if metrics.get("LCP_ms") is not None: cwv_line.append(f"LCP {_ms(metrics.get('LCP_ms'))}")
-        if metrics.get("INP_ms") is not None: cwv_line.append(f"INP {_ms(metrics.get('INP_ms'))}")
-        if metrics.get("CLS") is not None: cwv_line.append(f"CLS {metrics.get('CLS')}")
+        if metrics.get("LCP_ms") is not None:
+            cwv_line.append(f"LCP {_ms(metrics.get('LCP_ms'))}")
+        if metrics.get("INP_ms") is not None:
+            cwv_line.append(f"INP {_ms(metrics.get('INP_ms'))}")
+        if metrics.get("CLS") is not None:
+            cwv_line.append(f"CLS {metrics.get('CLS')}")
         if cwv_line:
             tech_rows.append(["Core Web Vitals (lab)", " | ".join([x for x in cwv_line if x])])
         # Mobile viewport
         if isinstance(self.mobile.get("viewport_meta"), bool):
             tech_rows.append(["Mobile responsiveness", "Viewport OK" if self.mobile.get("viewport_meta") else "Viewport missing"])
-        elems.append(self._render_clean_table(tech_rows, colWidths=[3.1*inch, 3.2*inch], header_bg=PALE_BLUE))
+        elems.append(self._render_clean_table(tech_rows, colWidths=[3.1 * inch, 3.2 * inch], header_bg=PALE_BLUE))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1002,41 +1189,49 @@ class PDFReport:
         if perf_val is not None:
             perf_chip_bg = _perf_color(perf_val)
             elems.append(_chip(f"Lighthouse Performance: {_pct(perf_val)}/100", perf_chip_bg, pad_x=10, pad_y=5, font_size=11))
-            elems.append(Spacer(1, 0.10*inch))
+            elems.append(Spacer(1, 0.10 * inch))
 
         top_rows = [["Metric", "Value"]]
         label = " / ".join([x for x in [cfg.get('device'), cfg.get('form_factor')] if x])
-        if label: top_rows.append(["Device / Form Factor", label])
-        if m.get("LCP_ms") is not None: top_rows.append(["Largest Contentful Paint (LCP)", _ms(m.get("LCP_ms"))])
-        if m.get("INP_ms") is not None: top_rows.append(["Interaction to Next Paint (INP)", _ms(m.get("INP_ms"))])
-        if m.get("CLS") is not None: top_rows.append(["Cumulative Layout Shift (CLS)", str(m.get("CLS"))])
-        if m.get("FCP_ms") is not None: top_rows.append(["First Contentful Paint (FCP)", _ms(m.get("FCP_ms"))])
-        if m.get("TTFB_ms") is not None: top_rows.append(["Time to First Byte (TTFB)", _ms(m.get("TTFB_ms"))])
-        if m.get("SpeedIndex_ms") is not None: top_rows.append(["Speed Index", _ms(m.get("SpeedIndex_ms"))])
-        if m.get("TBT_ms") is not None: top_rows.append(["Total Blocking Time (TBT)", _ms(m.get("TBT_ms"))])
-        elems.append(self._render_clean_table(top_rows, colWidths=[3.6*inch, 2.7*inch], header_bg=PALE_GREEN))
+        if label:
+            top_rows.append(["Device / Form Factor", label])
+        if m.get("LCP_ms") is not None:
+            top_rows.append(["Largest Contentful Paint (LCP)", _ms(m.get("LCP_ms"))])
+        if m.get("INP_ms") is not None:
+            top_rows.append(["Interaction to Next Paint (INP)", _ms(m.get("INP_ms"))])
+        if m.get("CLS") is not None:
+            top_rows.append(["Cumulative Layout Shift (CLS)", str(m.get("CLS"))])
+        if m.get("FCP_ms") is not None:
+            top_rows.append(["First Contentful Paint (FCP)", _ms(m.get("FCP_ms"))])
+        if m.get("TTFB_ms") is not None:
+            top_rows.append(["Time to First Byte (TTFB)", _ms(m.get("TTFB_ms"))])
+        if m.get("SpeedIndex_ms") is not None:
+            top_rows.append(["Speed Index", _ms(m.get("SpeedIndex_ms"))])
+        if m.get("TBT_ms") is not None:
+            top_rows.append(["Total Blocking Time (TBT)", _ms(m.get("TBT_ms"))])
+        elems.append(self._render_clean_table(top_rows, colWidths=[3.6 * inch, 2.7 * inch], header_bg=PALE_GREEN))
         elems.append(Paragraph(
             "Interpretation: LCP < 2.5s (good), INP < 200ms (good), CLS < 0.1 (good). Values shown are lab metrics when provided.",
             self.styles['Caption']
         ))
-        elems.append(Spacer(1, 0.08*inch))
+        elems.append(Spacer(1, 0.08 * inch))
 
         # Opportunities
         elems.append(Paragraph("Opportunities (estimated savings)", self.styles['H2']))
         if opps:
             rows = [["Opportunity", "Est. Savings"]]
             for o in opps[:8]:
-                title = str(o.get("title","")).strip()
+                title = str(o.get("title", "")).strip()
                 savings = _ms(o.get("estimated_savings_ms"))
                 if title and savings:
                     rows.append([title, savings])
             if len(rows) > 1:
-                elems.append(self._table(rows, colWidths=[4.2*inch, 2.1*inch], header_bg=PALE_BLUE))
+                elems.append(self._table(rows, colWidths=[4.2 * inch, 2.1 * inch], header_bg=PALE_BLUE))
             else:
                 elems.append(Paragraph("No opportunities detected.", self.styles['Muted']))
         else:
             elems.append(Paragraph("No opportunities detected.", self.styles['Muted']))
-        elems.append(Spacer(1, 0.06*inch))
+        elems.append(Spacer(1, 0.06 * inch))
 
         # Diagnostics
         elems.append(Paragraph("Diagnostics", self.styles['H2']))
@@ -1048,7 +1243,7 @@ class PDFReport:
                 if dv and val:
                     rows.append([dv, val])
             if len(rows) > 1:
-                elems.append(self._table(rows, colWidths=[2.4*inch, 3.9*inch], header_bg=PALE_YELLOW))
+                elems.append(self._table(rows, colWidths=[2.4 * inch, 3.9 * inch], header_bg=PALE_YELLOW))
             else:
                 elems.append(Paragraph("No diagnostics detected.", self.styles['Muted']))
         else:
@@ -1092,7 +1287,17 @@ class PDFReport:
         if hdrs.get("x-content-type-options"):
             rows.append(["X-Content-Type-Options", hdrs.get("x-content-type-options")])
 
-        elems.append(self._render_clean_table(rows, colWidths=[3.2*inch, 3.1*inch], header_bg=PALE_RED))
+        elems.append(self._render_clean_table(rows, colWidths=[3.2 * inch, 3.1 * inch], header_bg=PALE_RED))
+
+        # Security Maturity (basic heuristic)
+        maturity = 1
+        if sec.get('https') and sec.get('hsts') and hdrs.get('content-security-policy'):
+            maturity = 2
+        if maturity == 2 and hdrs.get('x-frame-options') and hdrs.get('x-content-type-options'):
+            maturity = 3
+        elems.append(Spacer(1, 0.06 * inch))
+        elems.append(Paragraph(f"Security Maturity Level: <b>Level {maturity}</b> (1=Basic, 2=Hardened, 3=Enterprise)", self.styles['Note']))
+
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1125,9 +1330,9 @@ class PDFReport:
         if buckets.get("forms") is not None:
             rows1.append(["Forms/Labels issues", str(buckets.get("forms"))])
 
-        elems.append(self._render_clean_table(rows1, colWidths=[3.2*inch, 3.1*inch], header_bg=PALE_YELLOW))
+        elems.append(self._render_clean_table(rows1, colWidths=[3.2 * inch, 3.1 * inch], header_bg=PALE_YELLOW))
         elems.append(Paragraph("WCAG target: 2.2 AA (contrast ≥ 4.5:1, keyboard operability, meaningful order).", self.styles['Caption']))
-        elems.append(Spacer(1, 0.06*inch))
+        elems.append(Spacer(1, 0.06 * inch))
 
         if top_issues:
             rows2 = [["Rule", "Nodes", "Selectors / Examples"]]
@@ -1138,7 +1343,7 @@ class PDFReport:
                 if rule and nodes:
                     rows2.append([rule, nodes, examples])
             if len(rows2) > 1:
-                elems.append(self._table(rows2, colWidths=[1.8*inch, 0.8*inch, 3.7*inch], header_bg=PALE_BLUE, fontsize=8))
+                elems.append(self._table(rows2, colWidths=[1.8 * inch, 0.8 * inch, 3.7 * inch], header_bg=PALE_BLUE, fontsize=8))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1154,7 +1359,102 @@ class PDFReport:
         if self.mobile.get("layout_shift_risk") is not None:
             rows.append(["Layout shift risk (mobile)", str(self.mobile.get("layout_shift_risk"))])
 
-        elems.append(self._render_clean_table(rows, colWidths=[3.2*inch, 3.1*inch], header_bg=PALE_BLUE))
+        elems.append(self._render_clean_table(rows, colWidths=[3.2 * inch, 3.1 * inch], header_bg=PALE_BLUE))
+        # Simple grade
+        try:
+            perf = int(self.scores.get('performance', 0))
+            a11y = int(self.scores.get('accessibility', 0))
+            grade = 'A' if perf >= 85 and a11y >= 85 else ('B' if perf >= 70 else ('C' if perf >= 50 else 'D'))
+            elems.append(Spacer(1, 0.06 * inch))
+            elems.append(Paragraph(f"Mobile Usability Grade: <b>{grade}</b>", self.styles['Note']))
+        except Exception:
+            pass
+        self._section_data_note(elems)
+        elems.append(PageBreak())
+
+    # --------------------- NEW: Industry Benchmark ---------------------
+    def industry_benchmark_section(self, elems: List[Any]):
+        elems.append(self._section_title("Industry Benchmark Comparison"))
+        avg = self.bench.get('avg') if isinstance(self.bench, dict) else None
+        if not isinstance(avg, dict) or not avg:
+            elems.append(Paragraph("Data Not Collected: No benchmark block provided by runner.", self.styles['Muted']))
+            self._section_data_note(elems)
+            elems.append(PageBreak())
+            return
+        rows = [["Category", "Your Score", "Industry Avg", "Top 10%", "Position"]]
+        def pos(your, industry):
+            try:
+                y = float(your); i = float(industry)
+                return "Above Avg" if y > i else ("At Avg" if abs(y - i) <= 1 else "Below Avg")
+            except Exception:
+                return "—"
+        cats = [
+            ("Performance", self.scores.get('performance'), avg.get('Performance'), avg.get('Top10_Performance')),
+            ("SEO", self.scores.get('seo'), avg.get('SEO'), avg.get('Top10_SEO')),
+            ("Security", self.scores.get('security'), avg.get('Security'), avg.get('Top10_Security')),
+            ("Accessibility", self.scores.get('accessibility'), avg.get('Accessibility'), avg.get('Top10_Accessibility'))
+        ]
+        added = False
+        for name, your, industry, top in cats:
+            if your is None and industry is None:
+                continue
+            added = True
+            rows.append([name, str(your) if your is not None else "—", str(industry) if industry is not None else "—", str(top) if top is not None else "—", pos(your, industry)])
+        if added:
+            elems.append(self._table(rows, colWidths=[1.8 * inch, 1.0 * inch, 1.2 * inch, 1.0 * inch, 1.2 * inch], header_bg=PALE_GREEN))
+        else:
+            elems.append(Paragraph("No comparable categories were provided.", self.styles['Muted']))
+        self._section_data_note(elems)
+        elems.append(PageBreak())
+
+    # --------------------- NEW: Business Impact ---------------------
+    def business_impact_section(self, elems: List[Any]):
+        elems.append(self._section_title("Business & Revenue Impact (Modeled)"))
+        elems.append(Paragraph(
+            "This section provides a modeled, non-binding estimate of potential business impact based on common industry studies. "
+            "Replace with analytics data when available.", self.styles['Note']))
+        perf = _int_or(self.scores.get('performance', 0), 0)
+        a11y = _int_or(self.scores.get('accessibility', 0), 0)
+        risk = self.risk
+        bullets = []
+        if perf < 70:
+            bullets.append("Improving load speed can materially increase conversion rates and reduce bounce on mobile.")
+        if a11y < 70:
+            bullets.append("Accessibility gaps can limit reach and increase compliance exposure (WCAG 2.2 AA).")
+        if risk in ("High", "Critical"):
+            bullets.append("Current risk posture may affect brand trust and revenue stability.")
+        if not bullets:
+            bullets.append("No immediate business risks inferred from available data; continue monitoring and incremental optimization.")
+        for b in bullets:
+            elems.append(Paragraph(f"• {escape(b)}", self.styles['Normal']))
+        self._section_data_note(elems)
+        elems.append(PageBreak())
+
+    # --------------------- NEW: Competitive Analysis ---------------------
+    def competitive_analysis_section(self, elems: List[Any]):
+        elems.append(self._section_title("Competitive Analysis"))
+        comp = self.competitors if isinstance(self.competitors, dict) else {}
+        items = comp.get('items', []) if isinstance(comp.get('items', []), list) else []
+        if not items:
+            summary = comp.get('summary')
+            if summary:
+                elems.append(Paragraph(escape(summary), self.styles['Normal']))
+            else:
+                elems.append(Paragraph("Data Not Collected: No competitor list provided by runner.", self.styles['Muted']))
+            self._section_data_note(elems)
+            elems.append(PageBreak())
+            return
+        rows = [["Competitor", "Performance", "SEO", "Accessibility", "Overall"]]
+        for it in items[:6]:
+            name = str(it.get('name', it.get('domain', 'Competitor')))
+            rows.append([
+                name,
+                str(it.get('performance', '—')),
+                str(it.get('seo', '—')),
+                str(it.get('accessibility', '—')),
+                str(it.get('overall', '—'))
+            ])
+        elems.append(self._table(rows, colWidths=[2.4 * inch, 0.9 * inch, 0.9 * inch, 1.0 * inch, 0.9 * inch], header_bg=LIGHT_GRAY_BG))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1175,7 +1475,7 @@ class PDFReport:
         ]:
             if self.crawl.get(k) is not None:
                 rows.append([label, str(self.crawl.get(k))])
-        elems.append(self._render_clean_table(rows, colWidths=[3.2*inch, 3.1*inch], header_bg=LIGHT_GRAY_BG))
+        elems.append(self._render_clean_table(rows, colWidths=[3.2 * inch, 3.1 * inch], header_bg=LIGHT_GRAY_BG))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1190,10 +1490,10 @@ class PDFReport:
         for title, buf in shots[:6]:
             elems.append(Paragraph(escape(title), self.styles['H2']))
             try:
-                elems.append(Image(buf, width=5.8*inch, height=3.3*inch))
+                elems.append(Image(buf, width=5.8 * inch, height=3.3 * inch))
             except Exception:
                 elems.append(Paragraph("Screenshot could not be rendered.", self.styles['Muted']))
-            elems.append(Spacer(1, 0.08*inch))
+            elems.append(Spacer(1, 0.08 * inch))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1220,7 +1520,7 @@ class PDFReport:
         rows = [["Priority", "Issue", "Category", "Impact", "Recommended Fix"]]
         for i in issues:
             rows.append([i["priority"], i["issue"], i["category"], i["impact"], i["fix"]])
-        t = self._table(rows, colWidths=[0.95*inch, 2.25*inch, 0.9*inch, 1.5*inch, 1.6*inch], header_bg=ACCENT_BLUE, fontsize=8)
+        t = self._table(rows, colWidths=[0.95 * inch, 2.25 * inch, 0.9 * inch, 1.5 * inch, 1.6 * inch], header_bg=ACCENT_BLUE, fontsize=8)
         for r in range(1, len(rows)):
             pr = rows[r][0]
             t.setStyle(TableStyle([
@@ -1233,7 +1533,7 @@ class PDFReport:
 
     def recommendations_section(self, elems: List[Any]):
         elems.append(self._section_title("Recommendations & Fix Roadmap"))
-        recs = []
+        recs: List[Dict[str, str]] = []
 
         # PSI quick wins
         for o in (self.lh.get("opportunities") or [])[:6] if isinstance(self.lh, dict) else []:
@@ -1281,15 +1581,33 @@ class PDFReport:
             elems.append(PageBreak())
             return
 
-        rows = [["Recommendation", "Impact", "Effort", "Details / Notes"]]
+        # Compute a simple ROI score for display
+        def roi_score(impact: str, effort: str) -> str:
+            i = impact_rank.get(impact, 2)
+            e = effort_rank.get(effort, 1)
+            val = max(1, 10 - (i * 3 + e * 2))
+            return str(val)
+
+        rows = [["Recommendation", "Impact", "Effort", "ROI Score", "Details / Notes"]]
         for r in recs[:14]:
-            rows.append([r["item"], r["impact"], r["effort"], r["notes"]])
-        elems.append(self._table(rows, colWidths=[2.9*inch, 0.9*inch, 0.9*inch, 2.2*inch], header_bg=ACCENT_BLUE, fontsize=8))
+            rows.append([r["item"], r["impact"], r["effort"], roi_score(r["impact"], r["effort"]), r["notes"]])
+        elems.append(self._table(rows, colWidths=[2.6 * inch, 0.8 * inch, 0.8 * inch, 0.8 * inch, 2.0 * inch], header_bg=ACCENT_BLUE, fontsize=8))
         # Benchmark line if provided
         if isinstance(self.bench, dict) and self.bench.get("avg") and self.bench["avg"].get("Performance") is not None:
-            elems.append(Spacer(1, 0.06*inch))
+            elems.append(Spacer(1, 0.06 * inch))
             elems.append(Paragraph(f"Compared to {self.bench.get('industry','industry')} average: {self.bench['avg'].get('Performance')}/100", self.styles['Note']))
 
+        self._section_data_note(elems)
+        elems.append(PageBreak())
+
+    # --------------------- NEW: 30-60-90 Day Plan ---------------------
+    def plan_30_60_90_section(self, elems: List[Any]):
+        elems.append(self._section_title("30-60-90 Day Plan"))
+        rows = [["Phase", "Focus", "Examples"]]
+        rows.append(["0–30 Days", "High-impact, low-effort fixes", "Compress hero images, defer non-critical JS, add robots/sitemap if missing, fix top a11y issues."])
+        rows.append(["30–60 Days", "Performance tuning", "Code-split JS, preconnect critical origins, reduce INP long tasks, strengthen CSP."])
+        rows.append(["60–90 Days", "Advanced optimization", "Implement image CDN, field CWV monitoring, UX A/B on CTAs, harden headers enterprise-wide."])
+        elems.append(self._table(rows, colWidths=[1.3 * inch, 2.2 * inch, 2.8 * inch], header_bg=LIGHT_GRAY_BG))
         self._section_data_note(elems)
         elems.append(PageBreak())
 
@@ -1302,9 +1620,9 @@ class PDFReport:
             except Exception:
                 pass
         rows = [["Category", "Weight"]]
-        for k in ["seo","performance","security","accessibility","ux","links"]:
-            rows.append([k.upper(), f"{int(w[k]*100)}%"])
-        elems.append(self._table(rows, colWidths=[3.2*inch, 3.1*inch], header_bg=PALE_BLUE))
+        for k in ["seo", "performance", "security", "accessibility", "ux", "links"]:
+            rows.append([k.upper(), f"{int(w[k] * 100)}%"])
+        elems.append(self._table(rows, colWidths=[3.2 * inch, 3.1 * inch], header_bg=PALE_BLUE))
         if self.runner_overall != self.overall:
             elems.append(Paragraph(
                 f"Runner overall {self.runner_overall}/100 vs computed {self.overall}/100. Charts use computed score for consistency.",
@@ -1313,8 +1631,67 @@ class PDFReport:
         self._section_data_note(elems)
         elems.append(PageBreak())
 
+    # --------------------- NEW: Maturity Index ---------------------
+    def maturity_index_section(self, elems: List[Any]):
+        elems.append(self._section_title("Website Maturity Index"))
+        def level(score: int) -> int:
+            s = int(score)
+            return 5 if s >= 90 else (4 if s >= 75 else (3 if s >= 60 else (2 if s >= 40 else 1)))
+        rows = [["Category", "Level (1–5)"]]
+        for k in ["seo", "performance", "security", "accessibility", "ux"]:
+            if k in self.scores:
+                rows.append([k.upper(), str(level(self.scores.get(k, 0)))])
+        elems.append(self._table(rows, colWidths=[3.2 * inch, 3.1 * inch], header_bg=PALE_GREEN))
+        self._section_data_note(elems)
+        elems.append(PageBreak())
+
+    # --------------------- NEW: Risk Matrix ---------------------
+    def risk_matrix_section(self, elems: List[Any]):
+        elems.append(self._section_title("Risk Matrix (Impact × Likelihood)"))
+        issues = self.issues
+        if not issues:
+            elems.append(Paragraph("No issues available to plot.", self.styles['Muted']))
+            self._section_data_note(elems)
+            elems.append(PageBreak())
+            return
+
+        def map_priority(p: str) -> int:
+            return {"🔴 Critical": 4, "🟠 High": 3, "🟡 Medium": 2, "🟢 Low": 1}.get(p, 1)
+
+        # Simple likelihood heuristic from category
+        def like(cat: str) -> int:
+            return {"Security": 3, "Performance": 3, "SEO": 2, "Accessibility": 2}.get(cat, 2)
+
+        xs, ys, labels = [], [], []
+        for i in issues[:12]:
+            xs.append(like(i.get('category', '')))
+            ys.append(map_priority(i.get('priority', '🟢 Low')))
+            labels.append(i.get('category', '')[:3].upper())
+
+        fig, ax = plt.subplots(figsize=(4.0, 4.0))
+        ax.scatter(xs, ys, c='#C0392B', alpha=0.7)
+        for x, y, lbl in zip(xs, ys, labels):
+            ax.text(x + 0.03, y + 0.05, lbl, fontsize=8)
+        ax.set_xlim(0.5, 3.5); ax.set_ylim(0.5, 4.5)
+        ax.set_xticks([1, 2, 3]); ax.set_yticks([1, 2, 3, 4])
+        ax.set_xlabel('Likelihood'); ax.set_ylabel('Impact')
+        ax.set_title('Risk Matrix')
+        ax.grid(True, linestyle='--', alpha=0.3)
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png', dpi=160, transparent=True)
+        plt.close(fig)
+        buf.seek(0)
+        elems.append(Image(buf, width=3.8 * inch, height=3.8 * inch))
+        self._section_data_note(elems)
+        elems.append(PageBreak())
+
+    # --------------------- Extended Metrics (optional annex) ---------------------
     def extended_metrics_section(self, elems: List[Any]):
-        elems.append(self._section_title("Extended Metrics (Auto-Expanded)"))
+        if os.getenv('PDF_INCLUDE_EXTENDED', '0') != '1':
+            # Skip heavy annex by default
+            return
+        elems.append(self._section_title("Extended Metrics (Annex)"))
         pairs = _collect_extended_metrics(self.data)
         if not pairs:
             elems.append(Paragraph("No additional metrics detected from runner.", self.styles['Muted']))
@@ -1335,7 +1712,7 @@ class PDFReport:
         per_table = 36
         for idx, chunk in enumerate(_chunk(data_rows, per_table)):
             tbl_rows = [header] + chunk
-            t = self._table(tbl_rows, colWidths=[2.8*inch, 3.5*inch], fontsize=8, header_bg=colors.HexColor("#EEF3FB"))
+            t = self._table(tbl_rows, colWidths=[2.8 * inch, 3.5 * inch], fontsize=8, header_bg=colors.HexColor("#EEF3FB"))
             elems.append(t)
             if idx < (len(data_rows) - 1) // per_table:
                 elems.append(PageBreak())
@@ -1355,7 +1732,7 @@ class PDFReport:
                 if title or body:
                     elems.append(Paragraph(f"<b>{escape(title)}</b>: {escape(body)}", self.styles['Normal']))
         if kv:
-            elems.append(Spacer(1, 0.08*inch))
+            elems.append(Spacer(1, 0.08 * inch))
             elems.append(Paragraph("Key-Value Diagnostics", self.styles['H2']))
             rows = [["Key", "Value"]]
             for pair in kv[:120]:
@@ -1364,8 +1741,8 @@ class PDFReport:
                 if k and v:
                     rows.append([k, v])
             if len(rows) > 1:
-                elems.append(self._table(rows, colWidths=[2.8*inch, 3.5*inch], fontsize=8, header_bg=colors.HexColor("#F7F7F7")))
-        elems.append(Spacer(1, 0.08*inch))
+                elems.append(self._table(rows, colWidths=[2.8 * inch, 3.5 * inch], fontsize=8, header_bg=colors.HexColor("#F7F7F7")))
+        elems.append(Spacer(1, 0.08 * inch))
         elems.append(Paragraph(
             "Raw HTTP headers, DOM tree, script/CSS inventories, and third-party requests are not captured by the runner "
             "and therefore omitted here. Integrate a headless fetcher to populate these fields.",
@@ -1382,7 +1759,7 @@ class PDFReport:
             "significantly improve visibility, performance, and risk posture.",
             self.styles['Normal']
         ))
-        elems.append(Spacer(1, 0.10*inch))
+        elems.append(Spacer(1, 0.10 * inch))
         elems.append(Paragraph(
             f"Timestamp: {self.audit_dt} — Digital Integrity (SHA-256): {self.integrity}",
             self.styles['Tiny']
@@ -1399,8 +1776,12 @@ class PDFReport:
         self.toc_page(elems)
         self.executive_summary(elems)
         self.executive_one_pager(elems)
+        self.core_web_vitals_section(elems)
         self.what_we_audited(elems)
         self.website_overview(elems)
+        self.industry_benchmark_section(elems)
+        self.business_impact_section(elems)
+        self.competitive_analysis_section(elems)
         self.seo_section(elems)
         self.performance_section(elems)
         self.security_section(elems)
@@ -1412,16 +1793,21 @@ class PDFReport:
         self.analytics_tracking_section(elems)
         self.critical_issues_section(elems)
         self.recommendations_section(elems)
+        self.plan_30_60_90_section(elems)
         self.scoring_methodology_section(elems)
-        self.extended_metrics_section(elems)
+        self.maturity_index_section(elems)
+        self.risk_matrix_section(elems)
+        self.extended_metrics_section(elems)  # optional annex, gated by env
         self.appendix_section(elems)
         self.conclusion_section(elems)
-        doc.build(elems, onFirstPage=self._footer, onLaterPages=self._footer))
+        doc.build(elems, onFirstPage=self._footer, onLaterPages=self._footer)
         return buf.getvalue()
+
 
 # ------------------------------------------------------------
 # RUNNER ENTRY POINT (required by runner.py)
 # ------------------------------------------------------------
+
 def generate_audit_pdf(audit_data: Dict[str, Any]) -> bytes:
     """
     Runner-facing function. Accepts the dict produced by runner_result_to_audit_data(...)
@@ -1431,7 +1817,7 @@ def generate_audit_pdf(audit_data: Dict[str, Any]) -> bytes:
       audit_data['lighthouse'], audit_data['assets'], audit_data['accessibility']['axe'],
       audit_data['mobile'], audit_data['robots'], audit_data['sitemap'], audit_data['crawl'],
       audit_data['structured_data'], audit_data['security_deep'], audit_data['benchmarks'],
-      audit_data['history'], audit_data['competitors']
+      audit_data['history'], audit_data['competitors'], audit_data['field_cwv']
     """
     report = PDFReport(audit_data)
     return report.build_pdf_bytes()
