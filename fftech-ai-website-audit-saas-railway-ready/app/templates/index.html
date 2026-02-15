@@ -22,7 +22,7 @@
         <div class="w-10 h-10 bg-blue-700 rounded-xl flex items-center justify-center text-white font-bold text-3xl">F</div>
         <div>
           <span class="text-2xl font-bold text-gray-900">FF Tech</span>
-          <span class="text-sm text-gray-500 block -mt-1">Website Audit Pro</span>
+          <span class="text-sm text-gray-500 block -mt-1">Professional Website Audit</span>
         </div>
       </div>
       <button @click="newAudit()" 
@@ -48,7 +48,7 @@
                  class="flex-1 px-6 py-4 bg-white rounded-3xl text-gray-900 text-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
                  @keyup.enter="startAudit()">
           <button @click="startAudit()" 
-                  class="px-10 py-4 bg-white text-blue-700 font-semibold rounded-3xl hover:bg-gray-100 transition flex items-center justify-center gap-3">
+                  class="px-10 py-4 bg-white text-blue-700 font-semibold rounded-3xl hover:bg-gray-100 transition flex items-center gap-3">
             <i class="fas fa-rocket"></i> START AUDIT
           </button>
         </div>
@@ -69,67 +69,55 @@
     </div>
   </div>
 
-  <!-- RESULTS – FULL DISPLAY -->
+  <!-- FULL RESULTS -->
   <div x-show="result" class="max-w-7xl mx-auto px-6 pb-32 space-y-12">
 
     <!-- TOP SUMMARY -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
       <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center">
         <h3 class="text-xl font-bold text-gray-800 mb-4">Overall Health</h3>
         <div class="text-6xl font-extrabold" :class="result.overall_score >= 80 ? 'text-green-600' : result.overall_score >= 50 ? 'text-orange-500' : 'text-red-600'">
           <span x-text="result.overall_score"></span>
         </div>
-        <div class="text-lg mt-2" x-text="result.summary?.risk_level || '—'"></div>
-      </div>
-
-      <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100">
-        <h3 class="text-xl font-bold text-gray-800 mb-4">Basic Info</h3>
-        <dl class="space-y-2 text-sm">
-          <dt class="text-gray-500">Audited URL</dt>
-          <dd class="font-medium break-all" x-text="result.audited_url"></dd>
-
-          <dt class="text-gray-500 mt-4">Audit Date</dt>
-          <dd class="font-medium" x-text="result.audit_datetime || '—'"></dd>
-
-          <dt class="text-gray-500 mt-4">Grade</dt>
-          <dd class="font-bold text-xl" x-text="result.grade || '—'"></dd>
-        </dl>
+        <div class="text-lg mt-2 font-medium" :class="result.summary?.risk_level === 'Low' ? 'text-green-600' : result.summary?.risk_level === 'Medium' ? 'text-orange-500' : 'text-red-600'" x-text="result.summary?.risk_level || '—'"></div>
       </div>
 
       <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center">
-        <h3 class="text-xl font-bold text-gray-800 mb-4">Screenshot</h3>
-        <template x-if="result.assets?.homepage_screenshot_b64">
-          <img :src="'data:image/png;base64,' + result.assets.homepage_screenshot_b64" 
-               class="rounded-xl shadow-2xl max-w-full mx-auto border border-gray-200" alt="Homepage"/>
-        </template>
-        <template x-if="!result.assets?.homepage_screenshot_b64">
-          <div class="py-12 text-gray-400">
-            <i class="fas fa-image text-6xl mb-4 opacity-50"></i>
-            <p>Screenshot not captured</p>
-          </div>
-        </template>
+        <h3 class="text-xl font-bold text-gray-800 mb-4">Grade</h3>
+        <div class="text-6xl font-extrabold text-indigo-600" x-text="result.grade || '—'"></div>
+      </div>
+
+      <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center">
+        <h3 class="text-xl font-bold text-gray-800 mb-4">Audit Date</h3>
+        <div class="text-3xl font-bold text-gray-700" x-text="result.audit_datetime || '—'"></div>
+      </div>
+
+      <div class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center">
+        <h3 class="text-xl font-bold text-gray-800 mb-4">URL</h3>
+        <div class="text-xl font-medium break-all" x-text="result.audited_url"></div>
       </div>
     </div>
 
     <!-- SCORE BREAKDOWN CHART -->
     <div class="bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
-      <h2 class="text-2xl font-bold mb-6 text-gray-800">Score Breakdown</h2>
-      <canvas id="scoreChart" height="120"></canvas>
+      <h2 class="text-2xl font-bold mb-6 text-gray-800">Score Breakdown Chart</h2>
+      <canvas id="scoreChart" height="140"></canvas>
     </div>
 
-    <!-- DETAILED TABLES -->
+    <!-- DETAILED BREAKDOWN TABLES -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
       <!-- SEO Details -->
       <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
         <h3 class="text-xl font-bold mb-4 text-gray-800">SEO Details</h3>
-        <table class="w-full text-sm">
+        <table class="w-full text-sm border-collapse">
           <tbody>
-            <tr class="border-b"><td class="py-2 font-medium">Title</td><td class="py-2" x-text="result.breakdown?.seo?.extras?.title || '—'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">Meta Description Present</td><td class="py-2" x-text="result.breakdown?.seo?.extras?.meta_description_present ? 'Yes' : 'No'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">Canonical URL</td><td class="py-2" x-text="result.breakdown?.seo?.extras?.canonical || '—'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">H1 Count</td><td class="py-2" x-text="result.breakdown?.seo?.extras?.h1_count || '—'"></td></tr>
-            <tr><td class="py-2 font-medium">Images Missing ALT</td><td class="py-2 text-red-600 font-bold" x-text="result.breakdown?.seo?.extras?.images_missing_alt || '0'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Title</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.title || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Meta Description Present</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.meta_description_present ? 'Yes' : 'No'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Canonical URL</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.canonical || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">H1 Count</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.h1_count || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Total Images</td><td class="py-3" x-text="result.breakdown?.seo?.extras?.images_total || '—'"></td></tr>
+            <tr><td class="py-3 font-medium">Images Missing ALT</td><td class="py-3 text-red-600 font-bold" x-text="result.breakdown?.seo?.extras?.images_missing_alt || '0'"></td></tr>
           </tbody>
         </table>
       </div>
@@ -137,13 +125,13 @@
       <!-- Performance Details -->
       <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
         <h3 class="text-xl font-bold mb-4 text-gray-800">Performance Details</h3>
-        <table class="w-full text-sm">
+        <table class="w-full text-sm border-collapse">
           <tbody>
-            <tr class="border-b"><td class="py-2 font-medium">Load Time</td><td class="py-2 font-bold" x-text="result.breakdown?.performance?.extras?.load_ms + ' ms' || '—'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">Page Size</td><td class="py-2" x-text="result.breakdown?.performance?.extras?.bytes ? Math.round(result.breakdown.performance.extras.bytes / 1024) + ' KB' : '—'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">Scripts Count</td><td class="py-2" x-text="result.breakdown?.performance?.extras?.scripts || '—'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">Styles Count</td><td class="py-2" x-text="result.breakdown?.performance?.extras?.styles || '—'"></td></tr>
-            <tr><td class="py-2 font-medium">Fetcher</td><td class="py-2" x-text="result.breakdown?.performance?.extras?.fetcher || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Load Time</td><td class="py-3 font-bold text-blue-600" x-text="result.breakdown?.performance?.extras?.load_ms + ' ms' || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Page Size</td><td class="py-3" x-text="result.breakdown?.performance?.extras?.bytes ? Math.round(result.breakdown.performance.extras.bytes / 1024) + ' KB' : '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Scripts Count</td><td class="py-3" x-text="result.breakdown?.performance?.extras?.scripts || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Styles Count</td><td class="py-3" x-text="result.breakdown?.performance?.extras?.styles || '—'"></td></tr>
+            <tr><td class="py-3 font-medium">Fetcher</td><td class="py-3" x-text="result.breakdown?.performance?.extras?.fetcher || '—'"></td></tr>
           </tbody>
         </table>
       </div>
@@ -151,11 +139,11 @@
       <!-- Links Details -->
       <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
         <h3 class="text-xl font-bold mb-4 text-gray-800">Links Overview</h3>
-        <table class="w-full text-sm">
+        <table class="w-full text-sm border-collapse">
           <tbody>
-            <tr class="border-b"><td class="py-2 font-medium">Internal Links</td><td class="py-2" x-text="result.breakdown?.links?.internal_links_count || '—'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">External Links</td><td class="py-2" x-text="result.breakdown?.links?.external_links_count || '—'"></td></tr>
-            <tr><td class="py-2 font-medium">Total Links</td><td class="py-2 font-bold" x-text="result.breakdown?.links?.total_links_count || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Internal Links</td><td class="py-3" x-text="result.breakdown?.links?.internal_links_count || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">External Links</td><td class="py-3" x-text="result.breakdown?.links?.external_links_count || '—'"></td></tr>
+            <tr><td class="py-3 font-medium">Total Links</td><td class="py-3 font-bold" x-text="result.breakdown?.links?.total_links_count || '—'"></td></tr>
           </tbody>
         </table>
       </div>
@@ -163,18 +151,59 @@
       <!-- Security Details -->
       <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
         <h3 class="text-xl font-bold mb-4 text-gray-800">Security Details</h3>
-        <table class="w-full text-sm">
+        <table class="w-full text-sm border-collapse">
           <tbody>
-            <tr class="border-b"><td class="py-2 font-medium">HTTPS</td><td class="py-2" :class="result.breakdown?.security?.https ? 'text-green-600 font-bold' : 'text-red-600'" x-text="result.breakdown?.security?.https ? 'Yes' : 'No'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">HSTS Enabled</td><td class="py-2" :class="result.breakdown?.security?.hsts ? 'text-green-600 font-bold' : 'text-orange-600'" x-text="result.breakdown?.security?.hsts ? 'Yes' : 'No'"></td></tr>
-            <tr class="border-b"><td class="py-2 font-medium">Status Code</td><td class="py-2" x-text="result.breakdown?.security?.status_code || '—'"></td></tr>
-            <tr><td class="py-2 font-medium">Server Header</td><td class="py-2" x-text="result.breakdown?.security?.server || '—'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">HTTPS</td><td class="py-3" :class="result.breakdown?.security?.https ? 'text-green-600 font-bold' : 'text-red-600'" x-text="result.breakdown?.security?.https ? 'Yes' : 'No'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">HSTS Enabled</td><td class="py-3" :class="result.breakdown?.security?.hsts ? 'text-green-600 font-bold' : 'text-orange-600'" x-text="result.breakdown?.security?.hsts ? 'Yes' : 'No'"></td></tr>
+            <tr class="border-b"><td class="py-3 font-medium">Status Code</td><td class="py-3" x-text="result.breakdown?.security?.status_code || '—'"></td></tr>
+            <tr><td class="py-3 font-medium">Server Header</td><td class="py-3" x-text="result.breakdown?.security?.server || '—'"></td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- RECOMMENDATIONS -->
+    <!-- DYNAMIC CARDS & KV -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <!-- Dynamic Cards -->
+      <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
+        <h3 class="text-xl font-bold mb-4 text-gray-800">Dynamic Cards</h3>
+        <template x-if="result.dynamic?.cards?.length">
+          <div class="space-y-4">
+            <template x-for="card in result.dynamic.cards" :key="card.title">
+              <div class="p-4 bg-gray-50 rounded-xl">
+                <h4 class="font-semibold text-gray-800" x-text="card.title"></h4>
+                <p class="text-gray-700 mt-1" x-text="card.body"></p>
+              </div>
+            </template>
+          </div>
+        </template>
+        <template x-if="!result.dynamic?.cards?.length">
+          <p class="text-gray-500 italic">No dynamic cards available</p>
+        </template>
+      </div>
+
+      <!-- Dynamic KV -->
+      <div class="bg-white rounded-3xl shadow-lg p-6 border border-gray-100">
+        <h3 class="text-xl font-bold mb-4 text-gray-800">Key-Value Data</h3>
+        <template x-if="result.dynamic?.kv?.length">
+          <table class="w-full text-sm border-collapse">
+            <tbody>
+              <template x-for="item in result.dynamic.kv" :key="item.key">
+                <tr class="border-b last:border-0">
+                  <td class="py-3 font-medium w-1/3" x-text="item.key"></td>
+                  <td class="py-3" x-text="item.value"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+        <template x-if="!result.dynamic?.kv?.length">
+          <p class="text-gray-500 italic">No key-value data available</p>
+        </template>
+      </div>
+    </div>
+
+    <!-- PRIORITY ACTIONS -->
     <div class="bg-white rounded-3xl shadow-lg p-8 border border-gray-100">
       <h2 class="text-2xl font-bold mb-6 text-gray-800">Priority Recommendations</h2>
       <template x-if="result.priority_actions && result.priority_actions.length">
@@ -182,13 +211,13 @@
           <template x-for="action in result.priority_actions" :key="action">
             <li class="flex items-start gap-4 p-4 bg-red-50 rounded-xl">
               <span class="text-red-500 text-2xl mt-1"><i class="fas fa-exclamation-triangle"></i></span>
-              <p class="text-gray-800" x-text="action"></p>
+              <p class="text-gray-800 text-lg" x-text="action"></p>
             </li>
           </template>
         </ul>
       </template>
       <template x-if="!result.priority_actions || !result.priority_actions.length">
-        <p class="text-gray-600 italic text-lg">No priority recommendations found in this audit.</p>
+        <p class="text-gray-600 italic text-lg">No priority actions detected.</p>
       </template>
     </div>
 
@@ -214,7 +243,7 @@
 
         async startAudit() {
           const url = document.getElementById('urlInput')?.value?.trim();
-          if (!url || !/^https?:\/\//i.test(url)) return alert("Please enter a valid URL");
+          if (!url || !/^https?:\/\//i.test(url)) return alert("Please enter a valid URL starting with http:// or https://");
 
           this.loading = true;
           this.progress = 5;
@@ -242,22 +271,29 @@
               this.loading = false;
               this.status = "Audit Complete!";
               this.ws.close();
-              this.renderChart();
+              this.renderScoreChart();
             }
 
             if (msg.status === "error") {
-              alert("Error: " + (msg.payload?.error || "Unknown"));
+              alert("Audit failed: " + (msg.payload?.error || "Unknown error"));
               this.progress = 0;
               this.loading = false;
               this.ws.close();
             }
           };
+
+          this.ws.onerror = () => {
+            alert("WebSocket connection failed. Please check your connection.");
+            this.loading = false;
+          };
         },
 
-        renderChart() {
+        renderScoreChart() {
           if (!this.result?.scores) return;
 
-          const ctx = document.getElementById('scoreChart').getContext('2d');
+          const ctx = document.getElementById('scoreChart')?.getContext('2d');
+          if (!ctx) return;
+
           if (this.scoreChart) this.scoreChart.destroy();
 
           this.scoreChart = new Chart(ctx, {
@@ -275,6 +311,7 @@
                 backgroundColor: ['#6366f1', '#3b82f6', '#ef4444', '#10b981'],
                 borderWidth: 0,
                 borderRadius: 8,
+                barPercentage: 0.7,
               }]
             },
             options: {
@@ -290,7 +327,7 @@
         },
 
         async downloadPDF() {
-          if (!this.result?.audited_url) return alert("No audit result yet");
+          if (!this.result?.audited_url) return alert("No audit result available yet");
 
           try {
             const res = await fetch('/api/audit/pdf', {
@@ -307,7 +344,7 @@
             link.download = `FF-Tech-Audit-${new Date().toISOString().split('T')[0]}.pdf`;
             link.click();
           } catch (err) {
-            alert("PDF download failed: " + err.message);
+            alert("Failed to download PDF: " + err.message);
           }
         },
 
