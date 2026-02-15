@@ -13,7 +13,7 @@ PDF integration (SAFE — does NOT change run() IO):
 - Proper logger setup
 - Safe error handling — PDF failure never crashes the audit
 - Writes real PDF bytes to disk
-- Optional enrichments (PSI/Lighthouse, screenshot, axe-core, robots/sitemap, schema, mobile heuristics)
+- Optional enrichments (PSI/Lighthouse, field CWV, screenshot, axe-core, robots/sitemap, schema, mobile heuristics)
 - Uses certifi for SSL (fixes CERTIFICATE_VERIFY_FAILED on Railway)
 """
 from __future__ import annotations
@@ -44,14 +44,14 @@ PDF_CLIENT_NAME: str = os.getenv("PDF_CLIENT_NAME", "N/A")
 PDF_LOGO_PATH: str = os.getenv("PDF_LOGO_PATH", "")  # e.g. "app/assets/logo.png"
 
 # Feature flags (all optional; no effect on run() IO)
-PDF_ENABLE_SCREENSHOT = os.getenv("PDF_ENABLE_SCREENSHOT", "1") in {"1", "true", "yes", "on"}
-PDF_ENABLE_AXE = os.getenv("PDF_ENABLE_AXE", "0") in {"1", "true", "yes", "on"}
-PDF_ENABLE_ROBOTS = os.getenv("PDF_ENABLE_ROBOTS", "1") in {"1", "true", "yes", "on"}
-PDF_ENABLE_SCHEMA = os.getenv("PDF_ENABLE_SCHEMA", "1") in {"1", "true", "yes", "on"}
-PDF_ENABLE_MOBILE_HEUR = os.getenv("PDF_ENABLE_MOBILE_HEUR", "1") in {"1", "true", "yes", "on"}
-PDF_ENABLE_BENCH = os.getenv("PDF_ENABLE_BENCH", "1") in {"1", "true", "yes", "on"}
+PDF_ENABLE_SCREENSHOT = os.getenv("PDF_ENABLE_SCREENSHOT", "1").lower() in {"1", "true", "yes", "on"}
+PDF_ENABLE_AXE = os.getenv("PDF_ENABLE_AXE", "0").lower() in {"1", "true", "yes", "on"}
+PDF_ENABLE_ROBOTS = os.getenv("PDF_ENABLE_ROBOTS", "1").lower() in {"1", "true", "yes", "on"}
+PDF_ENABLE_SCHEMA = os.getenv("PDF_ENABLE_SCHEMA", "1").lower() in {"1", "true", "yes", "on"}
+PDF_ENABLE_MOBILE_HEUR = os.getenv("PDF_ENABLE_MOBILE_HEUR", "1").lower() in {"1", "true", "yes", "on"}
+PDF_ENABLE_BENCH = os.getenv("PDF_ENABLE_BENCH", "1").lower() in {"1", "true", "yes", "on"}
 
-# PSI (PageSpeed Insights) – optional
+# PSI (PageSpeed Insights) – key comes from Railway Variables
 PSI_API_KEY = os.getenv("PSI_API_KEY", "").strip()
 PSI_STRATEGIES = [s.strip() for s in os.getenv("PSI_STRATEGIES", "mobile,desktop").split(",") if s.strip()] or ["mobile"]
 
@@ -373,21 +373,17 @@ def _fetch_robots_and_sitemap(base_url: str) -> Tuple[Dict[str, Any], Dict[str, 
                 if line.lower().startswith("disallow:"):
                     path = line.split(":", 1)[1].strip()
                     if path and path != "/":
-                        # Presence of a non-empty Disallow indicates not fully open
                         allows_all = False
             robots_info["sitemaps"] = sitemaps
             robots_info["allows_all"] = allows_all
 
-            # Light sitemap checks on the first sitemap URL
             if sitemaps:
                 s_status, s_text, _ = _http_get_text(sitemaps[0])
                 if s_status and s_status < 400 and s_text.strip():
                     sitemap_info["exists"] = True
                     sitemap_info["valid"] = "<urlset" in s_text.lower() or "<sitemapindex" in s_text.lower()
-                    # Approx URL count (regex-based; safe)
                     cnt = len(re.findall(r"<url\b", s_text, flags=re.I))
                     if cnt == 0:
-                        # Try loc in sitemapindex
                         cnt = len(re.findall(r"<loc\b", s_text, flags=re.I))
                     sitemap_info["url_count"] = cnt
                 else:
@@ -448,9 +444,9 @@ def _parse_structured_data(html: str) -> Dict[str, Any]:
 def _mobile_heuristics(html: str) -> Dict[str, Any]:
     out = {"viewport_meta": None, "tap_targets_small": None, "font_size_issues": None, "layout_shift_risk": None, "lab_metrics": {}}
     try:
-        viewport = re.search(r'<meta[^>]+name=["\']viewport["\'][^>]*content=["\']([^"\']+)["\']', html or "", flags=re.I)
+        viewport = re.search(r'<meta\s+name=["\']viewport["\']', html or "", flags=re.I)
         out["viewport_meta"] = bool(viewport)
-        # Heuristics (extremely light):
+
         # tap_targets_small: count anchor tags with <= 2 characters text (proxy for tiny taps)
         small_taps = 0
         for m in re.finditer(r"<a\b[^>]*>(.*?)</a>", html or "", flags=re.I | re.S):
@@ -460,7 +456,13 @@ def _mobile_heuristics(html: str) -> Dict[str, Any]:
         out["tap_targets_small"] = small_taps or 0
 
         # font_size_issues: count inline styles with font-size < 12px
-        small_fonts = len(re.findall(r'font-size\s*:\s*(\d{1,2})px', html or "", flags=re.I))
+        small_fonts = 0
+        for ms in re.finditer(r'font-size\s*:\s*(\d{1,2})px', html or "", flags=re.I):
+            try:
+                if int(ms.group(1)) < 12:
+                    small_fonts += 1
+            except Exception:
+                pass
         out["font_size_issues"] = small_fonts or 0
 
         # layout_shift_risk: presence of images without width/height attributes
@@ -476,6 +478,7 @@ def _mobile_heuristics(html: str) -> Dict[str, Any]:
     return out
 
 def _psi_fetch(url: str, strategy: str = "mobile") -> Optional[Dict[str, Any]]:
+    """Fetch PageSpeed Insights JSON using PSI_API_KEY from Railway variables."""
     if not PSI_API_KEY:
         return None
     try:
@@ -499,9 +502,8 @@ def _psi_to_lighthouse_block(psi_json: Dict[str, Any], strategy: str) -> Dict[st
         lh["final_url"] = final_url
 
         cat_perf = psi_json.get("lighthouseResult", {}).get("categories", {}).get("performance", {})
-        score = cat_perf.get("score", None)
+        score = cat_perf.get("score", None)  # 0..1
         if score is not None:
-            # PSI returns 0..1; convert to 0..100
             lh["categories"]["performance"] = int(round(float(score) * 100))
 
         audits = psi_json.get("lighthouseResult", {}).get("audits", {}) or {}
@@ -516,21 +518,12 @@ def _psi_to_lighthouse_block(psi_json: Dict[str, Any], strategy: str) -> Dict[st
             except Exception:
                 return None
 
-        def num(aid: str) -> Optional[float]:
-            try:
-                v = audits.get(aid, {}).get("numericValue", None)
-                if v is None: return None
-                fv = float(v)
-                if fv < 0: return None
-                return fv
-            except Exception:
-                return None
-
-        # Key metrics
+        # Key metrics (ms unless CLS)
         lh["metrics"]["LCP_ms"] = ms("largest-contentful-paint")
-        # INP: PSI exposes 'experimental-interaction-to-next-paint' in newer versions; fallback to TBT/TTI context
         lh["metrics"]["INP_ms"] = ms("experimental-interaction-to-next-paint") or ms("interactive")
-        lh["metrics"]["CLS"] = audits.get("cumulative-layout-shift", {}).get("numericValue", None)
+        cls_val = audits.get("cumulative-layout-shift", {}).get("numericValue", None)
+        if isinstance(cls_val, (int, float)) and cls_val >= 0:
+            lh["metrics"]["CLS"] = float(cls_val)
         lh["metrics"]["FCP_ms"] = ms("first-contentful-paint")
         lh["metrics"]["TTFB_ms"] = ms("server-response-time") or ms("time-to-first-byte")
         lh["metrics"]["SpeedIndex_ms"] = ms("speed-index")
@@ -542,14 +535,15 @@ def _psi_to_lighthouse_block(psi_json: Dict[str, Any], strategy: str) -> Dict[st
                 det = a.get("details", {})
                 if det and det.get("type") == "opportunity":
                     title = a.get("title", "")
-                    savings = a.get("details", {}).get("overallSavingsMs", None)
+                    savings = det.get("overallSavingsMs", None)
                     if title and savings:
                         iv = int(round(float(savings)))
                         if iv > 0:
                             lh["opportunities"].append({"title": title, "estimated_savings_ms": iv})
             except Exception:
                 continue
-        # Diagnostics (a few useful ones)
+
+        # Diagnostics
         diag_ids = ["third-party-summary", "mainthread-work-breakdown", "unsized-images", "render-blocking-resources"]
         for did in diag_ids:
             dv = audits.get(did, {})
@@ -567,32 +561,29 @@ def _psi_field_cwv(psi_json: Dict[str, Any], strategy: str) -> Dict[str, Any]:
     try:
         le = psi_json.get("loadingExperience", {}) or psi_json.get("originLoadingExperience", {}) or {}
         metrics = le.get("metrics", {})
-        def metric_val(key: str) -> Optional[int]:
+        def percentile_ms(key: str) -> Optional[int]:
             try:
                 v = metrics.get(key, {}).get("percentile", None)
-                # PSI field percentiles are often reported in ms for *_MS & CLS as 0..1*100?
                 if v is None: return None
                 iv = int(round(float(v)))
                 if iv <= 0: return None
                 return iv
             except Exception:
                 return None
-        # Map to our schema
-        # CLS in field metrics is usually *100? Some payloads provide decimal via distributions.
+
         cls_field = metrics.get("CUMULATIVE_LAYOUT_SHIFT_SCORE", {}).get("percentile")
+        cls_val = None
         try:
-            cls_val = None
             if cls_field is not None:
-                # CLS percentile may arrive *100 in latest PSI; normalize
                 fv = float(cls_field)
                 cls_val = fv / 100.0 if fv > 1 else fv
         except Exception:
             cls_val = None
 
         out = {
-            "LCP_ms": metric_val("LARGEST_CONTENTFUL_PAINT_MS"),
-            "INP_ms": metric_val("INTERACTION_TO_NEXT_PAINT") or metric_val("EXPERIMENTAL_INTERACTION_TO_NEXT_PAINT_MS"),
-            "TTFB_ms": metric_val("EXPERIMENTAL_TIME_TO_FIRST_BYTE_MS") or metric_val("TIME_TO_FIRST_BYTE_MS"),
+            "LCP_ms": percentile_ms("LARGEST_CONTENTFUL_PAINT_MS"),
+            "INP_ms": percentile_ms("INTERACTION_TO_NEXT_PAINT") or percentile_ms("EXPERIMENTAL_INTERACTION_TO_NEXT_PAINT_MS"),
+            "TTFB_ms": percentile_ms("EXPERIMENTAL_TIME_TO_FIRST_BYTE_MS") or percentile_ms("TIME_TO_FIRST_BYTE_MS"),
             "CLS": cls_val
         }
     except Exception as e:
@@ -610,15 +601,11 @@ def _playwright_screenshot_b64(url: str, viewport: Tuple[int, int] = (1366, 768)
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(args=["--no-sandbox"], headless=True)
-            ctx = browser.new_context(
-                viewport={"width": viewport[0], "height": viewport[1]},
-                device_scale_factor=1
-            )
+            ctx = browser.new_context(viewport={"width": viewport[0], "height": viewport[1]}, device_scale_factor=1)
             page = ctx.new_page()
             page.set_default_navigation_timeout(30000)
             page.set_default_timeout(30000)
             page.goto(url, wait_until="networkidle")
-            # Small delay to allow late async paint
             page.wait_for_timeout(800)
             buf = page.screenshot(full_page=full_page, type="png")
             b64 = base64.b64encode(buf).decode("ascii")
@@ -646,9 +633,7 @@ def _axe_core_scan(url: str) -> Optional[Dict[str, Any]]:
             page.set_default_navigation_timeout(30000)
             page.set_default_timeout(30000)
             page.goto(url, wait_until="networkidle")
-            # Inject axe-core
             page.add_script_tag(url=AXE_CDN_URL)
-            # Give a moment for axe to load
             page.wait_for_timeout(500)
             result = page.evaluate("""async () => {
                 if (!window.axe) { return null; }
@@ -679,16 +664,8 @@ def _axe_core_scan(url: str) -> Optional[Dict[str, Any]]:
                 vid = v.get("id", "")
                 if vid in buckets:
                     buckets[vid] = buckets.get(vid, 0) + int(v.get("nodes", 0))
-                # Collect a tiny example summary
                 top_issues.append({"id": vid, "nodes": str(v.get("nodes", 0)), "examples": [v.get("help","")]})
-            return {
-                "axe": {
-                    "counts": counts,
-                    "by_wcag_level": {},  # axe JSON can be expanded to map WCAG 2.2 AA explicitly if needed
-                    "buckets": buckets,
-                    "top_issues": top_issues
-                }
-            }
+            return {"accessibility": {"axe": {"counts": counts, "by_wcag_level": {}, "buckets": buckets, "top_issues": top_issues}}}
     except Exception as e:
         logger.debug(f"axe-core scan failed: {e}")
         return None
@@ -700,7 +677,7 @@ def _static_benchmarks() -> Dict[str, Any]:
     return {
         "industry": os.getenv("PDF_BENCHMARK_INDUSTRY", "General"),
         "avg": {
-            "Performance": 74,        # category score /100
+            "Performance": 74,
             "LCP_ms": 2800,
             "INP_ms": 300,
             "CLS": 0.12,
@@ -743,12 +720,10 @@ def runner_result_to_audit_data(
             "seo": breakdown.get("seo", {}).get("score", 0),
             "security": breakdown.get("security", {}).get("score", 0),
             "links": breakdown.get("links", {}).get("score", 0),
-            # accessibility / ux intentionally omitted (runner doesn't compute them)
         },
         "breakdown": breakdown,
         "chart_data": runner_result.get("chart_data", []),
         "dynamic": dynamic,
-        # Small, business-facing summary
         "summary": {
             "risk_level": "Low" if runner_result.get("overall_score", 0) >= 80 else ("Medium" if runner_result.get("overall_score", 0) >= 60 else "High"),
             "traffic_impact": "High impact issues detected" if runner_result.get("overall_score", 0) < 70 else "Good performance detected"
@@ -767,11 +742,6 @@ def _enrich_audit_data_for_pdf(audit_data: Dict[str, Any], runner_result: Dict[s
     """
     url = audit_data.get("audited_url") or runner_result.get("audited_url") or ""
     html = ""
-    try:
-        # We might have HTML in runner_result dynamic kv; else skip
-        html = ""  # (not stored by runner currently)
-    except Exception:
-        html = ""
 
     # Benchmarks (static stub)
     try:
@@ -781,7 +751,7 @@ def _enrich_audit_data_for_pdf(audit_data: Dict[str, Any], runner_result: Dict[s
     except Exception:
         pass
 
-    # PSI (per strategy)
+    # PSI (per strategy) — uses PSI_API_KEY from Railway Variables
     field_cwv: Dict[str, Any] = {}
     lhr_merged: Dict[str, Any] = {"config": {}, "categories": {}, "metrics": {}, "opportunities": [], "diagnostics": []}
     try:
@@ -790,25 +760,21 @@ def _enrich_audit_data_for_pdf(audit_data: Dict[str, Any], runner_result: Dict[s
             if not psi:
                 continue
             block = _psi_to_lighthouse_block(psi, strat)
-            # Merge: prefer mobile for metrics if present; keep opportunities/diagnostics union
-            # Final URL & categories from first result
             if not lhr_merged.get("final_url") and block.get("final_url"):
                 lhr_merged["final_url"] = block["final_url"]
             lhr_merged["config"] = {"device": strat, "form_factor": strat}
             for k, v in (block.get("categories") or {}).items():
-                lhr_merged.setdefault("categories", {})
                 if v is not None:
-                    lhr_merged["categories"][k] = v
+                    lhr_merged.setdefault("categories", {})[k] = v
             for k, v in (block.get("metrics") or {}).items():
                 if v is not None:
-                    lhr_merged["metrics"][k] = v
+                    lhr_merged.setdefault("metrics", {})[k] = v
             for op in block.get("opportunities", []):
                 if op not in lhr_merged["opportunities"]:
                     lhr_merged["opportunities"].append(op)
             for dg in block.get("diagnostics", []):
                 if dg not in lhr_merged["diagnostics"]:
                     lhr_merged["diagnostics"].append(dg)
-            # Field CWV if available for that strategy
             fld = _psi_field_cwv(psi, strat)
             field_cwv.update(fld or {})
         if lhr_merged.get("metrics"):
@@ -829,27 +795,23 @@ def _enrich_audit_data_for_pdf(audit_data: Dict[str, Any], runner_result: Dict[s
         except Exception as e:
             logger.debug(f"robots/sitemap enrichment failed: {e}")
 
-    # Structured Data (HTML needed; if missing, do a light GET)
-    if PDF_ENABLE_SCHEMA:
+    # Structured Data + Mobile heuristics (do a light GET)
+    try:
+        status, html_text, _ = _http_get_text(url)
+        if status and status < 400:
+            html = html_text
+    except Exception:
+        html = ""
+
+    if PDF_ENABLE_SCHEMA and html:
         try:
-            if not html:
-                status, html_text, _ = _http_get_text(url)
-                if status and status < 400:
-                    html = html_text
-            if html:
-                audit_data["structured_data"] = _parse_structured_data(html)
+            audit_data["structured_data"] = _parse_structured_data(html)
         except Exception as e:
             logger.debug(f"structured data enrichment failed: {e}")
 
-    # Mobile heuristics
-    if PDF_ENABLE_MOBILE_HEUR:
+    if PDF_ENABLE_MOBILE_HEUR and html:
         try:
-            if not html:
-                status, html_text, _ = _http_get_text(url)
-                if status and status < 400:
-                    html = html_text
-            if html:
-                audit_data["mobile"] = _mobile_heuristics(html)
+            audit_data["mobile"] = _mobile_heuristics(html)
         except Exception as e:
             logger.debug(f"mobile heuristics enrichment failed: {e}")
 
@@ -867,7 +829,7 @@ def _enrich_audit_data_for_pdf(audit_data: Dict[str, Any], runner_result: Dict[s
         axe_block = _axe_core_scan(url)
         if axe_block:
             audit_data.setdefault("accessibility", {})
-            audit_data["accessibility"].update(axe_block)
+            audit_data["accessibility"].update(axe_block.get("accessibility", {}))
     except Exception as e:
         logger.debug(f"axe-core enrichment failed: {e}")
 
@@ -879,7 +841,7 @@ def _enrich_audit_data_for_pdf(audit_data: Dict[str, Any], runner_result: Dict[s
     except Exception:
         pass
 
-    # Append minimal history if available via env
+    # History (optional via env)
     try:
         hist = os.getenv("PDF_HISTORY_JSON", "").strip()
         if hist:
