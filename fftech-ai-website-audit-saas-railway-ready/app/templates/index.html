@@ -157,6 +157,25 @@
         <div id="progressBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
       </div>
 
+      <!-- PDF DOWNLOAD PROGRESS (added) -->
+      <div class="d-flex align-items-center justify-content-between mt-3" id="pdfProgressRow" style="display:none;">
+        <div class="fw-semibold">PDF Progress</div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-chip">
+            <span class="dot info" id="pdfStageDot"></span>
+            <span id="pdfStatusText">idle</span>
+          </span>
+          <span class="subtle">
+            <span id="pdfProgressText">0%</span>
+            <span class="ms-2 muted-2" id="pdfRemainingText">— left</span>
+          </span>
+        </div>
+      </div>
+      <div class="progress glass" id="pdfProgressWrap" style="display:none; border-radius:999px;">
+        <div id="pdfProgressBar" class="progress-bar bg-info" role="progressbar" style="width:0%" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+      <!-- /PDF DOWNLOAD PROGRESS -->
+
       <div id="alertArea" class="mt-3"></div>
 
       <div class="mt-3">
@@ -538,12 +557,72 @@
       try { ws && ws.send(JSON.stringify({ url })); } catch (e) {}
     }
 
+    // ============ PDF PROGRESS HELPERS (added) ============
+    function setPdfStage(status, percent) {
+      const p = Math.max(0, Math.min(100, parseInt(percent || 0)));
+      const bar = document.getElementById("pdfProgressBar");
+      const text = document.getElementById("pdfProgressText");
+      const left = document.getElementById("pdfRemainingText");
+      const statusText = document.getElementById("pdfStatusText");
+      const dot = document.getElementById("pdfStageDot");
+
+      bar.style.width = `${p}%`;
+      text.textContent = `${p}%`;
+      left.textContent = `${Math.max(0, 100 - p)}% left`;
+      statusText.textContent = status || "working";
+
+      bar.classList.remove("bg-info","bg-success","bg-warning","bg-danger");
+      if (status === "error" || status === "failed") bar.classList.add("bg-danger");
+      else if (p >= 100) bar.classList.add("bg-success");
+      else bar.classList.add("bg-info");
+
+      dot.classList.remove("ok","warn","bad","info");
+      if (status === "error" || status === "failed") dot.classList.add("bad");
+      else if (p >= 100) dot.classList.add("ok");
+      else dot.classList.add("info");
+    }
+
+    function showPdfProgress(show) {
+      document.getElementById("pdfProgressRow").style.display = show ? "" : "none";
+      document.getElementById("pdfProgressWrap").style.display = show ? "" : "none";
+      if (!show) setPdfStage("idle", 0);
+    }
+
+    function extractFilename(contentDisposition) {
+      if (!contentDisposition) return null;
+      const star = /filename\*\s*=\s*([^']+)''([^;]+)/i.exec(contentDisposition);
+      if (star && star[2]) {
+        try { return decodeURIComponent(star[2]); } catch { return star[2]; }
+      }
+      const plain = /filename="?([^"]+)"?/i.exec(contentDisposition);
+      return plain && plain[1] ? plain[1] : null;
+    }
+
+    function triggerDownload(href, filename) {
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename || "download.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    // ============ /PDF PROGRESS HELPERS ============
+
+    // ============ STREAMING PDF DOWNLOAD (replaces original) ============
     async function downloadPdf() {
       const input = el("urlInput").value.trim();
       if (!input) return showAlert("Please enter a URL.", "warning");
       const url = normalizeUrl(input);
 
-      el("pdfBtn").disabled = true; el("pdfBtn").innerText = "Generating PDF…";
+      const btn = el("pdfBtn");
+      btn.disabled = true;
+      const originalLabel = btn.innerText;
+      btn.innerText = "Generating PDF…";
+
+      showPdfProgress(true);
+      setPdfStage("requesting", 1);
+
+      let objectUrl = null;
       try {
         // The server only uses url, report_title and logo_path here; others are harmless
         const payload = { url, client_name:"", brand_name:"", report_title:"", website_name:"", logo_path:"" };
@@ -552,31 +631,92 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
+
         const ct = res.headers.get("content-type") || "";
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
-          if (ct.includes("application/json")) { const j = await res.json(); detail = j.detail || JSON.stringify(j); }
-          else { detail = await res.text(); }
+          if (ct.includes("application/json")) {
+            const j = await res.json().catch(() => ({}));
+            detail = j.detail || JSON.stringify(j);
+          } else {
+            detail = await res.text().catch(() => detail);
+          }
           throw new Error(detail);
         }
-        const blob = await res.blob();
+
+        const contentLengthHeader = res.headers.get("content-length");
+        const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : NaN;
+        const supportsStream = !!res.body && typeof res.body.getReader === "function";
+
+        if (!supportsStream) {
+          // Fallback: no stream support, single-shot blob
+          setPdfStage("downloading", 50);
+          const blob = await res.blob();
+          setPdfStage("finalizing", 95);
+          const cd = res.headers.get("content-disposition") || "";
+          const filename = extractFilename(cd) || "audit_report.pdf";
+          objectUrl = URL.createObjectURL(blob);
+          triggerDownload(objectUrl, filename);
+          setPdfStage("completed", 100);
+          showAlert("PDF generated and downloaded ✅", "success");
+          return;
+        }
+
+        // Stream reader with progress
+        const reader = res.body.getReader();
+        const chunks = [];
+        let received = 0;
+        let lastPaint = 0;
+
+        setPdfStage("downloading", 5);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.byteLength;
+
+          const now = performance.now();
+          if (now - lastPaint > 80) {
+            if (isFinite(totalBytes) && totalBytes > 0) {
+              const percent = Math.floor((received / totalBytes) * 100);
+              setPdfStage("downloading", Math.max(6, Math.min(percent, 99)));
+            } else {
+              // Indeterminate: cosmetic ramp
+              const currentBar = parseInt((document.getElementById("pdfProgressText").textContent || "0").replace("%",""), 10) || 5;
+              const next = Math.min(currentBar + 1, 95);
+              setPdfStage("downloading", next);
+            }
+            lastPaint = now;
+          }
+        }
+
+        setPdfStage("finalizing", 99);
+
+        const blob = new Blob(chunks, { type: ct || "application/pdf" });
         const cd = res.headers.get("content-disposition") || "";
-        let filename = "audit_report.pdf";
-        const match = cd.match(/filename="?([^"]+)"?/i);
-        if (match && match[1]) filename = match[1];
-        const link = document.createElement("a");
-        const objectUrl = URL.createObjectURL(blob);
-        link.href = objectUrl; link.download = filename;
-        document.body.appendChild(link); link.click(); link.remove();
-        URL.revokeObjectURL(objectUrl);
+        const filename = extractFilename(cd) || "audit_report.pdf";
+
+        objectUrl = URL.createObjectURL(blob);
+        triggerDownload(objectUrl, filename);
+
+        setPdfStage("completed", 100);
         showAlert("PDF generated and downloaded ✅", "success");
       } catch (e) {
+        setPdfStage("error", 100);
         showAlert(buildHumanError(e.message || String(e)), "danger", true);
       } finally {
-        el("pdfBtn").disabled = !lastResult;
-        el("pdfBtn").innerText = "⬇ Download Professional PDF";
+        if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+        btn.disabled = !lastResult;
+        btn.innerText = originalLabel;
+
+        const statusText = document.getElementById("pdfStatusText").textContent;
+        if (statusText !== "error" && statusText !== "failed") {
+          setTimeout(() => showPdfProgress(false), 1200);
+        }
       }
     }
+    // ============ /STREAMING PDF DOWNLOAD ============
 
     function buildHumanError(raw) {
       const msg = String(raw || "Unknown error");
@@ -779,7 +919,6 @@
     });
 
     // Init
-    function setWsStatus(connected) { /* already defined above */ }
     setWsStatus(false);
     ensureWs();
     setStage("idle", 0);
